@@ -1,0 +1,3 @@
+[submodule "baseline/bo"]
+	path = baseline/bo
+	url = https://github.com/shalijiang/bo.git
