@@ -11,6 +11,16 @@ from experiment._1_exp import initialize_model, make_save_dir, run_hes_trial
 from experiment._2_env import make as make_env
 from utils.utilities import get_init_data
 from utils.plot import plot_topk
+from models.compute_expected_loss import (
+    compute_expectedloss_topk, 
+    compute_expectedloss_minmax,
+    compute_expectedloss_twovalue,
+    compute_expectedloss_mvs,
+    compute_expectedloss_levelset,
+    compute_expectedloss_multilevelset,
+    compute_expectedloss_pbest,
+    compute_expectedloss_bestofk,
+)
 
 
 class Parameters:
@@ -18,6 +28,15 @@ class Parameters:
         # general arguments
         self.device = f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu"
         self.app = args.app
+
+        if self.app == "topk":
+            self.compute_expectedloss_function = compute_expectedloss_topk
+        elif self.app == "minmax"
+            # TODO ... 
+            
+        else:
+            raise NotImplemented
+        
         self.algo = args.algo
         self.dataset = args.dataset
         self.dist_weight = args.dist_weight

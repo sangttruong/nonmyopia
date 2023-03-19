@@ -8,11 +8,6 @@ import torch
 import math
 import numpy as np
 from models.nn import MLP
-from models.ehig_tasks import (
-    EHIGTopK, EHIGMinMax, EHIGTwoVal, EHIGMVS, EHIGLevelSet, 
-    EHIGMultiLevelSet, EHIGPbest, EHIGBestOfK
-)
-from models.variance_reduction import baseline
 
 
 class EHIG(MCAcquisitionFunction):
@@ -43,7 +38,7 @@ class EHIG(MCAcquisitionFunction):
         self.p_f_Di[0] = self.model
         self.yis = {}
 
-        # value function
+        # H-entropy loss function
         if self.compute_expectedloss_function = compute_expectedloss_function
 
         # base samples should be fixed for joint optimization over batch_a1s
@@ -54,27 +49,22 @@ class EHIG(MCAcquisitionFunction):
                 sample_shape=num_samples, resample=False, collapse_batch_dims=True
             )
 
-        if c.baseline:
-            n_dim_input_h = (c.init_data.x.shape[0] + c.lookahead_steps) * (
-                1 + c.n_dim
-            )
-            self.maps_h = [
-                MLP(
-                    input_size=n_dim_input_h,
-                    n_neurons=math.ceil(n_dim_input_h * c.hidden_coeff),
-                    n_layers=c.n_layers,
-                    output_size=1,
-                    activation=c.activation,
-                    last_layer_linear=True,
-                )
-                .to(c.device)
-                .double()
-                for _ in range(c.n_restarts)
-            ]
-            c.baseline = baseline(c, self.po, self.model,
-                                  self.sampler, self.yis)
-
-        if not c.vi:
+        # parameterize optimization variables
+        # TODO_DUC: set optimization following this example so that later we don't 
+        # have to manually provide the parameters to optimizer
+        # self.weight = nn.Parameter(torch.randn(num_features))
+        # depending on whether we use "amortized_optimization" or not (VI vs MC)
+        # the parameters are tensors (x0, x1, ...) or neural network (e.g. RNN)
+        # lookahead_steps
+        
+        
+        
+        
+        if not self.use_amortized_optimization:
+            # TODO: need to know the shape of y before parameterizing x!!! 
+            # probably a better idea to parameterize on the fly using
+            # compute_optimization_variable
+            
             self.po = self.directly_parameterize_output()
             self.po[-1] = data.x[-1]
             for i in range(c.lookahead_steps):
@@ -161,8 +151,10 @@ class EHIG(MCAcquisitionFunction):
                 self.po[i] = torch.stack(self.po[i], dim=-3)
             self.init_nn()
 
-    # @typechecked
-    def forward(self):# -> TensorType["n_restarts"]:
+    def compute_optimization_variable(self):
+        pass
+            
+    def forward(self):
         c = self.config
 
         if c.vi:
@@ -224,7 +216,6 @@ class EHIG(MCAcquisitionFunction):
         
         return self.hes_task(po=self.po)
 
-    # @typechecked
     def directly_parameterize_output_topk(self, data):
         """[WIP] init and return batch_x0s, batch_a1s tensors for topk."""
         mc_params = self.directly_parameterize_output(data)
@@ -253,7 +244,6 @@ class EHIG(MCAcquisitionFunction):
 
         return batch_x0s, batch_a1s.to(self.config.device)
     
-    # @typechecked
     def sample_yi(self, i) -> None:
         with torch.no_grad():
             self.p_yi_xiDi[i] = self.p_f_Di[i].posterior(X=self.po[i])
@@ -264,7 +254,6 @@ class EHIG(MCAcquisitionFunction):
                 sampler=self.samplers[i],
             )
 
-    # @typechecked
     def directly_parameterize_output(self):
         """init and return batch output tensors, where output can be
         either action or design."""
@@ -297,8 +286,6 @@ class EHIG(MCAcquisitionFunction):
             po[i].requires_grad_(True)
         return po
 
-    # neural model initialization
-    # @typechecked
     def init_nn(self) -> None:
         print("Initialize neural network")
         c = self.config
