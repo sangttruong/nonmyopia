@@ -1,21 +1,20 @@
-from models.ehig_acqf import EHIG
 from argparse import Namespace
 import time
 import torch
 import numpy as np
 from models.actor import Actor
-
+from experiment.checkpoint_manager import pickle_trial_info
+from tensordict.tensordict import TensorDict
 
 def uniform_random_sample_domain(domain, n, config):
-    """Draws a sample uniformly at random from domain (a list of tuple bounds)."""
-    list_of_arr_per_dim = [np.random.uniform(
-        dom[0], dom[1], n) for dom in domain]
-    return torch.tensor(
-        np.array(
-            list_of_arr_per_dim).T, device=config.device, dtype=config.torch_dtype
-    )
-
-
+        """Draws a sample uniformly at random from domain (a list of tuple bounds)."""
+        list_of_arr_per_dim = [np.random.uniform(
+            dom[0], dom[1], n) for dom in domain]
+        return torch.tensor(
+            np.array(
+                list_of_arr_per_dim).T, device=config.device, dtype=config.torch_dtype
+        )
+        
 def generate_initial_data(env, config):
     data_x = uniform_random_sample_domain(
         config.domain, 
@@ -29,8 +28,7 @@ def generate_initial_data(env, config):
         )
     data = Namespace(x=data_x, y=data_y)
     return data
-
-
+    
 def print_iteration(next_x, next_y, time_iter):
     """Print information at each iteration of HES."""
     print(f"next_x = {next_x.cpu().detach().numpy().tolist()}")
@@ -63,7 +61,6 @@ def set_random_seed_at_iteration(seed, iteration):
 def run_hes_trial(
     parms,
     env,
-    initial_data,
     plot_function=None,
     eval_function=None,
     final_eval_function=None,
@@ -72,16 +69,13 @@ def run_hes_trial(
     # Set up the environment
     set_random_seed_at_start(parms.seed)
 
-    # Set initial observations
-    if initial_data is None:
-        with torch.no_grad():
-            data = generate_initial_data(env, parms)
-    else: 
-        data = initial_data
-        
-    previous_x = data.x[-1]
-
-    actor = Actor(parms)
+    # Initialize empty data
+    # data = TensorDict({
+    #     'x': torch.tensor([]),
+    #     'y': torch.tensor([]),
+    # })
+    data = generate_initial_data(env, parms)
+    actor = Actor(parms=parms, data=data)
 
     # Logging
     eval_metric_list = []
@@ -97,34 +91,13 @@ def run_hes_trial(
 
         print("\n" + "---" * 5 + f" Iteration {iteration} " + "---" * 5)
         time_start = time.time()
-        if parms.algo in ["hes_vi", "hes_mc"]:
-            resampling_step = 0
-            patient = parms.max_patient_resampling
-            min_loss = float("inf")
-            while resampling_step < parms.n_resampling_max and patient > 0:
-                # Define hes object
-                hes = EHIG(parms, model_hes, data=data)
-
-                # Optimize acquisition function
-                next_x = actor.query()
-
-                if min_loss_ < min_loss:
-                    min_loss = min_loss_
-                    patient = parms.max_patient_resampling
-                    next_y = env.func(next_x).detach()
-                else:
-                    patient -= 1
-
-                print(
-                    f"Resampling step {resampling_step}, Objective: {min_loss}")
-                resampling_step += 1
-
+    
         next_x = actor.query()
-        next_y = env.func(next_x).detach()
+        next_y = env.func(next_x)
 
         # Update training points
         data.x = torch.cat([data.x, next_x.detach()])
-        data.y = torch.cat([data.y, next_y])
+        data.y = torch.cat([data.y, next_y.detach()])
 
         # End timer
         time_iter = time.time() - time_start
@@ -158,12 +131,8 @@ def run_hes_trial(
         # Update previous_x
         previous_x = next_x
 
-        # Re-initialize model for next iteration, use state_dict to speed up fitting
-        mll_hes, model_hes = initialize_model(
-            data,
-            model_hes.state_dict(),
-            covar_module=ScaleKernel(base_kernel=RBFKernel()),
-        )
+        # Re-train GP model
+        actor.train(data)
 
         # Pickle trial info at each iteration (overwriting file from previous iteration)
         pickle_trial_info(parms, data, eval_metric_list, optimal_action_list)

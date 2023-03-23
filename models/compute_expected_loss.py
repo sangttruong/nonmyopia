@@ -1,7 +1,7 @@
 import torch
 
 
-def compute_expectedloss_topk(post_dist, actions, sampler, info) -> torch.Tensor:
+def compute_expectedloss_topk(K, model, actions, sampler, info) -> torch.Tensor:
     r"""
     Evaluate a batch of H-entropy acquisition function for top-K with diversity.
     Note that the model object `self.model` here is the result of fantasization
@@ -18,8 +18,8 @@ def compute_expectedloss_topk(post_dist, actions, sampler, info) -> torch.Tensor
     Value of the acquisition function is approximated using Monte Carlo.
     """
 
-    post_pred_dist = post_dist.posterior(action) 
-    sample = self.sampler(post_pred_dist)
+    post_pred_dist = model.posterior(actions) 
+    batch_yis = sampler(post_pred_dist)
 
     batch_yis = batch_yis.mean(dim=0)
     # >> Tensor[*[n_samples]*i, n_restarts, 1, 1]
@@ -34,20 +34,20 @@ def compute_expectedloss_topk(post_dist, actions, sampler, info) -> torch.Tensor
 
         batch_as_dist_triu = torch.triu(batch_as_dist)
 
-        batch_as_dist_triu[batch_as_dist_triu > self.dist_threshold] = self.dist_threshold
+        batch_as_dist_triu[batch_as_dist_triu > info.dist_threshold] = info.dist_threshold
         dist_reward = batch_as_dist_triu.sum((-1, -2)) / (K * (K - 1) / 2.0)  
         # >>> n_samples x n_restarts
 
-    dist_reward = info["dist_weight"] * dist_reward
+    dist_reward = info.dist_weight * dist_reward
 
     # sum over samples from posterior predictive
+    total_cost = 0 # TODO: Total cost
     result = batch_yis - total_cost + dist_reward
 
     # compute the advantage
     # if c.baseline is not None: result = result - c.baseline
     result = result.squeeze()
     avg_result = result
-    
     while len(avg_result.shape) > 1:
         avg_result = avg_result.mean(0)
         
@@ -67,7 +67,7 @@ def compute_expectedloss_minmax(post_dist, actions, sampler, info) -> torch.Tens
 
     posterior = self.model.posterior(batch_as)
     # n_fs x n_samples x n_restarts x K x 1
-    samples = self.sampler(posterior)
+    samples = sampler(posterior)
     val = samples.squeeze(-1)  # n_fs x n_samples x n_restarts x K
     val[:, :, :, 0] = -1 * val[:, :, :, 0]
     val = val.sum(dim=-1)  # n_fs x n_samples x n_restarts
@@ -91,7 +91,7 @@ def compute_expectedloss_twoval(post_dist, actions, sampler, info) -> torch.Tens
 
     posterior = self.model.posterior(batch_as)
     # n_fs x n_samples x n_restarts x K x 1
-    samples = self.sampler(posterior)
+    samples = sampler(posterior)
     val = samples.squeeze(-1)  # n_fs x n_samples x n_restarts x K
     val[:, :, :, 0] = -1 * torch.abs(val[:, :, :, 0] - self.val_tuple[0])
     val[:, :, :, 1] = -1 * torch.abs(val[:, :, :, 1] - self.val_tuple[1])
@@ -137,7 +137,7 @@ def compute_expectedloss_mvs(post_dist, actions, sampler, info) -> torch.Tensor:
 
     posterior = self.model.posterior(batch_as)
     # n_fs x n_samples x n_restarts x K x 1
-    samples = self.sampler(posterior)
+    samples = sampler(posterior)
     val = samples.squeeze(-1)  # n_fs x n_samples x n_restarts x K
     for idx in range(K):
         # val[:, :, :, idx] = -1 * torch.abs(val[:, :, :, idx] - self.val_tuple[idx])**2
@@ -194,7 +194,7 @@ def compute_expectedloss_levelset(post_dist, actions, sampler, info) -> torch.Te
     batch_as = batch_as.squeeze(-1).permute([1, 0, 2])
     posterior = self.model.posterior(self.support_points)
     # n_fs x n_samples x n_restarts x n_actions x 1
-    samples = self.sampler(posterior)
+    samples = sampler(posterior)
     val = samples.squeeze(-1)  # n_fs x n_samples x n_restarts x n_actions
     val = val.mean(dim=0)  # n_samples x n_restarts x n_actions
     q_hes = ((val - self.levelset_threshold) * batch_as).sum(
@@ -216,7 +216,7 @@ def compute_expectedloss_multilevelset(post_dist, actions, sampler, info) -> tor
     batch_as = batch_as.permute([1, 0, 2, 3])
     posterior = self.model.posterior(self.support_points)
     # n_fs x n_samples x n_restarts x n_actions x 1
-    samples = self.sampler(posterior)
+    samples = sampler(posterior)
     val = samples.squeeze(-1)  # n_fs x n_samples x n_restarts x n_actions
     val = val.mean(dim=0)  # n_samples x n_restarts x n_actions
     q_hes = 0
@@ -249,7 +249,7 @@ def compute_expectedloss_expf(post_dist, actions, sampler, info) -> torch.Tensor
 
     posterior = self.model.posterior(batch_as)
     # n_fs x n_samples x n_restarts x K x 1
-    samples = self.sampler(posterior)
+    samples = sampler(posterior)
     val = samples.squeeze(-1)  # n_fs x n_samples x n_restarts x K
     val = val.sum(dim=-1)  # n_fs x n_samples x n_restarts
     val = val.mean(dim=0)  # n_samples x n_restarts
@@ -283,12 +283,12 @@ def compute_expectedloss_pbest(post_dist, actions, sampler, info) -> torch.Tenso
     # Permute shape of batch_as to work with self.model.posterior correctly
     batch_as = torch.permute(batch_as, [1, 0, 2, 3])
 
-    samples_rand_samp = self.sampler(self.posterior_rand_samp)
+    samples_rand_samp = sampler(self.posterior_rand_samp)
     maxes = torch.amax(samples_rand_samp, dim=(3, 4))
 
     posterior = self.model.posterior(batch_as)
     # out shape: n_fs x n_samples x n_restarts x K x 1
-    samples = self.sampler(posterior)
+    samples = sampler(posterior)
 
     # out shape: n_fs x n_samples x n_restarts
     val = -1 * (maxes - samples.squeeze())
@@ -314,7 +314,7 @@ def compute_expectedloss_bestofk(post_dist, actions, sampler, info) -> torch.Ten
 
     posterior = self.model.posterior(batch_as)
     # n_fs x n_samples x n_restarts x K x 1
-    samples = self.sampler(posterior)
+    samples = sampler(posterior)
     val = samples.squeeze(-1)  # n_fs x n_samples x n_restarts x K
     val = val.amax(dim=-1)  # n_fs x n_samples x n_restarts
     val = val.mean(dim=0)  # n_samples x n_restarts

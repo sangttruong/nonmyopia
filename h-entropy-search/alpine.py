@@ -71,7 +71,7 @@ class AlpineN1:
         return res
 
     def call_tensor(self, x_list):
-        x_list = [xi.cpu().detach().numpy().tolist() for xi in x_list]
+        x_list = [xi.detach().numpy().tolist() for xi in x_list]
         x_list = np.array(x_list).reshape(-1, self.d)
         y_list = [self.call_single(x) for x in x_list]
         y_list = y_list[0] if len(y_list) == 1 else y_list

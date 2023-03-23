@@ -1,5 +1,6 @@
 from pathlib import Path
-
+from argparse import Namespace
+import dill as pickle
 
 def pickle_trial_info(config, data, eval_metric_list, optimal_action_list):
     """Save trial info as a pickle in directory specified by config."""

@@ -7,7 +7,9 @@ from utils.domain_utils import unif_random_sample_domain
 
 
 def make(parms):
-    if parms.dataset == "synthetic":
+    # TODO: for other synthetic function like Alpine, import from BoTorch
+    
+    if parms.dataset == "SynGP":
         sf = SynGP(
             seed=parms.seed_synthfunc, 
             hypers=parms.hypers, 
@@ -19,7 +21,7 @@ def make(parms):
     elif parms.dataset == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
             sf = pickle.load(file_handle)
-
+    
     else:
         raise NotImplemented
 
