@@ -1,7 +1,6 @@
 import torch
 import dill as pickle
 import numpy as np
-
 from utils.gp_utils import kern_exp_quad_noard, sample_mvn, gp_post
 from utils.domain_utils import unif_random_sample_domain
 
@@ -9,16 +8,15 @@ from utils.domain_utils import unif_random_sample_domain
 def make(parms):
     # TODO: for other synthetic function like Alpine, import from BoTorch
     
-    if parms.dataset == "SynGP":
+    if parms.env_name == "SynGP":
         sf = SynGP(
-            seed=parms.seed_synthfunc, 
-            hypers=parms.hypers, 
+            seed=parms.seed_synthfunc,
+            x_dim=parms.x_dim,
             n_obs=parms.n_obs, 
-            domain=parms.domain,
             dtype=parms.torch_dtype
         )
 
-    elif parms.dataset == "chemical":
+    elif parms.env_name == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
             sf = pickle.load(file_handle)
     
@@ -27,21 +25,21 @@ def make(parms):
 
     return sf
 
+
 class SynGP:
     """Synthetic functions defined by draws from a Gaussian process."""
 
-    def __init__(self, seed=12, hypers=None, n_obs=50, domain=None, dtype=None):
-        """Constructor."""
-        if hypers is None:
-            hypers = {"ls": 1.0, "alpha": 2.0, "sigma": 1e-2, "n_dimx": 1}
+    def __init__(self, seed=12, x_dim=2, n_obs=50, dtype=None):
 
-        if domain is None:
-            domain = [(-5, 10)] * hypers["n_dimx"]
+        self.learn_hypers = False
+        self.bounds = [-1, 1]
+        self.domain = [self.bounds] * x_dim
+        self.n_obs = 50
+
 
         self.seed = seed
-        self.hypers = hypers
+        self.hypers = {"ls": 0.1, "alpha": 2.0, "sigma": 1e-2, "n_dimx": x_dim}
         self.n_obs = n_obs
-        self.domain = domain
         self.dtype = dtype
         self.initialize()
 
