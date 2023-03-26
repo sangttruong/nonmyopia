@@ -17,11 +17,10 @@ def compute_expectedloss_topk(model, actions, sampler, info) -> torch.Tensor:
         E_{p(y|x,D)} E_{f|D_1} [ l(f, a) ]
     Value of the acquisition function is approximated using Monte Carlo.
     """
-
-    post_pred_dist = model.posterior(actions) 
-    batch_yis = sampler(post_pred_dist)
-
-    batch_yis = batch_yis.mean(dim=0)
+    
+    post_pred_dist = [model.posterior(actions[..., k, :]) for k in range(info.n_actions)]
+    batch_yis = [sampler(ppd) for ppd in post_pred_dist]
+    batch_yis = torch.stack(batch_yis, dim=-2).mean(dim=0)
     # >> Tensor[*[n_samples]*i, n_restarts, 1, 1]
 
     # compute pairwise-distance d(a_i, a_j) for the diversity
@@ -38,18 +37,17 @@ def compute_expectedloss_topk(model, actions, sampler, info) -> torch.Tensor:
         dist_reward = actions_dist_triu.sum((-1, -2)) / (info.n_actions * (info.n_actions - 1) / 2.0)  
         # >>> n_samples x n_restarts
 
-    dist_reward = info.dist_weight * dist_reward
+    dist_reward = (info.dist_weight * dist_reward)[..., None, None].expand_as(batch_yis)
 
     # sum over samples from posterior predictive
     total_cost = 0 # TODO: Total cost
     result = batch_yis - total_cost + dist_reward
-
-    result = result.squeeze()
-    avg_result = result
-    while len(avg_result.shape) > 1:
-        avg_result = avg_result.mean(0)
-        
-    return avg_result
+    result = result.squeeze(-1)
+    
+    while len(result.shape) > 2:
+            result = result.mean(0)
+            
+    return result
 
 
 def compute_expectedloss_minmax(model, actions, sampler, info) -> torch.Tensor:

@@ -5,7 +5,7 @@ import copy
 
 def plot_synthfunc_2d(ax, env, config):
     """Plot synthetic function in 2d."""
-    domain_plot = config.domain
+    domain_plot = env.domain
     grid = 0.01
     xpts = np.arange(domain_plot[0][0], domain_plot[0][1], grid)
     ypts = np.arange(domain_plot[1][0], domain_plot[1][1], grid)
@@ -28,14 +28,16 @@ def plot_next_query(ax, next_x):
     next_x = copy.deepcopy(next_x.cpu().detach()).numpy().reshape(-1)
     ax.plot(next_x[0], next_x[1], "o", color="deeppink", markersize=2)
 
-def plot_settings(ax, config):
-    bounds_plot = config.bounds
+def plot_settings(ax, env, config):
+    bounds_plot = env.bounds
     bounds_plot_ext = [bounds_plot[0] - 0.05, bounds_plot[1] + 0.05]
     ax.set(
         xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_ext, ylim=bounds_plot_ext
     )
 
     # Set title
+    if config.algo == "hes":
+        title = "HES"
     if config.algo == "hes_vi":
         title = "HES VI"
     if config.algo == "hes_mc":
@@ -63,7 +65,7 @@ def plot_settings(ax, config):
 def plot_action_samples(ax, action_samples, config):
     action_samples = copy.deepcopy(action_samples)
     action_samples = action_samples.reshape(
-        -1, config.n_actions, config.n_dim
+        -1, config.n_actions, config.x_dim
     )
     for x_actions in action_samples:
         lines2d = ax.plot(
@@ -136,21 +138,21 @@ def plot_spotlight(ax, config, previous_x):
     )
     ax.add_patch(splotlight)
 
-def plot_topk(config, data, iteration, next_x, previous_x, actions, eval=False):
+def plot_topk(config, env, buffer, iteration, next_x, previous_x=None, actions=None, eval=False):
     """Plotting for topk."""
     if iteration in config.plot_iters:
         fig, ax = plt.subplots(figsize=(6, 6))
 
-        # TODO: Fix missing env
-        # plot_function_contour(ax, env, config)
-        plot_data(ax, data)
-        plot_action_samples(ax, actions, config)
+        plot_function_contour(ax, env, config)
+        plot_data(ax, buffer)
+        if actions is not None:
+            plot_optimal_action(ax, actions, config)
         plot_next_query(ax, next_x)
-        if config.r:
+        if config.r and previous_x is not None:
             plot_spotlight(ax, config, previous_x)
-        plot_settings(ax, config)
+        plot_settings(ax, env, config)
 
         # Save plot and close
-        fig_name = f"{config.save_dir}/topk{'_eval' if eval else ''}_{iteration}"
+        fig_name = f"{config.save_dir}/topk{'_eval' if eval else ''}_{iteration}.png"
         plt.savefig(fig_name, format="png")
         plt.close(fig)

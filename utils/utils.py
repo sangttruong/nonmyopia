@@ -4,18 +4,20 @@ from torch import nn
 import torch.nn.functional as F
 import pickle
 from argparse import Namespace
+from tqdm import tqdm
 
+from utils.plot import plot_topk
 
 def generate_initial_data(env, config):
     data_x = torch.tensor(np.array(
             [np.random.uniform(dom[0], dom[1], config.n_initial_points) for dom in env.domain]
-        ).T, device=config.device, dtype=config.torch_dtype
+        ).T, dtype=config.torch_dtype
     )
     
     data_y = env.func(data_x)  # n x 1
     if config.func_is_noisy:
         data_y = data_y + config.func_noise * torch.randn_like(
-            data_y, config.device, config.torch_dtype
+            data_y, config.torch_dtype
         )
     data = Namespace(x=data_x, y=data_y)
     return data
@@ -52,3 +54,25 @@ def get_init_data(
     init_data.y = init_data.y[:crop_idx]
 
     return init_data
+
+
+def eval_topk(config, env, actor, buffer, iteration):
+    """Return evaluation metric."""
+    eval_metric, optimal_actions = actor.get_topK_actions(
+        (buffer.x[-config.n_restarts:], buffer.y[-config.n_restarts:])
+    )
+    eval_metric = eval_metric.detach().cpu()
+    optimal_actions = optimal_actions.detach().cpu()
+    
+    # Plot optimal_action in special eval plot here
+    plot_topk(config=config,
+              env=env,
+              buffer=buffer,
+              iteration=iteration,
+              next_x=buffer.x[-1],
+              previous_x=buffer.x[-2],
+              actions=optimal_actions,
+              eval=True)
+
+    # Return eval_metric and eval_data (or None)
+    return eval_metric.numpy().tolist(), optimal_actions.numpy().tolist()

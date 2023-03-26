@@ -13,6 +13,8 @@ from models.compute_expected_loss import (
     compute_expectedloss_pbest,
     compute_expectedloss_bestofk,
 )
+from utils.plot import plot_topk
+from utils.utils import eval_topk
 
 
 class Parameters:
@@ -39,7 +41,7 @@ class Parameters:
         self.seed_synthfunc = 1
         self.x_dim = 2
         self.y_dim = 1
-        self.lookahead_steps = 10
+        self.lookahead_steps = 12
         self.n_initial_points = 10
         self.local_init = True
         self.n_iterations = 100
@@ -55,14 +57,14 @@ class Parameters:
         self.num_fantasies = [2] * self.lookahead_steps
         self.use_amortized_optimization = True
         self.acq_opt_lr = 0.001 if self.use_amortized_optimization else 0.1
-        self.n_samples = 1
+        self.n_samples = 2
         self.decay_factor = 1
 
         # optimizer
         self.optimizer = "adam"
-        self.acq_opt_iter = 100  # 1000
-        self.n_restarts = 1
-        self.hidden_dim = 32
+        self.acq_opt_iter = 5  # 1000
+        self.n_restarts = 3
+        self.hidden_dim = 64
 
         # amortization
         self.n_layers = 2
@@ -93,17 +95,19 @@ class Parameters:
         # Dataset parameters
         if self.env_name == "SynGP":
             self.n_obs = 50
+            self.learn_hypers = True
             
     def set_task_parms(self):
         if self.task == "topk":
             self.compute_expectedloss_function = compute_expectedloss_topk
-            self.eval_function = None #TODO 
+            self.eval_function = eval_topk #TODO 
             self.final_eval_function = None #TODO
-            self.plot_function = None #TODO
+            self.plot_function = plot_topk #TODO
             self.n_actions = 3
             self.dist_weight = 1 # args.dist_weight
             self.dist_threshold = 0.5 # args.dist_threshold
-
+            self.r = 0.1
+            self.epsilon = 1 # 1: no random reset, 0: random reset
 
         elif self.task == "minmax":
             self.compute_expectedloss_function = compute_expectedloss_minmax
@@ -187,7 +191,4 @@ if __name__ == "__main__":
     env = make_env(parms)
 
     # Run hes trial
-    run(
-        parms=parms,
-        env=env
-    )
+    run(parms=parms, env=env)

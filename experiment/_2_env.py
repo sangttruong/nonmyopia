@@ -43,10 +43,10 @@ class SynGP:
         self.dtype = dtype
         self.initialize()
 
-    @np.vectorize
+    # @np.vectorize
     def vec(self, x, y):
         """Return f on input = (x, y)."""
-        return self((x, y))
+        return np.reshape(self(np.stack((x.flatten(), y.flatten()), axis=-1)), x.shape)
 
     def func(self, x_list):
         """Synthetic function with torch tensor input/output."""
@@ -141,3 +141,17 @@ class SynGP:
             func_output = func_output.reshape(-1)
 
         return func_output
+
+    def set_ground_truth_GP_hyperparameters(self, WM):
+        print(f"config.learn_hypers={self.learn_hypers}, using hypers from config.hypers")
+        # NOTE: GPyTorch outputscale should be set to the SynthFunc alpha squared
+
+        WM.covar_module.base_kernel.lengthscale = [[self.hypers["ls"]]]
+        WM.covar_module.outputscale = self.hypers["alpha"] ** 2
+        WM.likelihood.noise_covar.noise = [self.hypers["sigma"]]
+
+        WM.covar_module.base_kernel.raw_lengthscale.requires_grad_(False)
+        WM.covar_module.raw_outputscale.requires_grad_(False)
+        WM.likelihood.noise_covar.raw_noise.requires_grad_(False)
+
+        return WM
