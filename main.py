@@ -24,6 +24,7 @@ class Parameters:
         self.set_task_parms()
 
         self.device = f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu"
+        print(f"Using device {self.device}")
         self.gpu_id = args.gpu_id
         self.exp_id = args.exp_id
         self.mode = "train"
@@ -39,12 +40,13 @@ class Parameters:
 
         self.seed = 11
         self.seed_synthfunc = 1
-        self.x_dim = 2
+        self.x_dim = 1
         self.y_dim = 1
-        self.lookahead_steps = 12
-        self.n_initial_points = 10
+        self.n_iterations = 30
+        self.lookahead_steps = 10
+        self.lookahead_warmup = self.n_iterations - self.lookahead_steps
+        self.n_initial_points = 1
         self.local_init = True
-        self.n_iterations = 100
         self.n_candidates = 1
         self.func_is_noisy = False
         self.func_noise = 0.1
@@ -57,14 +59,14 @@ class Parameters:
         self.num_fantasies = [2] * self.lookahead_steps
         self.use_amortized_optimization = True
         self.acq_opt_lr = 0.001 if self.use_amortized_optimization else 0.1
-        self.n_samples = 2
+        self.n_samples = 3
         self.decay_factor = 1
 
         # optimizer
         self.optimizer = "adam"
         self.acq_opt_iter = 5  # 1000
-        self.n_restarts = 3
-        self.hidden_dim = 64
+        self.n_restarts = 1
+        self.hidden_dim = 128
 
         # amortization
         self.n_layers = 2
@@ -95,7 +97,7 @@ class Parameters:
         # Dataset parameters
         if self.env_name == "SynGP":
             self.n_obs = 50
-            self.learn_hypers = True
+            self.learn_hypers = False
             
     def set_task_parms(self):
         if self.task == "topk":
@@ -103,10 +105,10 @@ class Parameters:
             self.eval_function = eval_topk #TODO 
             self.final_eval_function = None #TODO
             self.plot_function = plot_topk #TODO
-            self.n_actions = 3
+            self.n_actions = 1
             self.dist_weight = 1 # args.dist_weight
             self.dist_threshold = 0.5 # args.dist_threshold
-            self.r = 0.1
+            self.neighbor_size = 0.1
             self.epsilon = 1 # 1: no random reset, 0: random reset
 
         elif self.task == "minmax":

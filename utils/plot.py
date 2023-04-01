@@ -2,6 +2,24 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import numpy as np
 import copy
+import torch 
+
+color={
+    'C0':'#1f77b4', 
+    'C1':'#ff7f0e', 
+    'C2':'#2ca02c', 
+    'C3':'#d62728', 
+    'C4':'#9467bd', 
+    'C5':'#bcbd22', 
+    'C6':'#e377c2', 
+    'C7':'#17becf', 
+    # 'C8':'#bcbd22', 
+    # 'C9':'#17becf',
+}
+
+figsize = [7, 7]
+plt.rcParams["figure.figsize"] = figsize
+
 
 def plot_synthfunc_2d(ax, env, config):
     """Plot synthetic function in 2d."""
@@ -103,7 +121,7 @@ def plot_action_samples(ax, action_samples, config):
             ax.plot(line_2_x, line_2_y, "--", color=color)
 
 def plot_optimal_action(ax, optimal_action, config):
-    optimal_action = optimal_action.reshape(-1, 2)
+    optimal_action = optimal_action.reshape(-1, config.x_dim)
     for x_action in optimal_action:
         x_action = x_action.squeeze()
         ax.plot(
@@ -130,9 +148,9 @@ def plot_spotlight(ax, config, previous_x):
     previous_x = previous_x.squeeze()
     previous_x = previous_x.cpu().detach().numpy()
     splotlight = plt.Rectangle(
-        (previous_x[0] - config.r, previous_x[1] - config.r),
-        2 * config.r,
-        2 * config.r,
+        (previous_x[0] - config.neighbor_size, previous_x[1] - config.neighbor_size),
+        2 * config.neighbor_size,
+        2 * config.neighbor_size,
         color="b",
         fill=False,
     )
@@ -148,7 +166,7 @@ def plot_topk(config, env, buffer, iteration, next_x, previous_x=None, actions=N
         if actions is not None:
             plot_optimal_action(ax, actions, config)
         plot_next_query(ax, next_x)
-        if config.r and previous_x is not None:
+        if config.neighbor_size and previous_x is not None:
             plot_spotlight(ax, config, previous_x)
         plot_settings(ax, env, config)
 
@@ -156,3 +174,41 @@ def plot_topk(config, env, buffer, iteration, next_x, previous_x=None, actions=N
         fig_name = f"{config.save_dir}/topk{'_eval' if eval else ''}_{iteration}.png"
         plt.savefig(fig_name, format="png")
         plt.close(fig)
+
+def draw_posterior(config, model, train_x, iteration, mode=""):
+    if config.x_dim == 1:
+        test_x = torch.linspace(0, 1, 100).to(config.device)
+        posterior = model.posterior(test_x)
+        test_y = posterior.mean
+        lower, upper = posterior.mvn.confidence_region()
+        plt.plot(
+            test_x.cpu().detach().numpy(),
+            test_y.cpu().detach().numpy(),
+            color['C1'], label='Posterior mean')
+        plt.fill_between(
+            test_x.cpu().detach().numpy(),
+            lower.cpu().detach().numpy(),
+            upper.cpu().detach().numpy(), alpha=0.25,
+            color=color['C2'])
+    elif config.x_dim == 2:
+        grid = 20j
+        test_x = np.mgrid[-1:1:grid, -1:1:grid].reshape(2,-1).T
+        test_x = torch.tensor(test_x).to(config.device)
+        
+        posterior = model.posterior(test_x)
+        
+        test_y = posterior.mean.detach().cpu().numpy()
+        xpts = np.linspace(-1, 1, int(abs(grid)))
+        ypts = np.linspace(-1, 1, int(abs(grid)))
+        X, Y = np.meshgrid(xpts, ypts)
+        resol = int(abs(grid))
+        Z = test_y.reshape(resol, resol).T
+        cf = plt.contourf(X, Y, Z, 40, cmap=cm.coolwarm, zorder=0)
+        cbar = plt.colorbar(cf, fraction=0.046, pad=0.04)
+        plt.scatter(train_x[:, 0], train_x[:, 1], marker='*', color='black')
+    else: 
+        raise
+    
+    fig_name = f"{config.save_dir}/posterior{'_'+mode}_{iteration}.png"
+    plt.savefig(fig_name, format="png")
+    plt.close()

@@ -20,7 +20,7 @@ def compute_expectedloss_topk(model, actions, sampler, info) -> torch.Tensor:
     
     post_pred_dist = [model.posterior(actions[..., k, :]) for k in range(info.n_actions)]
     batch_yis = [sampler(ppd) for ppd in post_pred_dist]
-    batch_yis = torch.stack(batch_yis, dim=-2).mean(dim=0)
+    batch_yis = torch.stack(batch_yis, dim=-2).mean(dim=0).squeeze(-1)
     # >> Tensor[*[n_samples]*i, n_restarts, 1, 1]
 
     # compute pairwise-distance d(a_i, a_j) for the diversity
@@ -37,14 +37,13 @@ def compute_expectedloss_topk(model, actions, sampler, info) -> torch.Tensor:
         dist_reward = actions_dist_triu.sum((-1, -2)) / (info.n_actions * (info.n_actions - 1) / 2.0)  
         # >>> n_samples x n_restarts
 
-    dist_reward = (info.dist_weight * dist_reward)[..., None, None].expand_as(batch_yis)
+    dist_reward = (info.dist_weight * dist_reward)
 
     # sum over samples from posterior predictive
     total_cost = 0 # TODO: Total cost
-    result = batch_yis - total_cost + dist_reward
-    result = result.squeeze(-1)
+    result = batch_yis.sum(-1) - total_cost + dist_reward
     
-    while len(result.shape) > 2:
+    while len(result.shape) > 1:
             result = result.mean(0)
             
     return result
