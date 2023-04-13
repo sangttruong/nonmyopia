@@ -1,15 +1,28 @@
 import numpy as np
 import torch
+import random
 from torch import nn
 import torch.nn.functional as F
 import pickle
 from argparse import Namespace
 from tqdm import tqdm
-# from botorch.samplers.base import MCSampler
-# from torch import Tensor
-# from botorch.posteriors import Posterior
 from utils.plot import plot_topk
 
+def l2_cost_function(previous_X, current_X, parms):
+    
+    pass
+
+def splotlight_cost_function(previous_X, current_X, parms):
+    # return 0
+    diff = torch.sqrt(torch.pow(current_X - previous_X, 2).sum(-1))
+    nb_idx = diff < 0.1
+    diff = diff * (1 - nb_idx.float()) * 100
+    return diff
+
+def stochastic_cost_function(previous_X, current_X, parms):
+    
+    pass
+    
 def sang_sampler(num_samples=5):
     def sampling(posterior):
         assert num_samples >= 1
@@ -18,7 +31,7 @@ def sang_sampler(num_samples=5):
         sample = []
         mean = posterior.mean
         std = torch.sqrt(posterior.variance)
-        std_coeff = np.linspace(0, 1, num_samples//2 + 1)
+        std_coeff = np.linspace(0, 2, num_samples//2 + 1)
         for s in std_coeff:
             if s == 0: sample.append(mean)
             else:
@@ -28,44 +41,6 @@ def sang_sampler(num_samples=5):
         out = torch.stack(sample, dim=0)
         return out
     return sampling
-# class NormalMCSampler(MCSampler):
-#     r"""Base class for samplers producing (possibly QMC) N(0,1) samples.
-
-#     Subclasses must implement the `_construct_base_samples` method.
-#     """
-
-#     def forward(self, posterior: Posterior) -> Tensor:
-#         r"""Draws MC samples from the posterior.
-
-#         Args:
-#             posterior: The posterior to sample from.
-
-#         Returns:
-#             The samples drawn from the posterior.
-#         """
-#         self._construct_base_samples(posterior=posterior)
-#         samples = posterior.rsample_from_base_samples(
-#             sample_shape=self.sample_shape,
-#             base_samples=self.base_samples.expand(
-#                 self._get_extended_base_sample_shape(posterior=posterior)
-#             ),
-#         )
-#         return samples
-
-#     def _construct_base_samples(self, posterior: Posterior) -> None:
-#         r"""Generate base samples (if necessary).
-
-#         This function will generate a new set of base samples and register the
-#         `base_samples` buffer if one of the following is true:
-
-#         - the MCSampler has no `base_samples` attribute.
-#         - the output of `_get_collapsed_shape` does not agree with the shape of
-#             `self.base_samples`.
-
-#         Args:
-#             posterior: The Posterior for which to generate base samples.
-#         """
-#         pass  # pragma: no cover
 
 def generate_initial_data(env, config):
     data_x = torch.tensor(np.array(
@@ -82,17 +57,13 @@ def generate_initial_data(env, config):
     return data
         
 def set_seed(seed):
-    """
-    Set random seed at a given iteration, using seed and iteration (both positive
-    integers) as inputs.
-    """
-    # First set initial random seed
-    torch.manual_seed(seed=seed)
+    random.seed(seed)
+    # torch.backends.cudnn.deterministic=True
+    # torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
-
-    # Then multiply iteration with a random integer and set as new seed
-    torch.manual_seed(seed=seed)
-    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def get_init_data(

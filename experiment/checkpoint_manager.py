@@ -35,3 +35,10 @@ def make_save_dir(config):
 
     config.save_dir = str(dir_path)
     print(f"Created save_dir: {config.save_dir}")
+    
+    # Save config to save_dir as parameters.json
+    config_path = dir_path / "parameters.json"
+    with open(str(config_path), "w") as file_handle:
+        config_dict = str(config)
+        file_handle.write(config_dict)
+    

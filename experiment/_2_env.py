@@ -9,12 +9,7 @@ def make(parms):
     # TODO: for other synthetic function like Alpine, import from BoTorch
     
     if parms.env_name == "SynGP":
-        sf = SynGP(
-            seed=parms.seed_synthfunc,
-            x_dim=parms.x_dim,
-            n_obs=parms.n_obs, 
-            dtype=parms.torch_dtype
-        )
+        sf = SynGP(parms=parms)
 
     elif parms.env_name == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
@@ -29,18 +24,15 @@ def make(parms):
 class SynGP:
     """Synthetic functions defined by draws from a Gaussian process."""
 
-    def __init__(self, seed=12, x_dim=2, n_obs=50, dtype=None):
-
-        self.learn_hypers = False
-        self.bounds = [-1, 1]
-        self.domain = [self.bounds] * x_dim
-        self.n_obs = 50
-
-
-        self.seed = seed
-        self.hypers = {"ls": 0.1, "alpha": 2.0, "sigma": 1e-2, "n_dimx": x_dim}
-        self.n_obs = n_obs
-        self.dtype = dtype
+    def __init__(self, parms):
+        self.parms = parms
+        self.learn_hypers = self.parms.learn_hypers
+        self.bounds = self.parms.bounds
+        self.domain = [self.bounds] * self.parms.x_dim
+        self.seed = self.parms.seed_synthfunc
+        self.hypers = {"ls": 0.1, "alpha": 2.0, "sigma": 1e-2, "n_dimx": self.parms.x_dim}
+        self.n_obs = self.parms.n_obs
+        self.dtype = self.parms.torch_dtype
         self.initialize()
 
     # @np.vectorize

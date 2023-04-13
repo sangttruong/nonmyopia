@@ -1,7 +1,7 @@
 import torch
 
 
-def compute_expectedloss_topk(model, actions, sampler, info) -> torch.Tensor:
+def compute_expectedloss_topk(model, actions, sampler, info, total_cost) -> torch.Tensor:
     r"""
     Evaluate a batch of H-entropy acquisition function for top-K with diversity.
     Note that the model object `model` here is the result of fantasization
@@ -14,7 +14,7 @@ def compute_expectedloss_topk(model, actions, sampler, info) -> torch.Tensor:
     For a given function f and action a, the loss function is defined as
         l(f, a) = \sum_i f(a_i) + \sum_{1 \leq i \leq j \leq k} d(a_i, a_j)
     Then the corresponding acquisition function is defined as
-        E_{p(y|x,D)} E_{f|D_1} [ l(f, a) ]
+        E_{p(y|x,D)} E_{f|D_1} [ l(f, a) + c_t ]
     Value of the acquisition function is approximated using Monte Carlo.
     """
     
@@ -40,13 +40,11 @@ def compute_expectedloss_topk(model, actions, sampler, info) -> torch.Tensor:
     dist_reward = (info.dist_weight * dist_reward)
 
     # sum over samples from posterior predictive
-    total_cost = 0 # TODO: Total cost
-    result = batch_yis.sum(-1) - total_cost + dist_reward
-    
-    while len(result.shape) > 1:
-            result = result.mean(0)
+    E_p = batch_yis.sum(-1) + dist_reward - total_cost
+    while len(E_p.shape) > 1:
+            E_p = E_p.mean(0)
             
-    return result
+    return E_p
 
 
 def compute_expectedloss_minmax(model, actions, sampler, info) -> torch.Tensor:

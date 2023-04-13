@@ -25,20 +25,16 @@ class qMultiStepEHIG(nn.Module):
     def get_optimization_variables(self, step: int, Xy = None, hidden_state=None):
         if self.parms.use_amortized_optimization:
             out1 = self.maps[0](Xy)
-            out1 = torch.relu(out1)
-            
-            # out1 = torch.tanh(out1)
+            out1 = torch.tanh(out1)
             
             out2 = self.maps[1](out1)
-            # out2 = torch.tanh(out2)
-            
             out_hidden = self.maps[2](out2, hidden_state)
             
             out3 = self.maps[3](torch.cat((out_hidden, out2), dim=-1))
-            out3 = torch.relu(out3)
+            out3 = torch.tanh(out3)
 
-            
             out4 = self.maps[4](torch.cat((out3, out1), dim=-1))
+            out4 = self.maps[7](out4)
             return out4, out_hidden
         
         else:
@@ -47,49 +43,30 @@ class qMultiStepEHIG(nn.Module):
     def get_actions(self, Xy = None, hidden_state=None):       
         if self.parms.use_amortized_optimization:
             out1 = self.maps[0](Xy)
-            out1 = torch.relu(out1)
+            out1 = torch.tanh(out1)
             
             out2 = self.maps[1](out1)
-            # out2 = torch.tanh(out2)
-            
             out_hidden = self.maps[2](out2, hidden_state)
             
             out3 = self.maps[5](torch.cat((out_hidden, out2), dim=-1))
-            out3 = torch.relu(out3)
+            out3 = torch.tanh(out3)
             
             out4 = self.maps[6](torch.cat((out3, out1), dim=-1))
+            out4 = self.maps[7](out4)
             return out4, out_hidden
         else:
-            return self.maps[self.lookahead_steps], hidden_state          
+            return self.maps[self.lookahead_steps], hidden_state   
     
-    def constraint(self, X, prev_X, neighbor_size=0.1):
-        X = torch.sigmoid(X) * (neighbor_size*2) + (prev_X - neighbor_size)
-        if torch.any(X < -1) or torch.any(X > 1):
-            return torch.clamp(X, -1, 1)
-        return X
-    
-    def forward(self, previous_Xy, previous_hidden_state, return_first=False, return_actions=False):
-        # previous_Xy = torch.rand(
-        #     self.parms.n_restarts, 
-        #     self.parms.x_dim + self.parms.y_dim, 
-        #     device=self.parms.device
-        # ).double()
-        # # >>> (n_samples * n_restarts) * seq_length * dim
+    def forward(self, previous_Xy, previous_hidden_state, previous_cost,
+                return_first=False, return_actions=False, return_X=False):
         
-        # previous_hidden_state = torch.zeros(
-        #     self.parms.n_restarts,
-        #     self.parms.hidden_dim,
-        #     device=self.parms.device
-        # ).double()
-        
-        previous_Xy = previous_Xy.reshape(self.parms.n_restarts, self.parms.x_dim + self.parms.y_dim)
-        # if not (return_first and return_actions):
-        #     fantasized_model = copy.deepcopy(self.model)
-        # else:
-        #     fantasized_model = self.model
+        previous_Xy = previous_Xy.reshape(self.parms.n_restarts, 
+                                          self.parms.x_dim + self.parms.y_dim)
             
         fantasized_model = copy.deepcopy(self.model)
         first_X = first_hidden_state = None
+        total_cost = previous_cost
+        X_returned = []
         
         for step in tqdm(range(self.lookahead_steps), desc='Looking ahead'):
             # condition on X[step], then sample, then condition on (x, y)
@@ -98,14 +75,18 @@ class qMultiStepEHIG(nn.Module):
                 step=step, Xy=previous_Xy, hidden_state=previous_hidden_state
             )
             
-            X = self.constraint(X, previous_Xy[:, :self.parms.x_dim])
-            
             if step == 0 and return_first:
                 first_X = X
                 first_hidden_state = hidden_state
                 
+            # Calculate cost
+            total_cost = total_cost + self.parms.cost_function(previous_Xy[:, :self.parms.x_dim], X, self.parms)
+            total_cost = total_cost[None, ...].expand(self.parms.n_samples, -1).reshape(-1)
+            
             new_shape = [self.parms.n_samples] * step + [self.parms.n_restarts, self.parms.x_dim]
             X = X.reshape(*new_shape)
+            if return_X:
+                X_returned.append(X)
             # >>> num_x_{step} * x_dim
             
             # Sample posterior
@@ -113,7 +94,7 @@ class qMultiStepEHIG(nn.Module):
             ys = self.sampler(ppd)
             # >>> n_samples * num_x_{step} * y_dim
             
-            X_expanded_shape = [ys.shape[0]] + [-1] * (len(new_shape))
+            X_expanded_shape = [ys.shape[0]] + [-1] * len(new_shape)
             X_expanded = X[None, ...].expand(*X_expanded_shape)
             Xy = torch.cat((X_expanded, ys), dim=-1)
             # >>> n_samples * num_x_{step} * 1 * dim
@@ -134,20 +115,27 @@ class qMultiStepEHIG(nn.Module):
         
         # Compute Top-K actions
         actions, hidden_state = self.get_actions(Xy=previous_Xy, hidden_state=previous_hidden_state)
-        actions = actions.reshape(-1, self.parms.n_actions, self.parms.x_dim)
-        actions = [self.constraint(actions[:, i], previous_Xy[:, :self.parms.x_dim])[..., None, :]
-                   for i in range(self.parms.n_actions)]
-        actions = torch.cat(actions, dim=-2)
-        
+       
+        new_shape = [-1, self.parms.n_actions, self.parms.x_dim]
+        actions = actions.reshape(*new_shape) 
+        for ai in range(self.parms.n_actions):
+            total_cost = total_cost + self.parms.cost_function(previous_Xy[:, :self.parms.x_dim], actions[..., ai, :], self.parms)
+
         new_shape = [self.parms.n_samples] * self.lookahead_steps \
                   + [self.parms.n_restarts, self.parms.n_actions, self.parms.x_dim]
         actions = actions.reshape(*new_shape)
+        
+        new_shape = [self.parms.n_samples] * self.lookahead_steps \
+                  + [self.parms.n_restarts]
+        total_cost = total_cost.reshape(*new_shape)
+        
         
         acqf_values = self.parms.compute_expectedloss_function(
             model=fantasized_model, 
             actions=actions, 
             sampler=self.sampler, 
-            info=self.parms
+            info=self.parms,
+            total_cost=total_cost
         )
         # >>> batch number of x_0
         
@@ -160,29 +148,37 @@ class qMultiStepEHIG(nn.Module):
         
         if return_actions:
             return_dict['actions'] = actions
+            
+        if return_X:
+            return_dict['X'] = X_returned
         
         return return_dict
         
-    def get_next_X_and_optimal_actions(self, previous_Xy, previous_hidden_state):
-        return_dict = self.forward(
-            previous_Xy=previous_Xy,
-            previous_hidden_state=previous_hidden_state,
-            return_first=True,
-            return_actions=True
-        )
+    def get_next_X_and_optimal_actions(self, return_dict, previous_Xy, previous_cost):
+        # return_dict = self.forward(
+        #     previous_Xy=previous_Xy,
+        #     previous_hidden_state=previous_hidden_state,
+        #     previous_cost=previous_cost,
+        #     return_first=True,
+        #     return_actions=True
+        # )
         
         selected_restart = torch.argmax(return_dict["acqf_values"])
         next_X = return_dict["first_X"][selected_restart].reshape(1, self.parms.x_dim)
         hidden_state = return_dict["first_hidden_state"][selected_restart:selected_restart+1].expand(self.parms.n_restarts, -1)
         
+        # Calculate new cost
+        total_cost = previous_cost + self.parms.cost_function(previous_Xy[:, :self.parms.x_dim], next_X, self.parms)
+        
         topK_actions = return_dict["actions"][..., selected_restart, :, :].reshape(-1, self.parms.n_actions, self.parms.x_dim)    
         topK_values = return_dict["acqf_values"][selected_restart].reshape(-1, 1)
         
         return {
-            "next_X": next_X.detach(),
-            "hidden_state": hidden_state.detach(),
-            "optimal_actions": topK_actions.detach(),
-            "acqf_values": topK_values.detach(),
-            "selected_restart": selected_restart.detach()
+            "cost": total_cost.detach().cpu(),
+            "next_X": next_X.detach().cpu(),
+            "acqf_values": topK_values.detach().cpu(),
+            "hidden_state": hidden_state.detach().cpu(),
+            "optimal_actions": topK_actions.detach().cpu(),
+            "selected_restart": selected_restart.detach().cpu()
         }
         

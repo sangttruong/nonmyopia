@@ -3,6 +3,8 @@ import matplotlib.cm as cm
 import numpy as np
 import copy
 import torch 
+from tueplots import bundles
+plt.rcParams.update(bundles.iclr2023())
 
 color={
     'C0':'#1f77b4', 
@@ -24,7 +26,7 @@ plt.rcParams["figure.figsize"] = figsize
 def plot_synthfunc_2d(ax, env, config):
     """Plot synthetic function in 2d."""
     domain_plot = env.domain
-    grid = 0.01
+    grid = 0.02
     xpts = np.arange(domain_plot[0][0], domain_plot[0][1], grid)
     ypts = np.arange(domain_plot[1][0], domain_plot[1][1], grid)
     X, Y = np.meshgrid(xpts, ypts)
@@ -122,16 +124,15 @@ def plot_action_samples(ax, action_samples, config):
 
 def plot_optimal_action(ax, optimal_action, config):
     optimal_action = optimal_action.reshape(-1, config.x_dim)
-    for x_action in optimal_action:
-        x_action = x_action.squeeze()
-        ax.plot(
-            x_action[0],
-            x_action[1],
+    ax.plot(
+            optimal_action[:, 0],
+            optimal_action[:, 1],
             "*",
             mfc="gold",
             mec="darkgoldenrod",
             markersize=4,
         )
+        
 
 def plot_groundtruth_optimal_action(ax, config):
 
@@ -158,6 +159,7 @@ def plot_spotlight(ax, config, previous_x):
 
 def plot_topk(config, env, buffer, iteration, next_x, previous_x=None, actions=None, eval=False):
     """Plotting for topk."""
+    print("Drawing topk...")
     if iteration in config.plot_iters:
         fig, ax = plt.subplots(figsize=(6, 6))
 
@@ -175,21 +177,48 @@ def plot_topk(config, env, buffer, iteration, next_x, previous_x=None, actions=N
         plt.savefig(fig_name, format="png")
         plt.close(fig)
 
-def draw_posterior(config, model, train_x, iteration, mode=""):
+def draw_posterior(config, env, model, buffer, iteration, optimal_actions=None):
+    print("Drawing posterior...")
     if config.x_dim == 1:
-        test_x = torch.linspace(0, 1, 100).to(config.device)
+        if optimal_actions is not None:
+            optimal_actions = optimal_actions.reshape(-1, config.x_dim)
+            best_a = optimal_actions.numpy()
+            plt.vlines(best_a, -5, 5, color=color['C6'], label='optimal action', alpha=0.1)
+        
+        plt.vlines(buffer.x[-2], -5, 5, color='black', label='current location')
+        plt.vlines(buffer.x[-2]-0.1, -5, 5, color='black', linestyle='--')
+        plt.vlines(buffer.x[-2]+0.1, -5, 5, color='black', linestyle='--')
+        plt.vlines(buffer.x[-1], -5, 5, color='red', label='optimal query')
+
+        train_x = torch.linspace(-1, 1, 100)
+        train_y = env.func(train_x)
+        plt.plot(
+            train_x.cpu().numpy(), 
+            train_y.cpu().numpy(), 
+            'black', alpha=0.2, label='Ground truth')
+
+        # compute posterior
+        test_x = torch.linspace(-1, 1, 100).to(config.device)
         posterior = model.posterior(test_x)
         test_y = posterior.mean
         lower, upper = posterior.mvn.confidence_region()
+
         plt.plot(
             test_x.cpu().detach().numpy(),
             test_y.cpu().detach().numpy(),
             color['C1'], label='Posterior mean')
+
         plt.fill_between(
             test_x.cpu().detach().numpy(),
             lower.cpu().detach().numpy(),
             upper.cpu().detach().numpy(), alpha=0.25,
             color=color['C2'])
+        
+        # Scatter plot of all points using buffer.x and buffer.y with gradient color from red to blue indicating the order of point in list
+        plt.scatter(buffer.x, buffer.y, c=range(len(buffer.x)), cmap='Reds', marker='*', zorder=99)
+        # plt.tight_layout()
+        plt.ylim(-5, 5)
+        
     elif config.x_dim == 2:
         grid = 20j
         test_x = np.mgrid[-1:1:grid, -1:1:grid].reshape(2,-1).T
@@ -205,10 +234,43 @@ def draw_posterior(config, model, train_x, iteration, mode=""):
         Z = test_y.reshape(resol, resol).T
         cf = plt.contourf(X, Y, Z, 40, cmap=cm.coolwarm, zorder=0)
         cbar = plt.colorbar(cf, fraction=0.046, pad=0.04)
-        plt.scatter(train_x[:, 0], train_x[:, 1], marker='*', color='black')
+        plt.scatter(buffer.x[:, 0], buffer.x[:, 1], marker='*', color='black')
+        
     else: 
         raise
     
-    fig_name = f"{config.save_dir}/posterior{'_'+mode}_{iteration}.png"
+    fig_name = f"{config.save_dir}/posterior_{iteration}.png"
+    plt.savefig(fig_name, format="png")
+    plt.close()
+    
+    
+def draw_losses(config, losses, iteration):
+    plt.plot(list(range(len(losses))), losses, label=f'Loss by iteration {iteration}')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.savefig(f"{config.save_dir}/losses_{iteration}.png", format="png")
+    plt.close()
+    
+def draw_metric(save_dir, metrics, algos):
+    if isinstance(metrics, list):
+        metrics = np.array(metrics)
+        
+    plt.figure(figsize=(7, 7))
+    for i, algo in enumerate(algos):
+        mean = np.mean(metrics[i], axis=0)
+        lower = np.min(metrics[i], axis=0)
+        upper = np.max(metrics[i], axis=0)
+        plt.plot(list(range(1, mean.shape[0]+1)), mean, label=algo)
+        
+        plt.fill_between(
+            list(range(1, mean.shape[0]+1)),
+            lower,
+            upper, 
+            alpha=0.25
+        )
+    
+    plt.xlabel("Iteration")
+    plt.ylabel("Eval metric")
+    fig_name = f"{save_dir}/eval_metric.png"
     plt.savefig(fig_name, format="png")
     plt.close()
