@@ -1,17 +1,18 @@
-from pathlib import Path
 from argparse import Namespace
+from pathlib import Path
+
 import dill as pickle
+
 
 def pickle_trial_info(config, data, eval_metric_list, optimal_action_list):
     """Save trial info as a pickle in directory specified by config."""
     # Build trial info Namespace
-    data = Namespace(x=data.x.cpu().detach().numpy(),
-                     y=data.y.cpu().detach().numpy())
+    data = Namespace(x=data.x.cpu().detach().numpy(), y=data.y.cpu().detach().numpy())
     trial_info = Namespace(
-        config=config, 
-        data=data, 
-        eval_metric_list=eval_metric_list, 
-        optimal_action_list=optimal_action_list
+        config=config,
+        data=data,
+        eval_metric_list=eval_metric_list,
+        optimal_action_list=optimal_action_list,
     )
 
     # Pickle trial info
@@ -35,10 +36,9 @@ def make_save_dir(config):
 
     config.save_dir = str(dir_path)
     print(f"Created save_dir: {config.save_dir}")
-    
+
     # Save config to save_dir as parameters.json
     config_path = dir_path / "parameters.json"
     with open(str(config_path), "w") as file_handle:
         config_dict = str(config)
         file_handle.write(config_dict)
-    

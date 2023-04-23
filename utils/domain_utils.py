@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def unif_random_sample_domain(domain, n=1):
     """Draws a sample uniformly at random from domain (a list of tuple bounds)."""
     list_of_arr_per_dim = [np.random.uniform(dom[0], dom[1], n) for dom in domain]
