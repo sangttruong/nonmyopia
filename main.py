@@ -1,12 +1,21 @@
+#!/usr/bin/env python3
+# Copyright (c) Stanford University and affiliates.
+#
+# This source code is licensed under the MIT license found in the
+# LICENSE file in the root directory of this source tree.
+
+r"""Run the main experiments."""
+
 import copy
-import time
+from pathlib import Path
 import torch
 
 from threading import Thread
 from argparse import ArgumentParser
+import dill as pickle
+from botorch.test_functions.synthetic import Ackley
 
-from experiment._1_exp import run
-from experiment._2_env import make as make_env
+from run import run
 from experiment.checkpoint_manager import make_save_dir
 from utils.plot import draw_metric, draw_posterior
 from models.EHIG import qCostFunctionSpotlight, qLossFunctionTopK
@@ -30,9 +39,6 @@ class Parameters:
         self.algo = args.algo
         self.env_name = args.env_name
 
-        # Cost structure
-        self.spotlight_cost_radius = None
-
         self.seed = args.seed
         self.seed_synthfunc = 1
         self.x_dim = 2
@@ -40,7 +46,6 @@ class Parameters:
         self.bounds = [-1, 1]
         self.n_iterations = 10
         self.lookahead_steps = 1
-        self.lookahead_warmup = self.n_iterations - self.lookahead_steps
         self.n_initial_points = 10
         self.local_init = True
         self.n_candidates = 1
@@ -108,7 +113,8 @@ class Parameters:
 
             self.loss_function_class = qLossFunctionTopK
             self.loss_function_hyperparameters = dict(
-                dist_weight=1, dist_threshold=0.5,
+                dist_weight=1,
+                dist_threshold=0.5,
             )
             self.cost_function_class = qCostFunctionSpotlight
             self.cost_function_hyperparameters = dict(radius=0.1)
@@ -165,6 +171,41 @@ class Parameters:
         return "\n".join(output)
 
 
+def make_env(env_name, x_dim, bounds):
+    if env_name == "Ackley":
+        f_ = Ackley(dim=x_dim, negate=False)
+        f_.bounds[0, :].fill_(bounds[0])
+        f_.bounds[1, :].fill_(bounds[1])
+        return f_
+
+    elif env_name == "chemical":
+        with open("examples/semisynthetic.pt", "rb") as file_handle:
+            return pickle.load(file_handle)
+    else:
+        raise NotImplementedError
+
+def make_save_dir(config):
+    """Create save directory safely (without overwriting directories), using config."""
+    init_dir_path = Path(config.save_dir)
+    dir_path = Path(str(init_dir_path))
+
+    for i in range(50):
+        try:
+            dir_path.mkdir(parents=True, exist_ok=False)
+            break
+        except FileExistsError:
+            dir_path = Path(str(init_dir_path) + "_" + str(i).zfill(2))
+
+    config.save_dir = str(dir_path)
+    print(f"Created save_dir: {config.save_dir}")
+
+    # Save config to save_dir as parameters.json
+    config_path = dir_path / "parameters.json"
+    with open(str(config_path), "w") as file_handle:
+        config_dict = str(config)
+        file_handle.write(config_dict)
+
+
 if __name__ == "__main__":
     # Parse args
     parser = ArgumentParser()
@@ -197,9 +238,9 @@ if __name__ == "__main__":
 
             # Init environment
             env = make_env(
-                env_name=local_parms.env_name, 
-                x_dim=local_parms.x_dim, 
-                bounds=local_parms.bounds
+                env_name=local_parms.env_name,
+                x_dim=local_parms.x_dim,
+                bounds=local_parms.bounds,
             )
             env = env.to(
                 dtype=local_parms.torch_dtype,
