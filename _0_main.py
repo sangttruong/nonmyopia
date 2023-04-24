@@ -17,7 +17,7 @@ from botorch.test_functions.synthetic import Ackley
 
 from run import run
 from experiment.checkpoint_manager import make_save_dir
-from utils.plot import draw_metric, draw_posterior
+from utils.plot import draw_metric
 from models.EHIG import qCostFunctionSpotlight, qLossFunctionTopK
 
 
@@ -28,19 +28,14 @@ class Parameters:
         self.set_task_parms()
 
         self.device = f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu"
-        print(f"Using device {self.device}")
         self.gpu_id = args.gpu_id
         self.exp_id = args.exp_id
-        self.mode = "train"
-        self.check_dir = "experiments"
         self.save_dir = f"./results/exp_{self.exp_id:03d}"
         self.torch_dtype = torch.double
 
         self.algo = args.algo
         self.env_name = args.env_name
-
         self.seed = args.seed
-        self.seed_synthfunc = 1
         self.x_dim = 2
         self.y_dim = 1
         self.bounds = [-1, 1]
@@ -59,55 +54,28 @@ class Parameters:
         self.lookahead_batch_sizes = [2] * self.lookahead_steps
         self.num_fantasies = [2] * self.lookahead_steps
 
-        if self.algo == "HES":
-            self.use_amortized_optimization = True
-        else:
-            self.use_amortized_optimization = False
-
-        self.acq_opt_lr = 0.05 if self.use_amortized_optimization else 1e-3
+        self.amortized = True if self.algo == "HES" else False
+        self.acq_opt_lr = 0.05 if self.amortized else 1e-3
         self.n_samples = 64
         self.decay_factor = 1
 
         # Optimizer
-        # self.optimizer = "adam"
-        self.acq_opt_iter = 1000 if self.use_amortized_optimization else 1000
-        # self.acq_opt_iter = 500 if self.use_amortized_optimization else 3000
+        self.acq_opt_iter = 1000 if self.amortized else 1000
         self.acq_warmup_iter = self.acq_opt_iter // 20
         self.acq_earlystop_iter = int(self.acq_opt_iter * 0.4)
         self.n_restarts = 1
+        self.eta_min = 0.0001
+        self.T_max = 100
 
         # Amortization
         self.hidden_dim = 128
         self.n_layers = 2
         self.activation = "elu"
         self.hidden_coeff = 4
-
         self.init_noise_thredhold = 0.01
-
-        # Resampling
-        """When n_resampling_max == 1 and n_resampling_improvement_threadhold is small, we have 
-        the orange curve. n_resampling_max is large and n_resampling_improvement_threadhold is
-        large, we have the pink curve (closer to stochastic gradient descent). We can interpolate
-        between these 2 options by setting both hyperparameters to some moderate value. """
-        self.n_resampling_max = 1
-        self.n_resampling_improvement_threadhold = 0.01
-
-        # Patients
-        self.max_patient = 5000
-        self.max_patient_resampling = 5
-
-        # annealing for hes optimizer
-        """When eta_min = acq_opt_lr, the learning rate is constant at acq_opt_lr
-        large T_max corresponds to slow annealing
-        """
-        self.eta_min = 0.0001
-        self.T_max = 100
 
     def set_task_parms(self):
         if self.task == "topk":
-            self.eval_function = draw_posterior  # TODO
-            self.final_eval_function = None  # TODO
-            self.plot_function = None  # TODO
             self.n_actions = 1
             self.epsilon = 1  # 1: no random reset, 0: random reset
 
@@ -118,49 +86,8 @@ class Parameters:
             )
             self.cost_function_class = qCostFunctionSpotlight
             self.cost_function_hyperparameters = dict(radius=0.1)
-
         elif self.task == "minmax":
-            self.eval_function = None  # TODO
-            self.final_eval_function = None  # TODO
-            self.plot_function = None  # TODO
             self.n_actions = 2
-
-        elif self.task == "twovalue":
-            self.eval_function = None  # TODO
-            self.final_eval_function = None  # TODO
-            self.plot_function = None  # TODO
-            self.n_actions = None  # TODO
-
-        elif self.task == "mvs":
-            self.eval_function = None  # TODO
-            self.final_eval_function = None  # TODO
-            self.plot_function = None  # TODO
-            self.n_actions = None  # TODO
-
-        elif self.task == "levelset":
-            self.eval_function = None  # TODO
-            self.final_eval_function = None  # TODO
-            self.plot_function = None  # TODO
-            self.n_actions = None  # TODO
-
-        elif self.task == "multilevelset":
-            self.eval_function = None  # TODO
-            self.final_eval_function = None  # TODO
-            self.plot_function = None  # TODO
-            self.n_actions = None  # TODO
-
-        elif self.task == "pbest":
-            self.eval_function = None  # TODO
-            self.final_eval_function = None  # TODO
-            self.plot_function = None  # TODO
-            self.n_actions = None  # TODO
-
-        elif self.task == "bestofk":
-            self.eval_function = None  # TODO
-            self.final_eval_function = None  # TODO
-            self.plot_function = None  # TODO
-            self.n_actions = None  # TODO
-
         else:
             raise NotImplementedError
 
