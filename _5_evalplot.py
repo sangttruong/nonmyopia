@@ -14,8 +14,7 @@ from tueplots import bundles
 plt.rcParams.update(bundles.iclr2023())
 
 
-def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
-    r"""Evaluate and plot 2D function."""
+def eval(cfg, acqf, func):
     # Quality of the best decision from the current posterior distribution ###
     # Initialize A consistently across fantasies
     A = torch.rand(
@@ -32,8 +31,8 @@ def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
     for i in range(cfg.acq_opt_iter):
         A_ = A.permute(1, 0, 2, 3)
         A_ = torch.sigmoid(A_) * (ba_u - ba_l) + ba_l
-        posterior = qhes.model.posterior(A_)
-        fantasized_outcome = qhes.action_sampler(posterior)
+        posterior = acqf.model.posterior(A_)
+        fantasized_outcome = acqf.action_sampler(posterior)
         # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
         # ... x batch_size x num_actions x 1
 
@@ -41,7 +40,7 @@ def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
         # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
         # ... x batch_size x num_actions
 
-        losses = -qhes.loss_function(A=A_, Y=fantasized_outcome)
+        losses = -acqf.loss_function(A=A_, Y=fantasized_outcome)
         # >>> n_fantasy_at_design_pts x batch_size
 
         loss = losses.mean(dim=0).sum()
@@ -53,12 +52,17 @@ def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
             print(f"Eval optim round: {i}, Loss: {loss.item():.2f}")
 
     A = torch.sigmoid(A) * (ba_u - ba_l) + ba_l
-    eval_metric = qhes.loss_function(A=A, Y=fantasized_outcome)
-    eval_metric = eval_metric[0, 0].cpu().detach().numpy()
-    optimal_action = A[0, 0].cpu().detach().numpy()
-    value = qhes.loss_function(A=A, Y=func(A)[None, ...])[0, 0]
-    value = value.cpu().detach().numpy()
-    data_x = data.x.cpu().detach().numpy()
+    bayes_loss = acqf.loss_function(A=A, Y=fantasized_outcome)
+    bayes_loss = bayes_loss[0, 0].cpu().detach().numpy()
+    bayes_action = A[0, 0].cpu().detach().numpy()
+    real_loss = acqf.loss_function(A=A, Y=func(A)[None, ...])[0, 0]
+    return real_loss, bayes_action
+
+
+def eval_and_plot_2D(func, cfg, acqf, next_x, buffer, iteration):
+    r"""Evaluate and plot 2D function."""
+    real_loss, bayes_action = eval(cfg, acqf, func)
+    data_x = buffer["x"].cpu().detach().numpy()
     next_x = next_x.cpu().detach().numpy()
 
     # Plotting ###############################################################
@@ -81,96 +85,73 @@ def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
     cbar.ax.set_ylabel("$f(x)$", rotation=270, labelpad=20)
 
     # Plot data, optimal actions, next query #################################
-    ax.scatter(data_x[:, 0], data_x[:, 1], label="Data")
-    ax.scatter(optimal_action[:, 0], optimal_action[:, 1], label="Action")
-    ax.scatter(next_x[0], next_x[1], label="Next query")
+    ax.scatter(data_x[:iteration, 0], data_x[:iteration, 1], label="Data")
+    ax.scatter(bayes_action[:, 0], bayes_action[:, 1], label="Action")
+    ax.scatter(next_x[..., 0], next_x[..., 1], label="Next query")
     plt.legend()
     plt.savefig(f"{cfg.save_dir}/{iteration}.pdf")
     plt.close()
 
-    return eval_metric, optimal_action, value
+    return real_loss
 
 
-def eval_and_plot_1D(
-    func, cfg, acqf, next_x, buffer, iteration, optimal_actions=None
-):
+def eval_and_plot_1D(func, cfg, acqf, next_x, buffer, iteration):
     r"""Evaluate and plot 1D function."""
-    if optimal_actions is not None:
-        optimal_actions = optimal_actions.reshape(
-            -1, optimal_actions.shape[-1]
-        )
-        best_a = optimal_actions.numpy()
-        plt.vlines(
-            best_a, -5, 5, color="blue", label="optimal action", alpha=0.02
-        )
+    real_loss, bayes_action = eval(cfg, acqf, func)
+    data_x = buffer["x"].cpu().detach().numpy()
+    data_y = buffer["y"].cpu().detach().numpy()
+    next_x = next_x.cpu().detach().numpy()
 
-    plt.vlines(buffer.x[-2], -5, 5, color="black", label="current location")
-    plt.vlines(buffer.x[-2] - 0.1, -5, 5, color="black", linestyle="--")
-    plt.vlines(buffer.x[-2] + 0.1, -5, 5, color="black", linestyle="--")
-    plt.vlines(buffer.x[-1], -5, 5, color="red", label="optimal query")
+    # Plotting ###############################################################
+    fig, ax = plt.subplots(1, 1)
+    bounds_plot = cfg.bounds
+    y_bounds = (-5, 5)
+    ax.set(xlabel="$x$", ylabel="$y$", xlim=bounds_plot, ylim=y_bounds)
+    title = "$\mathcal{H}_{\ell, \mathcal{A}}$-Entropy Search " + cfg.task
+    ax.set_title(label=title)
 
-    train_x = torch.linspace(-1, 1, 100).reshape(-1, 1).to(cfg.device)
-    train_y = func(train_x)
-    plt.plot(
-        train_x.cpu().numpy(),
-        train_y.cpu().numpy(),
-        "black",
-        alpha=0.2,
-        label="Ground truth",
-    )
-
-    # compute posterior
-    test_x = torch.linspace(-1, 1, 100).to(cfg.device)
-    posterior = acqf.model.posterior(test_x)
+    # Plot function and posterior in 1D #######################################
+    x = torch.linspace(-1, 1, 100).reshape(-1, 1)
+    posterior = acqf.model.posterior(x)
     test_y = posterior.mean
     lower, upper = posterior.mvn.confidence_region()
+    x = x.cpu().detach().numpy()
+    test_y = test_y.cpu().detach().numpy()
+    lower = lower.cpu().detach().numpy()
+    upper = upper.cpu().detach().numpy()
+    plt.plot(x, func(x).numpy(), alpha=0.2, label="Ground truth")
+    plt.plot(x, test_y, label="Posterior mean")
+    plt.fill_between(x, lower, upper, alpha=0.25)
 
-    plt.plot(
-        test_x.cpu().detach().numpy(),
-        test_y.cpu().detach().numpy(),
-        label="Posterior mean",
-    )
-
-    plt.fill_between(
-        test_x.cpu().detach().numpy(),
-        lower.cpu().detach().numpy(),
-        upper.cpu().detach().numpy(),
-        alpha=0.25,
-    )
+    # Plot data, optimal actions, next query #################################
+    plt.vlines(data_x[iteration], -5, 5, color="black", label="current location")
+    plt.vlines(data_x[iteration] - 0.1, -5, 5, color="black", linestyle="--")
+    plt.vlines(data_x[iteration] + 0.1, -5, 5, color="black", linestyle="--")
+    plt.vlines(next_x, -5, 5, color="red", label="optimal query")
+    plt.vlines(bayes_action, -5, 5, color="blue", label="Bayes action")
 
     # Scatter plot of all points using buffer.x and buffer.y with
     # gradient color from red to blue indicating the order of point in list
     plt.scatter(
-        buffer.x,
-        buffer.y,
-        c=range(len(buffer.x)),
+        data_x[:iteration],
+        data_y[:iteration],
+        c=range(iteration),
         cmap="Reds",
         marker="*",
         zorder=99,
     )
-    # plt.tight_layout()
-    plt.ylim(-5, 5)
-    fig_name = f"{cfg.save_dir}/posterior_{iteration}.png"
-    plt.savefig(fig_name, format="png")
+    plt.savefig(f"{cfg.save_dir}/posterior_{iteration}.pdf")
     plt.close()
 
+    return real_loss
 
-def eval_and_plot(config, env, acqf, buffer, iteration, optimal_actions=None):
+
+def eval_and_plot(config, env, acqf, buffer, next_x, iteration):
     r"""Draw the posterior of the model."""
     if config.x_dim == 1:
-        eval_and_plot_1D(
-            env,
-            config,
-            acqf,
-            buffer.x[-1],
-            buffer,
-            iteration,
-            optimal_actions=optimal_actions,
-        )
-
+        eval_and_plot_1D(config, env, acqf, buffer, next_x, iteration)
     elif config.x_dim == 2:
-        eval_and_plot_2D(env, config, acqf, buffer.x[-1], buffer, iteration)
-
+        eval_and_plot_2D(config, env, acqf, buffer, next_x, iteration)
     else:
         raise NotImplementedError
 

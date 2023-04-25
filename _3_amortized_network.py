@@ -38,27 +38,31 @@ class AmortizedNetwork(nn.Module):
         self.hidden_dim = hidden_dim
         self.n_actions = n_actions
         self.output_bounds = output_bounds
-
+        self.p = 0.2
         self.prepro = nn.Sequential(
             nn.Linear(self.input_dim, self.hidden_dim),
             nn.ELU(),
+            nn.Dropout(p=self.p),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ELU(),
+            nn.Dropout(p=self.p),
         )
 
         self.rnn = nn.GRUCell(self.hidden_dim, self.hidden_dim)
 
         self.postpro_A = nn.Sequential(
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
+            nn.ELU(),
+            nn.Dropout(p=self.p),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ELU(),
-            nn.Linear(self.hidden_dim, self.hidden_dim),
-            nn.ELU(),
+            nn.Dropout(p=self.p),
             nn.Linear(self.hidden_dim, self.output_dim * self.n_actions),
             Project2Range(self.output_bounds[0], self.output_bounds[1]),
         )
 
         self.postpro_X = nn.Sequential(
-            nn.Linear(self.hidden_dim, self.hidden_dim),
+            nn.Linear(self.hidden_dim * 2, self.hidden_dim),
             nn.ELU(),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ELU(),
@@ -80,7 +84,7 @@ class AmortizedNetwork(nn.Module):
         postpro = self.postpro_A if return_actions else self.postpro_X
         preprocess_x = self.prepro(x)
         hidden_state = self.rnn(preprocess_x, prev_hid_state)
-        preprocess_x = preprocess_x + hidden_state
+        preprocess_x = torch.cat([preprocess_x, hidden_state], dim=-1)
         return postpro(preprocess_x), hidden_state
 
 

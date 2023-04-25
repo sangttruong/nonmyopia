@@ -14,7 +14,7 @@ from threading import Thread
 
 import dill as pickle
 import torch
-from botorch.test_functions.synthetic import Ackley
+from botorch.test_functions.synthetic import Ackley, Beale, Branin, Hartmann
 from _1_run import run
 from _4_qhes import qCostFunctionSpotlight, qLossFunctionTopK
 from _5_evalplot import draw_metric
@@ -44,49 +44,31 @@ class Parameters:
         self.x_dim = 2
         self.y_dim = 1
         self.bounds = [-1, 1]
-        self.n_iterations = 10
-        self.lookahead_steps = 1
-        self.n_initial_points = 10
+        self.n_iterations = 20
+        self.lookahead_steps = 2
+        self.n_initial_points = 2
         self.func_noise = 0.0
 
-        # self.plot_iters = list(range(0, 101, 1))
-        # self.start_iter = 0
-        # self.local_init = True
-        # self.n_candidates = 1
-
-        # Algorithm parameters
-        self.batch_size = 10
-        self.lookahead_batch_sizes = [2] * self.lookahead_steps
-        self.num_fantasies = [2] * self.lookahead_steps
-        self.amortized = True if self.algo == "HES" else False
-        self.acq_opt_lr = 0.05 if self.amortized else 1e-3
         self.n_samples = 64
-        # self.decay_factor = 1
-        self.acq_opt_iter = 1000 if self.amortized else 1000
-        # self.acq_warmup_iter = self.acq_opt_iter // 20
-        # self.acq_earlystop_iter = int(self.acq_opt_iter * 0.4)
-        self.n_restarts = 1
+        self.amortized = True if self.algo == "HES" else False
+        self.hidden_dim = self.x_dim + self.y_dim
+        self.acq_opt_lr = 0.05 if self.amortized else 1e-3
+        self.acq_opt_iter = 500 if self.amortized else 1000
+        self.n_restarts = 128
         self.eta_min = 0.0001
         self.T_max = 100
-
-        # Amortized network parameters
-        self.hidden_dim = 128
-        self.n_layers = 2
-        self.activation = "elu"
-        self.hidden_coeff = 4
-        self.init_noise_thredhold = 0.01
 
     def set_task_parms(self):
         r"""Set task-specific parameters."""
         if self.task == "topk":
             self.n_actions = 1
             self.loss_function_class = qLossFunctionTopK
-            self.loss_function_hyperparameters = dict(
+            self.loss_func_hypers = dict(
                 dist_weight=1,
                 dist_threshold=0.5,
             )
             self.cost_function_class = qCostFunctionSpotlight
-            self.cost_function_hyperparameters = dict(radius=0.1)
+            self.cost_func_hypers = dict(radius=0.1)
         elif self.task == "minmax":
             self.n_actions = 2
         else:
@@ -104,14 +86,17 @@ def make_env(env_name, x_dim, bounds):
     r"""Make environment."""
     if env_name == "Ackley":
         f_ = Ackley(dim=x_dim, negate=False)
-        f_.bounds[0, :].fill_(bounds[0])
-        f_.bounds[1, :].fill_(bounds[1])
-        return f_
+    elif env_name == "Beale":
+        f_ = Beale(negate=False)    
     elif env_name == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
             return pickle.load(file_handle)
     else:
         raise NotImplementedError
+
+    f_.bounds[0, :].fill_(bounds[0])
+    f_.bounds[1, :].fill_(bounds[1])
+    return f_
 
 
 def make_save_dir(config):
@@ -139,7 +124,7 @@ def make_save_dir(config):
 if __name__ == "__main__":
     # Parse args
     parser = ArgumentParser()
-    parser.add_argument("--seeds", nargs="+", type=int, default=[2, 3])
+    parser.add_argument("--seeds", nargs="+", type=int, default=[2])
     parser.add_argument("--task", type=str, default="topk")
     parser.add_argument("--env_name", type=str, default="Ackley")
     parser.add_argument("--algos", nargs="+", type=str, default=["HES"])
@@ -148,7 +133,6 @@ if __name__ == "__main__":
     parser.add_argument("--n_jobs", type=int, default=1)
     args = parser.parse_args()
 
-    metrics = {}
     list_processes = []
     num_gpus = len(args.gpu_id)
     num_seeds = len(args.seeds)
@@ -178,7 +162,7 @@ if __name__ == "__main__":
             )
 
             # Run trials
-            run(local_parms, env, metrics)
+            real_loss = run(local_parms, env)
 
             # p = Thread(
             #     target=run,
@@ -205,9 +189,6 @@ if __name__ == "__main__":
 
     # for pi in list_alive_processes:
     #     list_processes[pi].join()
-
-    # Convert the metrics to a normal dict
-    metrics = dict(metrics)
 
     # Draw regret curves
     list_metrics = []

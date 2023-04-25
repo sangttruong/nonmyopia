@@ -17,8 +17,8 @@ from botorch.acquisition import (
     qUpperConfidenceBound,
 )
 from botorch.sampling.normal import SobolQMCNormalSampler
-from models.amortized_network import AmortizedNetwork, Project2Range
-from models.EHIG import qMultiStepEHIG
+from _3_amortized_network import AmortizedNetwork, Project2Range
+from _4_qhes import qMultiStepHEntropySearch
 from torch import Tensor
 
 
@@ -32,18 +32,15 @@ class Actor:
             parms (Parameters): A set of hyperparameters
         """
         self.parms = parms
-        if self.parms.use_amortized_optimization:
-            self.maps = (
-                AmortizedNetwork(
-                    input_dim=self.parms.x_dim + self.parms.y_dim,
-                    output_dim=self.parms.x_dim,
-                    hidden_dim=self.parms.hidden_dim,
-                    n_actions=self.parms.n_actions,
-                    output_bounds=self.parms.bounds,
-                )
-                .double()
-                .to(self.parms.device)
+        if self.parms.amortized:
+            self.maps = AmortizedNetwork(
+                input_dim=self.parms.x_dim + self.parms.y_dim,
+                output_dim=self.parms.x_dim,
+                hidden_dim=self.parms.hidden_dim,
+                n_actions=self.parms.n_actions,
+                output_bounds=self.parms.bounds,
             )
+            self.maps = self.maps.double().to(self.parms.device)
 
             self._parameters = list(self.maps.parameters())
 
@@ -51,12 +48,14 @@ class Actor:
             self.maps = []
 
         # Initialize some actor attributes
-        self.total_cost = torch.zeros(
-            1, device=self.parms.device, dtype=torch.double
-        )
         self.lookahead_steps = self.parms.lookahead_steps
 
-    def reset_parameters(self, prev_X: Tensor, prev_y: Tensor, prev_hid_state=None):
+    def reset_parameters(
+        self,
+        prev_X: Tensor,
+        prev_y: Tensor,
+        prev_hid_state: Tensor,
+    ):
         r"""Reset actor parameters.
 
         With amortized version, this function optimizes the
@@ -68,14 +67,10 @@ class Actor:
             prev_X (Tensor): Previous design points
             prev_y (Tensor): Previous observations
         """
-        project2range = Project2Range(
-            self.parms.bounds[0], self.parms.bounds[1]
-        )
+        project2range = Project2Range(self.parms.bounds[0], self.parms.bounds[1])
 
-        if self.parms.use_amortized_optimization:
-            optimizer = torch.optim.AdamW(
-                self._parameters, lr=self.parms.acq_opt_lr
-            )
+        if self.parms.amortized:
+            optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
 
             for _ in range(10):
                 optimizer.zero_grad()
@@ -83,15 +78,18 @@ class Actor:
                     prev_X=prev_X,
                     prev_y=prev_y,
                     prev_hid_state=prev_hid_state,
-                    previous_cost=0,
                     maps=self.maps,
                 )
 
                 loss = 0
                 for i in range(self.lookahead_steps):
-                    X_randomized = torch.rand_like(return_dict["X"][i])
-                    X_randomized = project2range(X_randomized)
-                    loss += (return_dict["X"][i], X_randomized).pow(2).mean()
+                    X_randomized = torch.randn_like(return_dict["X"][i])
+                    # min max scaling
+                    X_randomized = (
+                        X_randomized * (self.parms.bounds[1] - self.parms.bounds[0])
+                        + self.parms.bounds[0]
+                    )
+                    loss += (return_dict["X"][i] - X_randomized).pow(2).mean()
 
                 loss.backward()
                 optimizer.step()
@@ -136,30 +134,27 @@ class Actor:
         """
         if self.parms.algo == "HES":
             nf_design_pts = [self.parms.n_samples] * self.lookahead_steps
-            self.acqf = qMultiStepEHIG(
+            self.acqf = qMultiStepHEntropySearch(
                 model=WM,
                 lookahead_steps=self.lookahead_steps,
                 n_actions=self.parms.n_actions,
                 n_fantasy_at_design_pts=nf_design_pts,
                 n_fantasy_at_action_pts=self.parms.n_samples,
-                maps=self.maps,
                 loss_function_class=self.parms.loss_function_class,
-                loss_function_hyperparameters=self.parms.loss_function_hyperparameters,
+                loss_func_hypers=self.parms.loss_func_hypers,
                 cost_function_class=self.parms.cost_function_class,
-                cost_function_hyperparameters=self.parms.cost_function_hyperparameters,
+                cost_func_hypers=self.parms.cost_func_hypers,
             )
 
         elif self.parms.algo == "kg":
-            self.acqf = qKnowledgeGradient(
-                model=WM, num_fantasies=self.parms.n_samples
-            )
+            self.acqf = qKnowledgeGradient(model=WM, num_fantasies=self.parms.n_samples)
 
         elif self.parms.algo == "qEI":
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
             self.acqf = qExpectedImprovement(
-                model=WM, best_f=buffer.y.max(), sampler=sampler
+                model=WM, best_f=buffer["y"].max(), sampler=sampler
             )
 
         elif self.parms.algo == "qPI":
@@ -167,7 +162,7 @@ class Actor:
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
             self.acqf = qProbabilityOfImprovement(
-                model=WM, best_f=buffer.y.max(), sampler=sampler
+                model=WM, best_f=buffer["y"].max(), sampler=sampler
             )
 
         elif self.parms.algo == "qSR":
@@ -180,17 +175,13 @@ class Actor:
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
-            self.acqf = qUpperConfidenceBound(
-                model=WM, beta=0.1, sampler=sampler
-            )
+            self.acqf = qUpperConfidenceBound(model=WM, beta=0.1, sampler=sampler)
 
         elif self.parms.algo == "qMSL":
             self.acqf = qMultiStepLookahead(
                 model=WM,
-                batch_sizes=[1 for _ in range(self.lookahead_steps)],
-                num_fantasies=[
-                    self.parms.n_samples for _ in range(self.lookahead_steps)
-                ],
+                batch_sizes=[1] * self.lookahead_steps,
+                num_fantasies=[self.parms.n_samples] * self.lookahead_steps,
             )
 
         else:
@@ -202,43 +193,49 @@ class Actor:
         Args:
             prev_X (Tensor): Previous design points.
             prev_y (Tensor): Previous observations.
+            prev_hid_state (Tensor): Previous hidden state.
             iteration: The current iteration.
         """
         if self.acqf is None:
             data_x = self.uniform_random_sample_domain(self.parms.domain, 1)
             return data_x[0].reshape(1, -1)
 
-        prev_X = prev_X[None].expand(self.parms.n_restarts, -1)
-        prev_y = prev_y[None].expand(self.parms.n_restarts, -1)
+        prev_X = buffer["x"][iteration - 1 : iteration].expand(
+            self.parms.n_restarts, -1
+        )
+        prev_y = buffer["y"][iteration - 1 : iteration].expand(
+            self.parms.n_restarts, -1
+        )
+        prev_hid_state = buffer["h"][iteration - 1 : iteration].expand(
+            self.parms.n_restarts, -1
+        )
 
         # Reset the actor parameters for diversity
-        self.reset_parameters(prev_X=prev_X, prev_y=prev_y)
+        self.reset_parameters(
+            prev_X=prev_X, prev_y=prev_y, prev_hid_state=prev_hid_state
+        )
 
         # Optimize the acquisition function
         if self.parms.algo == "HES":
-            optimizer = torch.optim.AdamW(
-                self._parameters, lr=self.parms.acq_opt_lr
-            )
+            optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
             lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=20, eta_min=1e-5
             )
             losses = []
+
             for _ in range(self.parms.acq_opt_iter):
-                optimizer.zero_grad()
                 return_dict = self.acqf.forward(
                     prev_X=prev_X,
                     prev_y=prev_y,
-                    prev_hid_state=,
-                    previous_cost=0,
+                    prev_hid_state=prev_hid_state,
                     maps=self.maps,
                 )
                 loss = -return_dict["acqf_values"].sum()
                 losses.append(loss.item())
-                print("Loss:", loss.item())
-
                 loss.backward()
                 optimizer.step()
                 lr_scheduler.step()
+                optimizer.zero_grad()
 
             # Choose which restart produce the best acqf value
             idx = torch.argmax(return_dict["acqf_values"])
@@ -251,20 +248,12 @@ class Actor:
             hidden_state = return_dict["hidden_state"][0]
             # >>> n_restarts * hidden_dim
 
-            if self.parms.use_amortized_optimization:
-                hidden_state = hidden_state[idx:idx+1]
-                hidden_state = hidden_state.expand_as(
-                    return_dict["hidden_state"][0]
-                )
+            if self.parms.amortized:
+                hidden_state = hidden_state[idx : idx + 1]
                 # >>> n_restarts * hidden_dim
 
             acqf_values = return_dict["acqf_values"][idx].reshape(-1, 1)
             # >>> n_actions * 1
-
-            next_X = next_X.detach()
-            acqf_values = acqf_values.detach()
-            hidden_state = hidden_state.detach()
-            cost = 0
 
         else:
             # TODO: using botorch.optim.optimize.optimize_acqf
@@ -273,15 +262,11 @@ class Actor:
             loss = -acqf_values.sum()
             X = torch.cat(self.maps, dim=0)
             next_X = self.acqf.get_multi_step_tree_input_representation(X)[0]
-            hidden_state = 
-            cost = 0
+            hidden_state = prev_hid_state
 
         next_X = next_X.detach()
         acqf_values = acqf_values.detach()
         hidden_state = hidden_state.detach()
-
-        # Update new cost
-        self.total_cost = self.total_cost + cost
 
         # Draw losses by acq_opt_iter
         plt.plot(losses, label=f"Loss by iteration {iteration}")

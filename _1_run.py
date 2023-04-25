@@ -18,17 +18,17 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 
 from _2_actor import Actor
 from tensordict import TensorDict
-from _5_evalplot import eval_and_plot
+from _5_evalplot import eval_and_plot_1D, eval_and_plot_2D
 
 
-def run(parms, env, metrics) -> None:
+def run(parms, env) -> None:
     """Run experiment.
 
     Args:
         parms (Parameter): List of input parameters
         env: Environment
-        metrics (dict): Dictionary of metrics
     """
+
     random.seed(parms.seed)
     # torch.backends.cudnn.deterministic=True
     # torch.backends.cudnn.benchmark = False
@@ -37,39 +37,67 @@ def run(parms, env, metrics) -> None:
     torch.cuda.manual_seed_all(parms.seed)
     torch.cuda.manual_seed_all(parms.seed)
 
+    if parms.x_dim == 1:
+        eval_and_plot = eval_and_plot_1D
+    elif parms.x_dim == 2:
+        eval_and_plot = eval_and_plot_2D
+    else:
+        print("Plotting is only done when x_dim is 1 or 2.")
+
     # Generate initial observations and initialize model
-    project2range = Project2Range(*parms.bounds)
     data_x = torch.rand(
         [parms.n_initial_points, parms.x_dim],
         device=parms.device,
         dtype=parms.torch_dtype,
     )
-    data_x = project2range(data_x)
+    # Min max scaling
+    data_x = data_x * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
     # >>> n_initial_points x dim
 
     data_y = env(data_x).reshape(-1, 1)
     # >>> n_initial_points x 1
-    data_y = (
-        data_y
-        + parms.func_noise
-        * torch.randn_like(data_y, parms.torch_dtype)
+    data_y = data_y + parms.func_noise * torch.randn_like(
+        data_y, dtype=parms.torch_dtype
+    )
+
+    data_hidden_state = torch.ones(
+        [parms.n_initial_points, parms.hidden_dim],
+        device=parms.device,
+        dtype=parms.torch_dtype,
     )
 
     buffer_size = parms.n_initial_points + parms.n_iterations
     fill_value = float("nan")
     buffer = TensorDict(
         dict(
-            x=torch.full((buffer_size, parms.x_dim), fill_value),
-            y=torch.full((buffer_size, 1), fill_value),
-            h=torch.full((buffer_size, parms.hidden_dim), fill_value),
+            x=torch.full(
+                (buffer_size, parms.x_dim),
+                fill_value,
+                dtype=parms.torch_dtype,
+            ),
+            y=torch.full(
+                (buffer_size, 1),
+                fill_value,
+                dtype=parms.torch_dtype,
+            ),
+            h=torch.full(
+                (buffer_size, parms.hidden_dim),
+                fill_value,
+                dtype=parms.torch_dtype,
+            ),
+            real_loss=torch.full(
+                (buffer_size,),
+                fill_value,
+                dtype=parms.torch_dtype,
+            ),
         ),
         batch_size=[buffer_size],
         device=parms.device,
-        dtype=parms.torch_dtype,
     )
 
     buffer["x"][: parms.n_initial_points] = data_x
     buffer["y"][: parms.n_initial_points] = data_y
+    buffer["h"][: parms.n_initial_points] = data_hidden_state
 
     lookahead_steps = parms.lookahead_steps
     actor = Actor(parms=parms)
@@ -91,17 +119,25 @@ def run(parms, env, metrics) -> None:
         actor.construct_acqf(WM=WM, buffer=buffer)
 
         # Query and observe next point
-        next_x = actor.query(buffer, i)
+        next_x, hidden_state = actor.query(buffer, i)
         next_y = env(next_x).reshape(-1, 1)
+
         # Evaluate and plot
-        eval_and_plot(
-            func=env,
-            cfg=parms,
-            qhes=actor.acqf,
-            next_x=next_x,
-            data=buffer,
-            iteration=i,
-        )
+        if parms.x_dim in [1, 2]:
+            real_loss = eval_and_plot(
+                func=env,
+                cfg=parms,
+                acqf=actor.acqf,
+                buffer=buffer,
+                next_x=next_x,
+                iteration=i,
+            )
+        else:
+            raise NotImplementedError
 
         buffer["x"][i] = next_x
         buffer["y"][i] = next_y
+        buffer["h"][i] = hidden_state
+        buffer["real_loss"][i] = real_loss
+
+    return buffer["real_loss"].cpu().detach().numpy().tolist()
