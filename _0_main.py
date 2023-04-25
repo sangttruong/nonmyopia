@@ -7,27 +7,32 @@
 r"""Run the main experiments."""
 
 import copy
+from argparse import ArgumentParser
 from pathlib import Path
-import torch
 
 from threading import Thread
-from argparse import ArgumentParser
-import dill as pickle
-from botorch.test_functions.synthetic import Ackley
 
-from run import run
-from experiment.checkpoint_manager import make_save_dir
-from utils.plot import draw_metric
-from models.EHIG import qCostFunctionSpotlight, qLossFunctionTopK
+import dill as pickle
+import torch
+from botorch.test_functions.synthetic import Ackley
+from _1_run import run
+from _4_qhes import qCostFunctionSpotlight, qLossFunctionTopK
+from _5_evalplot import draw_metric
 
 
 class Parameters:
+    r"""Class to store all parameters for the experiment."""
+
     def __init__(self, args):
-        # general arguments
+        r"""Initialize parameters."""
+        # general parameters
         self.task = args.task
         self.set_task_parms()
 
-        self.device = f"cuda:{args.gpu_id}" if torch.cuda.is_available() else "cpu"
+        if torch.cuda.is_available():
+            self.device = f"cuda:{args.gpu_id}"
+        else:
+            self.device = "cpu"
         self.gpu_id = args.gpu_id
         self.exp_id = args.exp_id
         self.save_dir = f"./results/exp_{self.exp_id:03d}"
@@ -42,32 +47,29 @@ class Parameters:
         self.n_iterations = 10
         self.lookahead_steps = 1
         self.n_initial_points = 10
-        self.local_init = True
-        self.n_candidates = 1
-        self.func_is_noisy = False
-        self.func_noise = 0.1
-        self.plot_iters = list(range(0, 101, 1))
-        self.start_iter = 0
+        self.func_noise = 0.0
+
+        # self.plot_iters = list(range(0, 101, 1))
+        # self.start_iter = 0
+        # self.local_init = True
+        # self.n_candidates = 1
 
         # Algorithm parameters
         self.batch_size = 10
         self.lookahead_batch_sizes = [2] * self.lookahead_steps
         self.num_fantasies = [2] * self.lookahead_steps
-
         self.amortized = True if self.algo == "HES" else False
         self.acq_opt_lr = 0.05 if self.amortized else 1e-3
         self.n_samples = 64
-        self.decay_factor = 1
-
-        # Optimizer
+        # self.decay_factor = 1
         self.acq_opt_iter = 1000 if self.amortized else 1000
-        self.acq_warmup_iter = self.acq_opt_iter // 20
-        self.acq_earlystop_iter = int(self.acq_opt_iter * 0.4)
+        # self.acq_warmup_iter = self.acq_opt_iter // 20
+        # self.acq_earlystop_iter = int(self.acq_opt_iter * 0.4)
         self.n_restarts = 1
         self.eta_min = 0.0001
         self.T_max = 100
 
-        # Amortization
+        # Amortized network parameters
         self.hidden_dim = 128
         self.n_layers = 2
         self.activation = "elu"
@@ -75,10 +77,9 @@ class Parameters:
         self.init_noise_thredhold = 0.01
 
     def set_task_parms(self):
+        r"""Set task-specific parameters."""
         if self.task == "topk":
             self.n_actions = 1
-            self.epsilon = 1  # 1: no random reset, 0: random reset
-
             self.loss_function_class = qLossFunctionTopK
             self.loss_function_hyperparameters = dict(
                 dist_weight=1,
@@ -92,6 +93,7 @@ class Parameters:
             raise NotImplementedError
 
     def __str__(self):
+        r"""Return string representation of parameters."""
         output = []
         for k in self.__dict__.keys():
             output.append(f"{k}: {self.__dict__[k]}")
@@ -99,20 +101,21 @@ class Parameters:
 
 
 def make_env(env_name, x_dim, bounds):
+    r"""Make environment."""
     if env_name == "Ackley":
         f_ = Ackley(dim=x_dim, negate=False)
         f_.bounds[0, :].fill_(bounds[0])
         f_.bounds[1, :].fill_(bounds[1])
         return f_
-
     elif env_name == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
             return pickle.load(file_handle)
     else:
         raise NotImplementedError
 
+
 def make_save_dir(config):
-    """Create save directory safely (without overwriting directories), using config."""
+    r"""Create save directory without overwriting directories."""
     init_dir_path = Path(config.save_dir)
     dir_path = Path(str(init_dir_path))
 

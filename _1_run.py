@@ -6,19 +6,19 @@
 
 r"""Implement a BO loop."""
 
-import torch
 import random
+
 import numpy as np
+import torch
+from _3_amortized_network import Project2Range
 from botorch import fit_gpytorch_model
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
-from models.actor import Actor
-from utils.utils import set_seed
-from utils.plot import eval_and_plot_2D
+from _2_actor import Actor
 from tensordict import TensorDict
-from amortized_network import Project2Range
+from _5_evalplot import eval_and_plot
 
 
 def run(parms, env, metrics) -> None:
@@ -29,7 +29,6 @@ def run(parms, env, metrics) -> None:
         env: Environment
         metrics (dict): Dictionary of metrics
     """
-
     random.seed(parms.seed)
     # torch.backends.cudnn.deterministic=True
     # torch.backends.cudnn.benchmark = False
@@ -50,8 +49,11 @@ def run(parms, env, metrics) -> None:
 
     data_y = env(data_x).reshape(-1, 1)
     # >>> n_initial_points x 1
-    if parms.func_is_noisy:
-        data_y = data_y + parms.func_noise * torch.randn_like(data_y, parms.torch_dtype)
+    data_y = (
+        data_y
+        + parms.func_noise
+        * torch.randn_like(data_y, parms.torch_dtype)
+    )
 
     buffer_size = parms.n_initial_points + parms.n_iterations
     fill_value = float("nan")
@@ -92,13 +94,13 @@ def run(parms, env, metrics) -> None:
         next_x = actor.query(buffer, i)
         next_y = env(next_x).reshape(-1, 1)
         # Evaluate and plot
-        eval_and_plot_2D(
-            func=env, 
-            cfg=parms, 
-            qhes=actor.acqf, 
-            next_x=next_x, 
+        eval_and_plot(
+            func=env,
+            cfg=parms,
+            qhes=actor.acqf,
+            next_x=next_x,
             data=buffer,
-            iteration=i
+            iteration=i,
         )
 
         buffer["x"][i] = next_x

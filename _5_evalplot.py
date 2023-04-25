@@ -15,7 +15,8 @@ plt.rcParams.update(bundles.iclr2023())
 
 
 def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
-    # Quality of the best decision from the current posterior distribution #############
+    r"""Evaluate and plot 2D function."""
+    # Quality of the best decision from the current posterior distribution ###
     # Initialize A consistently across fantasies
     A = torch.rand(
         [1, 1, cfg.n_actions, cfg.x_dim],
@@ -55,18 +56,19 @@ def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
     eval_metric = qhes.loss_function(A=A, Y=fantasized_outcome)
     eval_metric = eval_metric[0, 0].cpu().detach().numpy()
     optimal_action = A[0, 0].cpu().detach().numpy()
-    value = qhes.loss_function(A=A, Y=func(A)[None, ...])[0, 0].cpu().detach().numpy()
+    value = qhes.loss_function(A=A, Y=func(A)[None, ...])[0, 0]
+    value = value.cpu().detach().numpy()
     data_x = data.x.cpu().detach().numpy()
     next_x = next_x.cpu().detach().numpy()
 
-    # Plotting #########################################################################
+    # Plotting ###############################################################
     fig, ax = plt.subplots(1, 1)
     bounds_plot = cfg.bounds
     ax.set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot, ylim=bounds_plot)
     title = "$\mathcal{H}_{\ell, \mathcal{A}}$-Entropy Search " + cfg.task
     ax.set_title(label=title)
 
-    # Plot function in 2D ##############################################################
+    # Plot function in 2D ####################################################
     X_domain, Y_domain = cfg.bounds, cfg.bounds
     n_space = 200
     X, Y = np.linspace(*X_domain, n_space), np.linspace(*Y_domain, n_space)
@@ -78,7 +80,7 @@ def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
     cbar = fig.colorbar(cs)
     cbar.ax.set_ylabel("$f(x)$", rotation=270, labelpad=20)
 
-    # Plot data, optimal actions, next query ###########################################
+    # Plot data, optimal actions, next query #################################
     ax.scatter(data_x[:, 0], data_x[:, 1], label="Data")
     ax.scatter(optimal_action[:, 0], optimal_action[:, 1], label="Action")
     ax.scatter(next_x[0], next_x[1], label="Next query")
@@ -89,11 +91,18 @@ def eval_and_plot_2D(func, cfg, qhes, next_x, data, iteration):
     return eval_metric, optimal_action, value
 
 
-def eval_and_plot_1D(func, cfg, acqf, next_x, buffer, iteration, optimal_actions=None):
+def eval_and_plot_1D(
+    func, cfg, acqf, next_x, buffer, iteration, optimal_actions=None
+):
+    r"""Evaluate and plot 1D function."""
     if optimal_actions is not None:
-        optimal_actions = optimal_actions.reshape(-1, optimal_actions.shape[-1])
+        optimal_actions = optimal_actions.reshape(
+            -1, optimal_actions.shape[-1]
+        )
         best_a = optimal_actions.numpy()
-        plt.vlines(best_a, -5, 5, color="blue", label="optimal action", alpha=0.02)
+        plt.vlines(
+            best_a, -5, 5, color="blue", label="optimal action", alpha=0.02
+        )
 
     plt.vlines(buffer.x[-2], -5, 5, color="black", label="current location")
     plt.vlines(buffer.x[-2] - 0.1, -5, 5, color="black", linestyle="--")
@@ -146,7 +155,8 @@ def eval_and_plot_1D(func, cfg, acqf, next_x, buffer, iteration, optimal_actions
     plt.close()
 
 
-def draw_posterior(config, env, acqf, buffer, iteration, optimal_actions=None):
+def eval_and_plot(config, env, acqf, buffer, iteration, optimal_actions=None):
+    r"""Draw the posterior of the model."""
     if config.x_dim == 1:
         eval_and_plot_1D(
             env,
@@ -166,20 +176,20 @@ def draw_posterior(config, env, acqf, buffer, iteration, optimal_actions=None):
 
 
 def draw_metric(save_dir, metrics, algos):
+    r"""Draw the evaluation metric of each algorithm."""
     if isinstance(metrics, list):
         metrics = np.array(metrics)
 
-    plt.figure(figsize=(7, 7))
+    plt.figure()
     for i, algo in enumerate(algos):
         mean = np.mean(metrics[i], axis=0)
         lower = np.min(metrics[i], axis=0)
         upper = np.max(metrics[i], axis=0)
-        plt.plot(list(range(1, mean.shape[0] + 1)), mean, label=algo)
-
-        plt.fill_between(list(range(1, mean.shape[0] + 1)), lower, upper, alpha=0.25)
+        x = list(range(1, mean.shape[0] + 1))
+        plt.plot(x, mean, label=algo)
+        plt.fill_between(x, lower, upper, alpha=0.25)
 
     plt.xlabel("Iteration")
     plt.ylabel("Eval metric")
-    fig_name = f"{save_dir}/eval_metric.png"
-    plt.savefig(fig_name, format="png")
+    plt.savefig(f"{save_dir}/eval_metric.pdf")
     plt.close()

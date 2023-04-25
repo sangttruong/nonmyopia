@@ -4,18 +4,17 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-r"""
-Implement Multi-step H-Entropy Search using one-shot optimization.
-"""
+r"""Multi-step H-Entropy Search with one-shot optimization."""
 
 import copy
+from typing import Dict, List, Optional, Tuple, Type
+
 import torch
 import torch.nn as nn
-from torch import Tensor
+from botorch.acquisition.monte_carlo import MCAcquisitionFunction
 from botorch.sampling.base import MCSampler
 from botorch.sampling.normal import SobolQMCNormalSampler
-from botorch.acquisition.monte_carlo import MCAcquisitionFunction
-from typing import List, Dict, Optional, Type, Tuple
+from torch import Tensor
 
 
 class qMultiStepHEntropySearch(MCAcquisitionFunction):
@@ -70,8 +69,12 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         self.model = model
         self.lookahead_steps = lookahead_steps
         self.n_actions = n_actions
-        self.cost_function = cost_function_class(**cost_function_hyperparameters)
-        self.loss_function = loss_function_class(**loss_function_hyperparameters)
+        self.cost_function = cost_function_class(
+            **cost_function_hyperparameters
+        )
+        self.loss_function = loss_function_class(
+            **loss_function_hyperparameters
+        )
         self.design_samplers = []
         self.n_fantasy_at_design_pts = []
         for i in range(lookahead_steps):
@@ -125,7 +128,9 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             # Pass through RNN
             if use_amortized_map:
                 X, hidden_state = self.maps(
-                    x=previous_Xy, prev_hid_state=prev_hid_state, return_actions=False
+                    x=previous_Xy,
+                    prev_hid_state=prev_hid_state,
+                    return_actions=False
                 )
             else:
                 X, hidden_state = self.maps[step], prev_hid_state
@@ -152,20 +157,24 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             # >>> (n_samples * num_x_{step}) * seq_length * y_dim
 
             # Update conditions
-            fantasized_model = fantasized_model.condition_on_observations(X, ys)
+            fantasized_model = fantasized_model.condition_on_observations(
+                X, ys
+            )
 
             # Update hidden state
-            prev_hid_state = hidden_state[None, ...].expand(n_fantasies, -1, -1)
-
+            prev_hid_state = hidden_state[None, ...]
+            prev_hid_state = prev_hid_state.expand(n_fantasies, -1, -1)
             prev_hid_state = prev_hid_state.reshape(-1, hidden_state.shape[-1])
 
         # Compute actions
         if use_amortized_map:
             actions, hidden_state = self.maps(
-                x=previous_Xy, prev_hid_state=prev_hid_state, return_actions=True
+                x=previous_Xy,
+                prev_hid_state=prev_hid_state,
+                return_actions=True
             )
         else:
-            actions, hidden_state = self.maps[self.lookahead_steps], hidden_state
+            actions = self.maps[self.lookahead_steps]
 
         new_shape = self.n_fantasy_at_design_pts + [
             n_restarts,
@@ -174,9 +183,10 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         ]
         actions = actions.reshape(*new_shape)
 
-        post_pred_dist = [
-            self.model.posterior(actions[..., k, :]) for k in range(self.n_actions)
-        ]
+        post_pred_dist = []
+        for k in range(self.n_actions):
+            post = self.model.posterior(actions[..., k, :])
+            post_pred_dist.append(post)
 
         action_yis = [self.action_sampler(ppd) for ppd in post_pred_dist]
         action_yis = torch.stack(action_yis, dim=-2).squeeze(-1)
@@ -190,7 +200,8 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             total_cost = total_cost + self.cost_function(X[i], X[i + 1])
 
         for ai in range(self.n_actions):
-            total_cost = total_cost + self.cost_function(X[-1], actions[..., ai, :])
+            cost = self.cost_function(X[-1], actions[..., ai, :])
+            total_cost = total_cost + cost
 
         acqf_values = acqf_values + total_cost
 
@@ -222,7 +233,9 @@ def set_sampler_and_n_fantasy(
     """
     if sampler is None:
         if n_fantasy is None:
-            raise ValueError("Must specify `n_fantasy` if no `sampler` is provided.")
+            raise ValueError(
+                "Must specify `n_fantasy` if no `sampler` is provided."
+            )
         # base samples should be fixed for joint optimization
         sampler = SobolQMCNormalSampler(
             sample_shape=n_fantasy,
@@ -245,7 +258,8 @@ class qLossFunctionTopK(nn.Module):
         r"""Batch loss function for the task of finding top-K.
 
         Args:
-            loss_function_hyperparameters: hyperparameters for the loss function class.
+            loss_function_hyperparameters: hyperparameters for the
+                loss function class.
         """
         super().__init__()
         self.register_buffer("dist_weight", torch.as_tensor(dist_weight))
@@ -272,9 +286,12 @@ class qLossFunctionTopK(nn.Module):
         if num_actions >= 2:
             A_distance = torch.cdist(A.contiguous(), A.contiguous(), p=1.0)
             A_distance_triu = torch.triu(A_distance)
-            # >>> n_fantasy_at_design_pts x batch_size x num_actions x num_actions
+            # >>> n_fantasy_at_design_pts x batch_size x num_actions
+            # ... x num_actions
 
-            A_distance_triu[A_distance_triu > self.dist_threshold] = self.dist_threshold
+            A_distance_triu[
+                A_distance_triu > self.dist_threshold
+            ] = self.dist_threshold
             denominator = num_actions * (num_actions - 1) / 2.0
             dist_reward = A_distance_triu.sum((-1, -2)) / denominator
             # >>> n_fantasy_at_design_pts x batch_size
@@ -289,6 +306,7 @@ class qCostFunctionSpotlight(nn.Module):
     """Splotlight cost function."""
 
     def __init__(self, radius: float) -> None:
+        r"""Spotlight cost function."""
         super().__init__()
         self.register_buffer("radius", torch.as_tensor(radius))
 
@@ -301,7 +319,8 @@ class qCostFunctionSpotlight(nn.Module):
 
         Args:
             prev_X (Tensor): A tensor of ... x x_dim of previous X
-            current_X (Tensor): A tensor of n_fantasies x ... x x_dim of current X
+            current_X (Tensor): A tensor of n_fantasies x ... x
+                x_dim of current X
 
         Returns:
             Tensor: A tensor of ... x 1 cost values
@@ -317,6 +336,7 @@ class qCostFunctionL2(nn.Module):
     """L2 cost function."""
 
     def __init__(self) -> None:
+        r"""L2 cost function."""
         super().__init__()
 
     def forward(self, prev_X, current_X):

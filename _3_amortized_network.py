@@ -7,6 +7,7 @@
 r"""Implement a amortized network."""
 
 from typing import Tuple
+
 import torch
 import torch.nn as nn
 
