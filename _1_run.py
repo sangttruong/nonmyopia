@@ -99,7 +99,6 @@ def run(parms, env) -> None:
     buffer["y"][: parms.n_initial_points] = data_y
     buffer["h"][: parms.n_initial_points] = data_hidden_state
 
-    lookahead_steps = parms.lookahead_steps
     actor = Actor(parms=parms)
 
     # Run BO loop
@@ -112,10 +111,10 @@ def run(parms, env) -> None:
         ).to(parms.device)
         mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
         fit_gpytorch_model(mll)
+
         # Adjust lookahead steps
-        j = parms.n_iterations - parms.lookahead_steps
-        if lookahead_steps > 1 and i >= j:
-            actor.lookahead_steps = lookahead_steps - 1
+        if actor.lookahead_steps > 1:
+            actor.lookahead_steps = parms.lookahead_steps - i
         actor.construct_acqf(WM=WM, buffer=buffer)
 
         # Query and observe next point

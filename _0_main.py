@@ -36,7 +36,7 @@ class Parameters:
         self.gpu_id = args.gpu_id
         self.exp_id = args.exp_id
         self.save_dir = f"./results/exp_{self.exp_id:03d}"
-        self.torch_dtype = torch.double
+        self.torch_dtype = torch.float32
 
         self.algo = args.algo
         self.env_name = args.env_name
@@ -45,18 +45,16 @@ class Parameters:
         self.y_dim = 1
         self.bounds = [-1, 1]
         self.n_iterations = 20
-        self.lookahead_steps = 2
+        self.lookahead_steps = 20
         self.n_initial_points = 2
         self.func_noise = 0.0
 
-        self.n_samples = 64
+        self.n_samples = 12
         self.amortized = True if self.algo == "HES" else False
-        self.hidden_dim = self.x_dim + self.y_dim
-        self.acq_opt_lr = 0.05 if self.amortized else 1e-3
-        self.acq_opt_iter = 500 if self.amortized else 1000
-        self.n_restarts = 128
-        self.eta_min = 0.0001
-        self.T_max = 100
+        self.hidden_dim = 32
+        self.acq_opt_lr = 0.0001 if self.amortized else 1e-3
+        self.acq_opt_iter = 400 if self.amortized else 1000
+        self.n_restarts = 64
 
     def set_task_parms(self):
         r"""Set task-specific parameters."""
@@ -68,7 +66,7 @@ class Parameters:
                 dist_threshold=0.5,
             )
             self.cost_function_class = qCostFunctionSpotlight
-            self.cost_func_hypers = dict(radius=0.1)
+            self.cost_func_hypers = dict(radius=0.25)
         elif self.task == "minmax":
             self.n_actions = 2
         else:
@@ -87,7 +85,7 @@ def make_env(env_name, x_dim, bounds):
     if env_name == "Ackley":
         f_ = Ackley(dim=x_dim, negate=False)
     elif env_name == "Beale":
-        f_ = Beale(negate=False)    
+        f_ = Beale(negate=False)
     elif env_name == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
             return pickle.load(file_handle)
@@ -133,6 +131,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_jobs", type=int, default=1)
     args = parser.parse_args()
 
+    metrics = {}
     list_processes = []
     num_gpus = len(args.gpu_id)
     num_seeds = len(args.seeds)
@@ -163,6 +162,9 @@ if __name__ == "__main__":
 
             # Run trials
             real_loss = run(local_parms, env)
+
+            # Assign loss to dictionary of metrics
+            metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
 
             # p = Thread(
             #     target=run,

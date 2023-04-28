@@ -10,52 +10,70 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from tueplots import bundles
+from botorch.optim.optimize import optimize_acqf
 
 plt.rcParams.update(bundles.iclr2023())
 
 
 def eval(cfg, acqf, func):
     # Quality of the best decision from the current posterior distribution ###
-    # Initialize A consistently across fantasies
-    A = torch.rand(
-        [1, 1, cfg.n_actions, cfg.x_dim],
-        requires_grad=True,
-        device=cfg.device,
-        dtype=cfg.torch_dtype,
-    )
+    
+    if cfg.algo == "HES":
+        # Initialize A consistently across fantasies
+        A = torch.rand(
+            [1, 1, cfg.n_actions, cfg.x_dim],
+            requires_grad=True,
+            device=cfg.device,
+            dtype=cfg.torch_dtype,
+        )
 
-    # Initialize optimizer
-    optimizer = torch.optim.Adam([A], lr=cfg.acq_opt_lr)
-    ba_l, ba_u = cfg.bounds
+        # Initialize optimizer
+        optimizer = torch.optim.Adam([A], lr=cfg.acq_opt_lr)
+        ba_l, ba_u = cfg.bounds
 
-    for i in range(cfg.acq_opt_iter):
-        A_ = A.permute(1, 0, 2, 3)
-        A_ = torch.sigmoid(A_) * (ba_u - ba_l) + ba_l
-        posterior = acqf.model.posterior(A_)
-        fantasized_outcome = acqf.action_sampler(posterior)
-        # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
-        # ... x batch_size x num_actions x 1
+        for i in range(cfg.acq_opt_iter):
+            A_ = A.permute(1, 0, 2, 3)
+            A_ = torch.sigmoid(A_) * (ba_u - ba_l) + ba_l
+            posterior = acqf.model.posterior(A_)
+            fantasized_outcome = acqf.action_sampler(posterior)
+            # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
+            # ... x batch_size x num_actions x 1
 
-        fantasized_outcome = fantasized_outcome.squeeze(dim=-1)
-        # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
-        # ... x batch_size x num_actions
+            fantasized_outcome = fantasized_outcome.squeeze(dim=-1)
+            # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
+            # ... x batch_size x num_actions
 
-        losses = -acqf.loss_function(A=A_, Y=fantasized_outcome)
-        # >>> n_fantasy_at_design_pts x batch_size
+            losses = acqf.loss_function(A=A_, Y=fantasized_outcome)
+            # >>> n_fantasy_at_design_pts x batch_size
 
-        loss = losses.mean(dim=0).sum()
-        loss.backward()
-        optimizer.step()
-        optimizer.zero_grad()
+            loss = losses.mean(dim=0).sum()
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad()
 
-        if i % 200 == 0:
-            print(f"Eval optim round: {i}, Loss: {loss.item():.2f}")
+            if i % 200 == 0:
+                print(f"Eval optim round: {i}, Loss: {loss.item():.2f}")
 
-    A = torch.sigmoid(A) * (ba_u - ba_l) + ba_l
-    bayes_loss = acqf.loss_function(A=A, Y=fantasized_outcome)
-    bayes_loss = bayes_loss[0, 0].cpu().detach().numpy()
-    bayes_action = A[0, 0].cpu().detach().numpy()
-    real_loss = acqf.loss_function(A=A, Y=func(A)[None, ...])[0, 0]
+        A = torch.sigmoid(A) * (ba_u - ba_l) + ba_l
+        bayes_loss = acqf.loss_function(A=A, Y=fantasized_outcome)
+        bayes_loss = bayes_loss[0, 0].cpu().detach().numpy()
+        bayes_action = A[0, 0].cpu().detach().numpy()
+        real_loss = acqf.loss_function(A=A, Y=func(A)[None, ...])[0, 0]
+    
+    else:
+        bounds = cfg.bounds
+        bounds = torch.tensor(
+            [bounds] * cfg.x_dim, dtype=cfg.torch_dtype, device=cfg.device
+        ).T
+        bayes_action, real_loss = optimize_acqf(
+            acq_function=acqf,
+            bounds=bounds,
+            q=cfg.n_actions,
+            num_restarts=cfg.n_restarts,
+            raw_samples=cfg.n_samples,
+        )
+        bayes_action = bayes_action.cpu().detach().numpy()
+        
     return real_loss, bayes_action
 
 
@@ -86,7 +104,7 @@ def eval_and_plot_2D(func, cfg, acqf, next_x, buffer, iteration):
 
     # Plot data, optimal actions, next query #################################
     ax.scatter(data_x[:iteration, 0], data_x[:iteration, 1], label="Data")
-    ax.scatter(bayes_action[:, 0], bayes_action[:, 1], label="Action")
+    ax.scatter(bayes_action[..., 0], bayes_action[..., 1], label="Action")
     ax.scatter(next_x[..., 0], next_x[..., 1], label="Next query")
     plt.legend()
     plt.savefig(f"{cfg.save_dir}/{iteration}.pdf")
@@ -124,11 +142,13 @@ def eval_and_plot_1D(func, cfg, acqf, next_x, buffer, iteration):
     plt.fill_between(x, lower, upper, alpha=0.25)
 
     # Plot data, optimal actions, next query #################################
-    plt.vlines(data_x[iteration], -5, 5, color="black", label="current location")
-    plt.vlines(data_x[iteration] - 0.1, -5, 5, color="black", linestyle="--")
-    plt.vlines(data_x[iteration] + 0.1, -5, 5, color="black", linestyle="--")
-    plt.vlines(next_x, -5, 5, color="red", label="optimal query")
-    plt.vlines(bayes_action, -5, 5, color="blue", label="Bayes action")
+    ub = np.max(upper)
+    lb = np.min(lower)
+    plt.vlines(data_x[iteration], lb, ub, color="black", label="current location")
+    plt.vlines(data_x[iteration] - cfg.cost_func_hypers["radius"], lb, ub, color="black", linestyle="--")
+    plt.vlines(data_x[iteration] + cfg.cost_func_hypers["radius"], lb, ub, color="black", linestyle="--")
+    plt.vlines(next_x, lb, ub, color="red", label="optimal query")
+    plt.vlines(bayes_action, lb, ub, color="blue", label="Bayes action")
 
     # Scatter plot of all points using buffer.x and buffer.y with
     # gradient color from red to blue indicating the order of point in list
@@ -160,6 +180,7 @@ def draw_metric(save_dir, metrics, algos):
     r"""Draw the evaluation metric of each algorithm."""
     if isinstance(metrics, list):
         metrics = np.array(metrics)
+        
 
     plt.figure()
     for i, algo in enumerate(algos):

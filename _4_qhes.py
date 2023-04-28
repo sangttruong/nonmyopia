@@ -102,7 +102,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
                 for optimizing. Defaults to None.
 
         Returns:
-            dict: A dictionary contains acqf_values, X, actions and hidden_state.
+            dict: A dictionary contains acqf_loss, X, actions and hidden_state.
         """
         use_amortized_map = True if isinstance(maps, nn.Module) else False
         n_restarts = prev_X.shape[0]
@@ -125,8 +125,8 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
                 X, hidden_state = maps[step], prev_hid_state
 
             n_fantasies = self.n_fantasy_at_design_pts[step]
-            new_shape = [n_fantasies] * step + [n_restarts, 1, x_dim]
-            X = X.reshape(*new_shape)
+            X_shape = self.n_fantasy_at_design_pts[:step][::-1] + [n_restarts, 1, x_dim]
+            X = X.reshape(*X_shape)
             # >>> num_x_{step} * x_dim
 
             X_returned.append(X)
@@ -137,7 +137,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             ys = self.design_samplers[step](ppd)
             # >>> n_samples * num_x_{step} * y_dim
 
-            X_expanded_shape = [ys.shape[0]] + [-1] * len(new_shape)
+            X_expanded_shape = [ys.shape[0]] + [-1] * len(X_shape)
             X_expanded = X[None, ...].expand(*X_expanded_shape)
             Xy = torch.cat((X_expanded, ys), dim=-1)
             # >>> n_samples * num_x_{step} * 1 * dim
@@ -147,6 +147,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             # >>> (n_samples * num_x_{step}) * seq_length * y_dim
 
             # Update conditions
+            breakpoint()
             fantasized_model = fantasized_model.condition_on_observations(X, ys)
 
             # Update hidden state
@@ -162,43 +163,32 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         else:
             actions = maps[self.lookahead_steps]
 
-        new_shape = self.n_fantasy_at_design_pts + [
+        action_shape = self.n_fantasy_at_design_pts[::-1] + [
             n_restarts,
             self.n_actions,
             x_dim,
         ]
-        actions = actions.reshape(*new_shape)
+        actions = actions.reshape(*action_shape)
         action_yis = self.action_sampler(self.model.posterior(actions))
         # >> Tensor[*[n_samples]*i, n_restarts, 1, 1]
 
-        acqf_values = self.loss_function(actions, action_yis)
+        loss = self.loss_function(actions, action_yis)
 
         # Calculate cost
-        total_cost = self.cost_function(
-            prev_X=prev_X, current_X=X_returned[0]
-        )
+        total_cost = self.cost_function(prev_X=prev_X, current_X=X_returned[0])
         for i in range(self.lookahead_steps - 1):
             cX = X_returned[i + 1]
             pX = X_returned[i][None, ...].expand_as(cX)
-            total_cost = total_cost + self.cost_function(
-                prev_X=pX, current_X=cX
-            )
+            total_cost = total_cost + self.cost_function(prev_X=pX, current_X=cX)
 
-        for ai in range(self.n_actions):
-            cX = actions[..., ai:ai+1, :]
-            pX_expand = X_returned[-1][None, ...].expand_as(cX)
-            total_cost = total_cost + self.cost_function(
-                prev_X=pX_expand, current_X=cX,
-            )
+        acqf_loss = loss + total_cost
 
-        acqf_values = acqf_values - total_cost
-
-        while len(acqf_values.shape) > 1:
-            acqf_values = acqf_values.mean(dim=0)
+        while len(acqf_loss.shape) > 1:
+            acqf_loss = acqf_loss.mean(dim=0)
         # >>> batch number of x_0
 
         return {
-            "acqf_values": acqf_values,
+            "acqf_loss": acqf_loss,
             "X": X_returned,
             "actions": actions,
             "hidden_state": hidden_state_returned,
@@ -280,10 +270,10 @@ class qLossFunctionTopK(nn.Module):
             dist_reward = A_distance_triu.sum((-1, -2)) / denominator
             # >>> n_fantasy_at_design_pts x batch_size
 
-        q_hes = Y + self.dist_weight * dist_reward
+        qloss = -Y - self.dist_weight * dist_reward
         # >>> n_fantasy_at_design_pts x batch_size
 
-        return q_hes
+        return qloss
 
 
 class qCostFunctionSpotlight(nn.Module):

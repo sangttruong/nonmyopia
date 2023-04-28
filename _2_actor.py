@@ -8,6 +8,7 @@ r"""Implement an actor."""
 
 import matplotlib.pyplot as plt
 import torch
+import math
 from botorch.acquisition import (
     qExpectedImprovement,
     qKnowledgeGradient,
@@ -17,6 +18,7 @@ from botorch.acquisition import (
     qUpperConfidenceBound,
 )
 from botorch.sampling.normal import SobolQMCNormalSampler
+from botorch.optim.optimize import optimize_acqf
 from _3_amortized_network import AmortizedNetwork, Project2Range
 from _4_qhes import qMultiStepHEntropySearch
 from torch import Tensor
@@ -32,20 +34,23 @@ class Actor:
             parms (Parameters): A set of hyperparameters
         """
         self.parms = parms
-        if self.parms.amortized:
-            self.maps = AmortizedNetwork(
-                input_dim=self.parms.x_dim + self.parms.y_dim,
-                output_dim=self.parms.x_dim,
-                hidden_dim=self.parms.hidden_dim,
-                n_actions=self.parms.n_actions,
-                output_bounds=self.parms.bounds,
-            )
-            self.maps = self.maps.double().to(self.parms.device)
+        if self.parms.algo == "HES":
+            if self.parms.amortized:
+                self.maps = AmortizedNetwork(
+                    input_dim=self.parms.x_dim + self.parms.y_dim,
+                    output_dim=self.parms.x_dim,
+                    hidden_dim=self.parms.hidden_dim,
+                    n_actions=self.parms.n_actions,
+                    output_bounds=self.parms.bounds,
+                )
+                self.maps = self.maps.to(
+                    dtype=self.parms.torch_dtype, device=self.parms.device
+                )
 
-            self._parameters = list(self.maps.parameters())
+                self._parameters = list(self.maps.parameters())
 
-        else:
-            self.maps = []
+            else:
+                self.maps = []
 
         # Initialize some actor attributes
         self.lookahead_steps = self.parms.lookahead_steps
@@ -102,7 +107,7 @@ class Actor:
                     self.parms.n_samples**s * self.parms.n_restarts,
                     self.parms.x_dim,
                     device=self.parms.device,
-                    dtype=torch.double,
+                    dtype=self.parms.torch_dtype,
                 )
                 x = project2range(x).requires_grad_(True)
                 self.maps.append(x)
@@ -113,7 +118,7 @@ class Actor:
                 * self.parms.n_actions,
                 self.parms.x_dim,
                 device=self.parms.device,
-                dtype=torch.double,
+                dtype=self.parms.torch_dtype,
             )
             a = project2range(a).requires_grad_(True)
             self.maps.append(a)
@@ -133,7 +138,8 @@ class Actor:
             AcquisitionFunction: An aquisition function instance
         """
         if self.parms.algo == "HES":
-            nf_design_pts = [self.parms.n_samples] * self.lookahead_steps
+            nf_design_pts = [self.parms.n_samples] * 4
+            nf_design_pts = nf_design_pts + [1] * (self.lookahead_steps - 4)
             self.acqf = qMultiStepHEntropySearch(
                 model=WM,
                 lookahead_steps=self.lookahead_steps,
@@ -178,10 +184,11 @@ class Actor:
             self.acqf = qUpperConfidenceBound(model=WM, beta=0.1, sampler=sampler)
 
         elif self.parms.algo == "qMSL":
+            num_fantasies = [self.parms.n_samples] * self.lookahead_steps
             self.acqf = qMultiStepLookahead(
                 model=WM,
                 batch_sizes=[1] * self.lookahead_steps,
-                num_fantasies=[self.parms.n_samples] * self.lookahead_steps,
+                num_fantasies=num_fantasies,
             )
 
         else:
@@ -210,35 +217,38 @@ class Actor:
             self.parms.n_restarts, -1
         )
 
-        # Reset the actor parameters for diversity
-        self.reset_parameters(
-            prev_X=prev_X, prev_y=prev_y, prev_hid_state=prev_hid_state
-        )
-
         # Optimize the acquisition function
         if self.parms.algo == "HES":
+            # Reset the actor parameters for diversity
+            if iteration == self.parms.n_initial_points:
+                self.reset_parameters(
+                    prev_X=prev_X, prev_y=prev_y, prev_hid_state=prev_hid_state
+                )
+
             optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
             lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=20, eta_min=1e-5
             )
             losses = []
 
-            for _ in range(self.parms.acq_opt_iter):
+            for ep in range(self.parms.acq_opt_iter):
+                print(f"Epoch {ep:05d}", end="\t", flush=True)
                 return_dict = self.acqf.forward(
                     prev_X=prev_X,
                     prev_y=prev_y,
                     prev_hid_state=prev_hid_state,
                     maps=self.maps,
                 )
-                loss = -return_dict["acqf_values"].sum()
+                loss = return_dict["acqf_loss"].sum()
                 losses.append(loss.item())
                 loss.backward()
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
+                print(f"Loss {loss.item():.5f}", end="\r")
 
             # Choose which restart produce the best acqf value
-            idx = torch.argmax(return_dict["acqf_values"])
+            idx = torch.argmax(return_dict["acqf_loss"])
 
             # Get next X as X_0 at idx
             next_X = return_dict["X"][0][idx].reshape(1, -1)
@@ -252,27 +262,34 @@ class Actor:
                 hidden_state = hidden_state[idx : idx + 1]
                 # >>> n_restarts * hidden_dim
 
-            acqf_values = return_dict["acqf_values"][idx].reshape(-1, 1)
+            acqf_loss = return_dict["acqf_loss"][idx].reshape(-1, 1)
             # >>> n_actions * 1
 
+            # Draw losses by acq_opt_iter
+            plt.plot(losses, label=f"Loss by iteration {iteration}")
+            plt.xlabel("Epoch")
+            plt.ylabel("Loss")
+            plt.savefig(f"{self.parms.save_dir}/losses_{iteration}.pdf")
+            plt.close()
+
         else:
-            # TODO: using botorch.optim.optimize.optimize_acqf
-            X = torch.cat(self.maps, dim=0)
-            acqf_values = self.acqf.forward(X=X)
-            loss = -acqf_values.sum()
-            X = torch.cat(self.maps, dim=0)
-            next_X = self.acqf.get_multi_step_tree_input_representation(X)[0]
-            hidden_state = prev_hid_state
+            bounds = torch.tensor(
+                [self.parms.bounds] * self.parms.x_dim, 
+                dtype=self.parms.torch_dtype, device=self.parms.device
+            ).T
+            # Optimize acqf
+            next_X, acqf_loss = optimize_acqf(
+                acq_function=self.acqf,
+                bounds=bounds,
+                q=self.parms.n_actions,
+                num_restarts=self.parms.n_restarts,
+                raw_samples=self.parms.n_samples,
+            )
+
+            hidden_state = prev_hid_state[0]
 
         next_X = next_X.detach()
-        acqf_values = acqf_values.detach()
+        acqf_loss = acqf_loss.detach()
         hidden_state = hidden_state.detach()
-
-        # Draw losses by acq_opt_iter
-        plt.plot(losses, label=f"Loss by iteration {iteration}")
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.savefig(f"{self.parms.save_dir}/losses_{iteration}.pdf")
-        plt.close()
 
         return next_X, hidden_state
