@@ -11,10 +11,12 @@ from typing import Dict, List, Optional, Tuple, Type
 
 import torch
 import torch.nn as nn
+from torch import Tensor
 from botorch.acquisition.monte_carlo import MCAcquisitionFunction
 from botorch.sampling.base import MCSampler
-from botorch.sampling.normal import SobolQMCNormalSampler
-from torch import Tensor
+
+# from botorch.sampling.normal import SobolQMCNormalSampler
+from _6_samplers import DesireSobolQMCNormalSampler as SobolQMCNormalSampler
 
 
 class qMultiStepHEntropySearch(MCAcquisitionFunction):
@@ -31,7 +33,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         n_actions: int,
         n_fantasy_at_design_pts: Optional[List[int]] = 64,
         n_fantasy_at_action_pts: Optional[int] = 64,
-        design_sampler: Optional[MCSampler] = None,
+        design_samplers: Optional[MCSampler] = None,
         action_sampler: Optional[MCSampler] = None,
     ) -> None:
         """Batch multip-step H-Entropy Search using one-shot optimization.
@@ -54,7 +56,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
                 fantasized outcomes for each action point. Must match the
                 sample shape of `action_sampler` if specified.
                 Defaults to 64.
-            design_sampler (Optional[MCSampler], optional): The samplers
+            design_samplers (Optional[MCSampler], optional): The samplers
                 used to sample fantasized outcomes at each design point.
                 Optional if `n_fantasy_at_design_pts` is specified.
                 Defaults to None.
@@ -72,8 +74,13 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         self.design_samplers = []
         self.n_fantasy_at_design_pts = []
         for i in range(lookahead_steps):
+            if design_samplers is not None:
+                sampler = design_samplers[i]
+            else:
+                sampler = None
+
             sampler, n_fantasy = set_sampler_and_n_fantasy(
-                sampler=design_sampler, n_fantasy=n_fantasy_at_design_pts[i]
+                sampler=sampler, n_fantasy=n_fantasy_at_design_pts[i]
             )
             self.design_samplers.append(sampler)
             self.n_fantasy_at_design_pts.append(n_fantasy)
@@ -147,7 +154,6 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             # >>> (n_samples * num_x_{step}) * seq_length * y_dim
 
             # Update conditions
-            breakpoint()
             fantasized_model = fantasized_model.condition_on_observations(X, ys)
 
             # Update hidden state
@@ -170,25 +176,35 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         ]
         actions = actions.reshape(*action_shape)
         action_yis = self.action_sampler(self.model.posterior(actions))
-        # >> Tensor[*[n_samples]*i, n_restarts, 1, 1]
+        # >> Tensor[*[n_samples]*i, n_restarts, n_actions, 1]
+        action_yis = action_yis.squeeze(dim=-1)
 
-        loss = self.loss_function(actions, action_yis)
+        # Calculate loss value
+        acqf_loss = self.loss_function(actions, action_yis)
 
-        # Calculate cost
-        total_cost = self.cost_function(prev_X=prev_X, current_X=X_returned[0])
+        # Calculate cost value
+        acqf_cost = self.cost_function(
+            prev_X=prev_X[..., None, :], current_X=X_returned[0]
+        )
         for i in range(self.lookahead_steps - 1):
             cX = X_returned[i + 1]
             pX = X_returned[i][None, ...].expand_as(cX)
-            total_cost = total_cost + self.cost_function(prev_X=pX, current_X=cX)
+            acqf_cost = acqf_cost + self.cost_function(prev_X=pX, current_X=cX)
+        for i in range(self.n_actions):
+            cX = actions[..., i : i + 1, :]
+            pX = X_returned[-1][None, ...].expand_as(cX)
+            acqf_cost = acqf_cost + self.cost_function(prev_X=pX, current_X=cX)
+        acqf_cost = acqf_cost.squeeze(dim=-1)
 
-        acqf_loss = loss + total_cost
-
+        # Reduce dimensions
         while len(acqf_loss.shape) > 1:
             acqf_loss = acqf_loss.mean(dim=0)
+            acqf_cost = acqf_cost.mean(dim=0)
         # >>> batch number of x_0
 
         return {
             "acqf_loss": acqf_loss,
+            "acqf_cost": acqf_cost,
             "X": X_returned,
             "actions": actions,
             "hidden_state": hidden_state_returned,

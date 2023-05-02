@@ -8,7 +8,8 @@ r"""Implement an actor."""
 
 import matplotlib.pyplot as plt
 import torch
-import math
+from torch import Tensor
+
 from botorch.acquisition import (
     qExpectedImprovement,
     qKnowledgeGradient,
@@ -17,11 +18,13 @@ from botorch.acquisition import (
     qSimpleRegret,
     qUpperConfidenceBound,
 )
-from botorch.sampling.normal import SobolQMCNormalSampler
+
+# from botorch.sampling.normal import SobolQMCNormalSampler
 from botorch.optim.optimize import optimize_acqf
 from _3_amortized_network import AmortizedNetwork, Project2Range
 from _4_qhes import qMultiStepHEntropySearch
-from torch import Tensor
+from _5_evalplot import draw_loss_and_cost
+from _6_samplers import DesireSobolQMCNormalSampler as SobolQMCNormalSampler
 
 
 class Actor:
@@ -88,7 +91,7 @@ class Actor:
 
                 loss = 0
                 for i in range(self.lookahead_steps):
-                    X_randomized = torch.randn_like(return_dict["X"][i])
+                    X_randomized = torch.rand_like(return_dict["X"][i])
                     # min max scaling
                     X_randomized = (
                         X_randomized * (self.parms.bounds[1] - self.parms.bounds[0])
@@ -140,6 +143,7 @@ class Actor:
         if self.parms.algo == "HES":
             nf_design_pts = [self.parms.n_samples] * 4
             nf_design_pts = nf_design_pts + [1] * (self.lookahead_steps - 4)
+
             self.acqf = qMultiStepHEntropySearch(
                 model=WM,
                 lookahead_steps=self.lookahead_steps,
@@ -230,25 +234,35 @@ class Actor:
                 optimizer, T_max=20, eta_min=1e-5
             )
             losses = []
+            costs = []
 
             for ep in range(self.parms.acq_opt_iter):
-                print(f"Epoch {ep:05d}", end="\t", flush=True)
+                print(f"\nEpoch {ep:05d}", end="\t", flush=True)
                 return_dict = self.acqf.forward(
                     prev_X=prev_X,
                     prev_y=prev_y,
                     prev_hid_state=prev_hid_state,
                     maps=self.maps,
                 )
-                loss = return_dict["acqf_loss"].sum()
-                losses.append(loss.item())
+
+                acqf_loss = return_dict["acqf_loss"].mean()
+                acqf_cost = return_dict["acqf_cost"].mean()
+                # >> n_restart
+
+                losses.append(acqf_loss.item())
+                costs.append(acqf_cost.item())
+
+                loss = acqf_loss + acqf_cost
                 loss.backward()
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
                 print(f"Loss {loss.item():.5f}", end="\r")
 
-            # Choose which restart produce the best acqf value
-            idx = torch.argmax(return_dict["acqf_loss"])
+            loss = return_dict["acqf_loss"] + return_dict["acqf_cost"]
+
+            # Choose which restart produce the lowest loss
+            idx = torch.argmin(loss)
 
             # Get next X as X_0 at idx
             next_X = return_dict["X"][0][idx].reshape(1, -1)
@@ -262,20 +276,20 @@ class Actor:
                 hidden_state = hidden_state[idx : idx + 1]
                 # >>> n_restarts * hidden_dim
 
-            acqf_loss = return_dict["acqf_loss"][idx].reshape(-1, 1)
+            acqf_loss = loss[idx]
+            print("Acqf loss:", acqf_loss.item())
             # >>> n_actions * 1
 
+            actions = return_dict["actions"][..., idx, :, :]
+
             # Draw losses by acq_opt_iter
-            plt.plot(losses, label=f"Loss by iteration {iteration}")
-            plt.xlabel("Epoch")
-            plt.ylabel("Loss")
-            plt.savefig(f"{self.parms.save_dir}/losses_{iteration}.pdf")
-            plt.close()
+            draw_loss_and_cost(self.parms.save_dir, losses, costs, iteration)
 
         else:
             bounds = torch.tensor(
-                [self.parms.bounds] * self.parms.x_dim, 
-                dtype=self.parms.torch_dtype, device=self.parms.device
+                [self.parms.bounds] * self.parms.x_dim,
+                dtype=self.parms.torch_dtype,
+                device=self.parms.device,
             ).T
             # Optimize acqf
             next_X, acqf_loss = optimize_acqf(
@@ -287,9 +301,11 @@ class Actor:
             )
 
             hidden_state = prev_hid_state[0]
+            actions = None
 
         next_X = next_X.detach()
+        actions = actions.detach()
         acqf_loss = acqf_loss.detach()
         hidden_state = hidden_state.detach()
 
-        return next_X, hidden_state
+        return next_X, hidden_state, actions

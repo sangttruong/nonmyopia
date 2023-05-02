@@ -6,18 +6,32 @@
 
 r"""Run the main experiments."""
 
+import os
 import copy
-from argparse import ArgumentParser
-from pathlib import Path
-
-from threading import Thread
-
-import dill as pickle
 import torch
-from botorch.test_functions.synthetic import Ackley, Beale, Branin, Hartmann
+import numpy as np
+import dill as pickle
+
+from pathlib import Path
+from threading import Thread
+from argparse import ArgumentParser
+
+from botorch.test_functions.synthetic import (
+    Ackley,
+    Beale,
+    Branin,
+    Hartmann,
+    SixHumpCamel,
+    Levy,
+    StyblinskiTang,
+    EggHolder,
+    Powell,
+)
 from _1_run import run
 from _4_qhes import qCostFunctionSpotlight, qLossFunctionTopK
 from _5_evalplot import draw_metric
+from _7_utils import kern_exp_quad_noard, sample_mvn, gp_post, unif_random_sample_domain
+from _9_semifuncs import AntBO, nm_AAs
 
 
 class Parameters:
@@ -43,17 +57,17 @@ class Parameters:
         self.seed = args.seed
         self.x_dim = 2
         self.y_dim = 1
-        self.bounds = [-1, 1]
-        self.n_iterations = 20
-        self.lookahead_steps = 20
-        self.n_initial_points = 2
+        self.bounds = args.bounds
+        self.n_iterations = args.n_iterations
+        self.lookahead_steps = args.lookahead_steps
+        self.n_initial_points = 3
         self.func_noise = 0.0
 
-        self.n_samples = 12
+        self.n_samples = 10
         self.amortized = True if self.algo == "HES" else False
         self.hidden_dim = 32
         self.acq_opt_lr = 0.0001 if self.amortized else 1e-3
-        self.acq_opt_iter = 400 if self.amortized else 1000
+        self.acq_opt_iter = 500 if self.amortized else 1000
         self.n_restarts = 64
 
     def set_task_parms(self):
@@ -80,12 +94,146 @@ class Parameters:
         return "\n".join(output)
 
 
-def make_env(env_name, x_dim, bounds):
+class SynGP:
+    """Synthetic functions defined by draws from a Gaussian process."""
+
+    def __init__(self, dim, seed=8):
+        self.bounds = torch.tensor([[-1, 1]] * dim).T
+        self.seed = seed
+        self.n_obs = 10
+        self.hypers = {"ls": 0.25, "alpha": 1.0, "sigma": 1e-2, "n_dimx": dim}
+        self.domain_samples = None
+        self.prior_samples = None
+
+    def initialize(self):
+        """Initialize synthetic function."""
+        self.set_random_seed()
+        self.set_kernel()
+        self.draw_domain_samples()
+        self.draw_prior_samples()
+
+    def set_random_seed(self):
+        """Set random seed."""
+        np.random.seed(self.seed)
+
+    def set_kernel(self):
+        """Set self.kernel function."""
+
+        def kernel(xlist1, xlist2, ls, alpha):
+            return kern_exp_quad_noard(xlist1, xlist2, ls, alpha)
+
+        self.kernel = kernel
+
+    def draw_domain_samples(self):
+        """Draw uniform random samples from self.domain."""
+        domain_samples = unif_random_sample_domain(self.bounds.T, self.n_obs)
+        self.domain_samples = np.array(domain_samples).reshape(self.n_obs, -1)
+
+    def draw_prior_samples(self):
+        """Draw a prior function and evaluate it at self.domain_samples."""
+        domain_samples = self.domain_samples
+        prior_mean = np.zeros(domain_samples.shape[0])
+        prior_cov = self.kernel(
+            domain_samples, domain_samples, self.hypers["ls"], self.hypers["alpha"]
+        )
+        prior_samples = sample_mvn(prior_mean, prior_cov, 1)
+        self.prior_samples = prior_samples.reshape(self.n_obs, -1)
+
+    def __call__(self, test_x):
+        """
+        Call synthetic function on test_x, and return the posterior mean given by
+        self.get_post_mean method.
+        """
+        if self.domain_samples is None or self.prior_samples is None:
+            self.initialize()
+
+        test_x = self.process_function_input(test_x)
+        post_mean = self.get_post_mean(test_x)
+        test_y = self.process_function_output(post_mean)
+
+        return test_y
+
+    def get_post_mean(self, test_x):
+        """
+        Return mean of model posterior (given self.domain_samples, self.prior_samples)
+        at the test_x inputs.
+        """
+        post_mean, _ = gp_post(
+            self.domain_samples,
+            self.prior_samples,
+            test_x,
+            self.hypers["ls"],
+            self.hypers["alpha"],
+            self.hypers["sigma"],
+            self.kernel,
+        )
+        return post_mean
+
+    def process_function_input(self, test_x):
+        """Process and possibly reshape inputs to the synthetic function."""
+        self.device = test_x.device
+        test_x = test_x.cpu().detach().numpy()
+        if len(test_x.shape) == 1:
+            test_x = test_x.reshape(1, -1)
+            self.input_mode = "single"
+        elif len(test_x.shape) == 0:
+            assert self.hypers["n_dimx"] == 1
+            test_x = test_x.reshape(1, -1)
+            self.input_mode = "single"
+        else:
+            self.input_mode = "batch"
+
+        return test_x
+
+    def process_function_output(self, func_output):
+        """Process and possibly reshape output of the synthetic function."""
+        if self.input_mode == "single":
+            func_output = func_output[0][0]
+        elif self.input_mode == "batch":
+            func_output = func_output.reshape(-1, 1)
+
+        return torch.tensor(func_output, dtype=self.dtype, device=self.device)
+
+    def to(self, dtype, device):
+        self.dtype = dtype
+        return self
+
+
+def make_env(env_name, x_dim, bounds, device):
     r"""Make environment."""
     if env_name == "Ackley":
-        f_ = Ackley(dim=x_dim, negate=False)
+        f_ = Ackley(dim=x_dim, negate=True)
     elif env_name == "Beale":
         f_ = Beale(negate=False)
+    elif env_name == "SixHumpCamel":
+        f_ = SixHumpCamel(dim=x_dim, negate=False)
+    elif env_name == "Levy":
+        f_ = Levy(dim=x_dim, negate=True)
+    elif env_name == "StyblinskiTang":
+        f_ = StyblinskiTang(dim=x_dim, negate=True)
+    elif env_name == "EggHolder":
+        f_ = EggHolder(negate=False)
+    elif env_name == "Powell":
+        f_ = Powell(dim=x_dim, negate=True)
+    elif env_name == "SynGP":
+        f_ = SynGP(dim=x_dim)
+    elif env_name == "AntBO":
+        assert x_dim == 11, "AntBO only runs on 11-dim X"
+        bbox = {
+            "tool": "Absolut",
+            "antigen": "1ADQ_A",
+            "path": "/dfs/user/sttruong/Absolut/bin",  # Put path to Absolut (/ABS/PATH/TO/Absolut/)
+            "process": 8,  # Number of cores
+            "startTask": 0,  # start core id
+        }
+
+        f_ = AntBO(
+            device=device,
+            n_categories=np.array([nm_AAs] * x_dim),
+            seq_len=x_dim,
+            bbox=bbox,
+            normalise=False,
+        )
     elif env_name == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
             return pickle.load(file_handle)
@@ -125,7 +273,10 @@ if __name__ == "__main__":
     parser.add_argument("--seeds", nargs="+", type=int, default=[2])
     parser.add_argument("--task", type=str, default="topk")
     parser.add_argument("--env_name", type=str, default="Ackley")
+    parser.add_argument("--bounds", nargs="+", type=float, default=[-1, 1])
     parser.add_argument("--algos", nargs="+", type=str, default=["HES"])
+    parser.add_argument("--n_iterations", type=int)
+    parser.add_argument("--lookahead_steps", type=int)
     parser.add_argument("--exp_id", type=int, default=0)
     parser.add_argument("--gpu_id", nargs="+", type=int)
     parser.add_argument("--n_jobs", type=int, default=1)
@@ -154,6 +305,7 @@ if __name__ == "__main__":
                 env_name=local_parms.env_name,
                 x_dim=local_parms.x_dim,
                 bounds=local_parms.bounds,
+                device=local_parms.device,
             )
             env = env.to(
                 dtype=local_parms.torch_dtype,
@@ -165,6 +317,12 @@ if __name__ == "__main__":
 
             # Assign loss to dictionary of metrics
             metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
+
+            import pickle
+
+            pickle.dump(
+                metrics, open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb")
+            )
 
             # p = Thread(
             #     target=run,

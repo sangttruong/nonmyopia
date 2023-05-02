@@ -6,19 +6,19 @@
 
 r"""Implement a BO loop."""
 
-import random
-
-import numpy as np
 import torch
-from _3_amortized_network import Project2Range
+import random
+import numpy as np
+
+from tensordict import TensorDict
 from botorch import fit_gpytorch_model
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
 from _2_actor import Actor
-from tensordict import TensorDict
 from _5_evalplot import eval_and_plot_1D, eval_and_plot_2D
+from _9_semifuncs import generate_random_X
 
 
 def run(parms, env) -> None:
@@ -45,13 +45,27 @@ def run(parms, env) -> None:
         print("Plotting is only done when x_dim is 1 or 2.")
 
     # Generate initial observations and initialize model
-    data_x = torch.rand(
-        [parms.n_initial_points, parms.x_dim],
-        device=parms.device,
-        dtype=parms.torch_dtype,
-    )
+    # data_x = torch.rand(
+    #     [parms.n_initial_points, parms.x_dim],
+    #     device=parms.device,
+    #     dtype=parms.torch_dtype,
+    # )
+
     # Min max scaling
-    data_x = data_x * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
+    # data_x = data_x * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
+    # >>> n_initial_points x dim
+    if parms.env_name == "AntBO":
+        data_x = generate_random_X(parms.n_initial_points, parms.x_dim)
+        data_x = data_x.to(
+            device=parms.device,
+            dtype=parms.torch_dtype,
+        )
+    else:
+        data_x = torch.tensor(
+            [[0.2, 0.7], [0.25, -0.5], [0.5, 0.5]],
+            device=parms.device,
+            dtype=parms.torch_dtype,
+        )
     # >>> n_initial_points x dim
 
     data_y = env(data_x).reshape(-1, 1)
@@ -118,17 +132,19 @@ def run(parms, env) -> None:
         actor.construct_acqf(WM=WM, buffer=buffer)
 
         # Query and observe next point
-        next_x, hidden_state = actor.query(buffer, i)
+        next_x, hidden_state, actions = actor.query(buffer, i)
         next_y = env(next_x).reshape(-1, 1)
 
         # Evaluate and plot
         if parms.x_dim in [1, 2]:
             real_loss = eval_and_plot(
                 func=env,
+                wm=WM,
                 cfg=parms,
                 acqf=actor.acqf,
                 buffer=buffer,
                 next_x=next_x,
+                actions=actions,
                 iteration=i,
             )
         else:

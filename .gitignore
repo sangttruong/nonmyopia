@@ -8,3 +8,4 @@ __pycache__/
 *.pt
 .DS_Store
 results/*
+draw_script.py
