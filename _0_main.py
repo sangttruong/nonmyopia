@@ -26,13 +26,18 @@ from botorch.test_functions.synthetic import (
     StyblinskiTang,
     EggHolder,
     Powell,
+    Griewank,
+    HolderTable
 )
+from gpytorch.constraints import Interval
+
 from _1_run import run
 from _4_qhes import qCostFunctionSpotlight, qLossFunctionTopK
 from _5_evalplot import draw_metric
 from _7_utils import kern_exp_quad_noard, sample_mvn, gp_post, unif_random_sample_domain
 from _9_semifuncs import AntBO, nm_AAs
-
+from _11_kernels import TransformedCategorical
+from _12_alpine import AlpineN1
 
 class Parameters:
     r"""Class to store all parameters for the experiment."""
@@ -40,13 +45,11 @@ class Parameters:
     def __init__(self, args):
         r"""Initialize parameters."""
         # general parameters
-        self.task = args.task
-        self.set_task_parms()
-
         if torch.cuda.is_available():
             self.device = f"cuda:{args.gpu_id}"
         else:
             self.device = "cpu"
+        print("Using device:", self.device)
         self.gpu_id = args.gpu_id
         self.exp_id = args.exp_id
         self.save_dir = f"./results/exp_{self.exp_id:03d}"
@@ -55,32 +58,94 @@ class Parameters:
         self.algo = args.algo
         self.env_name = args.env_name
         self.seed = args.seed
+        self.n_actions = 1
         self.x_dim = 2
         self.y_dim = 1
         self.bounds = args.bounds
         self.n_iterations = args.n_iterations
         self.lookahead_steps = args.lookahead_steps
-        self.n_initial_points = 3
         self.func_noise = 0.0
 
-        self.n_samples = 10
+        self.n_samples = 64
         self.amortized = True if self.algo == "HES" else False
         self.hidden_dim = 32
-        self.acq_opt_lr = 0.0001 if self.amortized else 1e-3
-        self.acq_opt_iter = 500 if self.amortized else 1000
+        self.acq_opt_lr = 0.001 if self.amortized else 1e-3
+        self.acq_opt_iter = 500 if self.amortized else 500
         self.n_restarts = 64
-
+        if self.algo == "HES" and self.lookahead_steps > 1:
+            self.n_restarts = 16
+        elif self.algo == "qMSL" and self.lookahead_steps > 1:
+            self.n_restarts = 16
+            self.n_samples = 8
+        
+        if self.env_name == "AntBO":
+            self.x_dim = 11
+            self.kernel = TransformedCategorical(
+                lengthscale_constraint=Interval(0.01, 0.5), 
+                ard_num_dims=self.x_dim, 
+            )
+        else:
+            # Using default MaternKernel
+            self.kernel = None
+            
+        if self.env_name == "SynGP":
+            self.radius = 0.15
+            self.initial_points = [
+                [0.2, 0.7], [0.0, -0.4], [0.45, 0.5]
+            ]
+            
+        elif self.env_name == "HolderTable":
+            self.radius = 0.75
+            self.initial_points = [
+                [7.0, 9.0], [8.0, 5.4], [7.0, 4.2],
+                [2.0, 4.5], [7.0, 2.0], [4.0, 8.3], 
+                [2.0, 3.0], [6.5, 1.0], [5.0, 5.0],
+            ]
+            
+        elif self.env_name == "EggHolder":
+            self.radius = 80.0
+            self.initial_points = [
+                [-300.0, 400.0], [-200.0, 0.0], [200, -200],
+                [300.0, 0.0], [100.0, 300.0], [0.0, 0.0],
+            ]
+            
+        elif self.env_name == "Alpine":
+            self.radius = 0.80
+            self.initial_points = [
+                [7.5, 7.5], [5.0, 5.0], [4.0, 7.0],
+                [7.0, 3.2], [2.8, 5], [5.0, 4.0],
+                
+                [5.24, 4.29], [5.78, 4.67], [5.95, 5.34],
+                [6.29, 5.66], [6.87, 6.03], [7.19, 6.56],
+                [7.25, 6.97], [7.64, 7.43], [7.87, 7.77],
+                [8.02, 7.91], [8.14, 8.05]
+                
+            ]
+        else:
+            raise NotImplementedError
+        
+        self.n_initial_points = len(self.initial_points)
+        self.task = args.task
+        self.set_task_parms()
+            
     def set_task_parms(self):
         r"""Set task-specific parameters."""
         if self.task == "topk":
-            self.n_actions = 1
+            self.cost_function_class = qCostFunctionSpotlight
+            self.cost_func_hypers = dict(radius=self.radius)
             self.loss_function_class = qLossFunctionTopK
             self.loss_func_hypers = dict(
                 dist_weight=1,
                 dist_threshold=0.5,
             )
-            self.cost_function_class = qCostFunctionSpotlight
-            self.cost_func_hypers = dict(radius=0.25)
+                
+            if self.algo == "BudgetedBO":
+                self.budget = 50
+                self.refill_until_lower_bound_is_reached = True
+                self.objective_function=objective_function
+                self.cost_function=cost_function
+                self.objective_cost_function=objective_cost_function
+                
         elif self.task == "minmax":
             self.n_actions = 2
         else:
@@ -199,14 +264,18 @@ class SynGP:
         return self
 
 
-def make_env(env_name, x_dim, bounds, device):
+def make_env(env_name, x_dim, bounds):
     r"""Make environment."""
     if env_name == "Ackley":
         f_ = Ackley(dim=x_dim, negate=True)
     elif env_name == "Beale":
         f_ = Beale(negate=False)
+    elif env_name == "Branin":
+        f_ = Branin(dim=x_dim, negate=False)
     elif env_name == "SixHumpCamel":
         f_ = SixHumpCamel(dim=x_dim, negate=False)
+    elif env_name == "Hartmann":
+        f_ = Hartmann(dim=x_dim, negate=False)
     elif env_name == "Levy":
         f_ = Levy(dim=x_dim, negate=True)
     elif env_name == "StyblinskiTang":
@@ -215,20 +284,25 @@ def make_env(env_name, x_dim, bounds, device):
         f_ = EggHolder(negate=False)
     elif env_name == "Powell":
         f_ = Powell(dim=x_dim, negate=True)
+    elif env_name == "Griewank":
+        f_ = Griewank(dim=2)
+    elif env_name == "HolderTable":
+        f_ = HolderTable(negate=True)
+    elif env_name == "Alpine":
+        f_ = AlpineN1(dim=x_dim)
     elif env_name == "SynGP":
         f_ = SynGP(dim=x_dim)
     elif env_name == "AntBO":
         assert x_dim == 11, "AntBO only runs on 11-dim X"
         bbox = {
             "tool": "Absolut",
-            "antigen": "1ADQ_A",
+            "antigen": "1ADQ_A", # 1ADQ_A; 1FBI_X
             "path": "/dfs/user/sttruong/Absolut/bin",  # Put path to Absolut (/ABS/PATH/TO/Absolut/)
             "process": 8,  # Number of cores
             "startTask": 0,  # start core id
         }
 
         f_ = AntBO(
-            device=device,
             n_categories=np.array([nm_AAs] * x_dim),
             seq_len=x_dim,
             bbox=bbox,
@@ -240,8 +314,10 @@ def make_env(env_name, x_dim, bounds, device):
     else:
         raise NotImplementedError
 
-    f_.bounds[0, :].fill_(bounds[0])
-    f_.bounds[1, :].fill_(bounds[1])
+    if env_name != "AntBO":
+        f_.bounds[0, :].fill_(bounds[0])
+        f_.bounds[1, :].fill_(bounds[1])
+        
     return f_
 
 
@@ -304,8 +380,7 @@ if __name__ == "__main__":
             env = make_env(
                 env_name=local_parms.env_name,
                 x_dim=local_parms.x_dim,
-                bounds=local_parms.bounds,
-                device=local_parms.device,
+                bounds=local_parms.bounds
             )
             env = env.to(
                 dtype=local_parms.torch_dtype,

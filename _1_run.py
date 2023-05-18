@@ -17,7 +17,7 @@ from botorch.models.transforms.outcome import Standardize
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
 from _2_actor import Actor
-from _5_evalplot import eval_and_plot_1D, eval_and_plot_2D
+from _5_evalplot import eval_and_plot_1D, eval_and_plot_2D, eval_func
 from _9_semifuncs import generate_random_X
 
 
@@ -43,6 +43,7 @@ def run(parms, env) -> None:
         eval_and_plot = eval_and_plot_2D
     else:
         print("Plotting is only done when x_dim is 1 or 2.")
+        eval_and_plot = eval_func
 
     # Generate initial observations and initialize model
     # data_x = torch.rand(
@@ -54,6 +55,7 @@ def run(parms, env) -> None:
     # Min max scaling
     # data_x = data_x * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
     # >>> n_initial_points x dim
+
     if parms.env_name == "AntBO":
         data_x = generate_random_X(parms.n_initial_points, parms.x_dim)
         data_x = data_x.to(
@@ -62,7 +64,7 @@ def run(parms, env) -> None:
         )
     else:
         data_x = torch.tensor(
-            [[0.2, 0.7], [0.25, -0.5], [0.5, 0.5]],
+            parms.initial_points,
             device=parms.device,
             dtype=parms.torch_dtype,
         )
@@ -80,7 +82,7 @@ def run(parms, env) -> None:
         dtype=parms.torch_dtype,
     )
 
-    buffer_size = parms.n_initial_points + parms.n_iterations
+    buffer_size = parms.n_iterations
     fill_value = float("nan")
     buffer = TensorDict(
         dict(
@@ -114,7 +116,39 @@ def run(parms, env) -> None:
     buffer["h"][: parms.n_initial_points] = data_hidden_state
 
     actor = Actor(parms=parms)
-
+    
+    WM = SingleTaskGP(
+            buffer["x"][:parms.n_initial_points],
+            buffer["y"][:parms.n_initial_points],
+            outcome_transform=Standardize(1),
+            covar_module=parms.kernel,
+        ).to(parms.device)
+        
+    mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+    fit_gpytorch_model(mll)
+    actor.construct_acqf(WM=WM, buffer=buffer[:parms.n_initial_points])
+    
+    # Alpine
+    
+    real_loss, _ = eval_and_plot(
+            func=env,
+            wm=WM,
+            cfg=parms,
+            acqf=actor.acqf,
+            buffer=buffer[:parms.n_initial_points-1],
+            next_x=buffer['x'][parms.n_initial_points-1],
+            actions=None,
+            iteration=parms.n_initial_points-1,
+        )
+    return
+    
+    real_loss, _ = eval_func(
+        func=env,
+        cfg=parms,
+        acqf=actor.acqf
+    )
+    buffer["real_loss"][parms.n_initial_points-1] = real_loss
+    
     # Run BO loop
     for i in range(parms.n_initial_points, parms.n_iterations):
         # Initialize model (which is the GP in this case)
@@ -122,37 +156,45 @@ def run(parms, env) -> None:
             buffer["x"][:i],
             buffer["y"][:i],
             outcome_transform=Standardize(1),
+            covar_module=parms.kernel,
         ).to(parms.device)
+        
         mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
         fit_gpytorch_model(mll)
-
         # Adjust lookahead steps
-        if actor.lookahead_steps > 1:
-            actor.lookahead_steps = parms.lookahead_steps - i
-        actor.construct_acqf(WM=WM, buffer=buffer)
+        if actor.lookahead_steps > 1 and (parms.n_iterations - i < actor.lookahead_steps):
+            actor.lookahead_steps -= 1
+        actor.construct_acqf(WM=WM, buffer=buffer[:i])
 
         # Query and observe next point
         next_x, hidden_state, actions = actor.query(buffer, i)
         next_y = env(next_x).reshape(-1, 1)
 
         # Evaluate and plot
-        if parms.x_dim in [1, 2]:
-            real_loss = eval_and_plot(
-                func=env,
-                wm=WM,
-                cfg=parms,
-                acqf=actor.acqf,
-                buffer=buffer,
-                next_x=next_x,
-                actions=actions,
-                iteration=i,
-            )
-        else:
-            raise NotImplementedError
+        real_loss, _ = eval_and_plot(
+            func=env,
+            wm=WM,
+            cfg=parms,
+            acqf=actor.acqf,
+            buffer=buffer,
+            next_x=next_x,
+            actions=actions,
+            iteration=i,
+        )
 
         buffer["x"][i] = next_x
         buffer["y"][i] = next_y
         buffer["h"][i] = hidden_state
         buffer["real_loss"][i] = real_loss
+
+        print("Real loss:", real_loss.item())
+        
+        # Save buffer to file after each iteration
+        torch.save(buffer, f'{parms.save_dir}/buffer.pt')
+        print("Buffer saved to file.")
+            
+        # Save model to file after each iteration
+        torch.save(WM.state_dict(), f'{parms.save_dir}/world_model.pt')
+        print("Model saved to file.")
 
     return buffer["real_loss"].cpu().detach().numpy().tolist()

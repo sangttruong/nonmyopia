@@ -6,17 +6,17 @@
 
 r"""Multi-step H-Entropy Search with one-shot optimization."""
 
-import copy
 from typing import Dict, List, Optional, Tuple, Type
 
 import torch
 import torch.nn as nn
+from copy import deepcopy
 from torch import Tensor
 from botorch.acquisition.monte_carlo import MCAcquisitionFunction
 from botorch.sampling.base import MCSampler
 
-# from botorch.sampling.normal import SobolQMCNormalSampler
-from _6_samplers import DesireSobolQMCNormalSampler as SobolQMCNormalSampler
+from botorch.sampling.normal import SobolQMCNormalSampler
+from _6_samplers import PosteriorMeanSampler
 
 
 class qMultiStepHEntropySearch(MCAcquisitionFunction):
@@ -117,10 +117,10 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         y_dim = prev_y.shape[1]
         previous_Xy = torch.cat((prev_X, prev_y), dim=-1)
 
-        fantasized_model = copy.deepcopy(self.model)
+        fantasized_model = deepcopy(self.model)
         X_returned = []
         hidden_state_returned = []
-
+        
         for step in range(self.lookahead_steps):
             # condition on X[step], then sample, then condition on (x, y)
             if use_amortized_map:
@@ -175,9 +175,11 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             x_dim,
         ]
         actions = actions.reshape(*action_shape)
-        action_yis = self.action_sampler(self.model.posterior(actions))
+        action_yis = self.action_sampler(fantasized_model.posterior(actions))
         # >> Tensor[*[n_samples]*i, n_restarts, n_actions, 1]
+        
         action_yis = action_yis.squeeze(dim=-1)
+        # >> Tensor[*[n_samples]*i, n_restarts, n_actions]
 
         # Calculate loss value
         acqf_loss = self.loss_function(actions, action_yis)
@@ -229,11 +231,17 @@ def set_sampler_and_n_fantasy(
         if n_fantasy is None:
             raise ValueError("Must specify `n_fantasy` if no `sampler` is provided.")
         # base samples should be fixed for joint optimization
-        sampler = SobolQMCNormalSampler(
-            sample_shape=n_fantasy,
-            resample=False,
-            collapse_batch_dims=True,
-        )
+
+        if n_fantasy == 1:
+            sampler = PosteriorMeanSampler(
+                sample_shape=n_fantasy, 
+                collapse_batch_dims=True
+            )
+        else:
+            sampler = SobolQMCNormalSampler(
+                sample_shape=n_fantasy, resample=False, collapse_batch_dims=True
+            )
+
     elif n_fantasy is not None:
         if sampler.sample_shape != torch.Size([n_fantasy]):
             raise ValueError("The sampler shape must match {n_fantasy}.")

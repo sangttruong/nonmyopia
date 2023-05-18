@@ -9,7 +9,7 @@ r"""Implement an actor."""
 import matplotlib.pyplot as plt
 import torch
 from torch import Tensor
-
+from tqdm import tqdm
 from botorch.acquisition import (
     qExpectedImprovement,
     qKnowledgeGradient,
@@ -17,15 +17,22 @@ from botorch.acquisition import (
     qProbabilityOfImprovement,
     qSimpleRegret,
     qUpperConfidenceBound,
+    qNegIntegratedPosteriorVariance,
 )
 
-# from botorch.sampling.normal import SobolQMCNormalSampler
-from botorch.optim.optimize import optimize_acqf
+from botorch.sampling.normal import SobolQMCNormalSampler
+from botorch.optim.optimize import optimize_acqf, optimize_acqf_discrete
 from _3_amortized_network import AmortizedNetwork, Project2Range
+from _3_amortized_network_antbo import AmortizedNetworkAntBO
 from _4_qhes import qMultiStepHEntropySearch
 from _5_evalplot import draw_loss_and_cost
-from _6_samplers import DesireSobolQMCNormalSampler as SobolQMCNormalSampler
-
+from _9_semifuncs import nm_AAs
+from _10_budgeted_bo import (
+    BudgetedMultiStepExpectedImprovement,
+    get_suggested_budget,
+    optimize_acqf_and_get_suggested_point,
+    evaluate_obj_and_cost_at_X,
+)
 
 class Actor:
     r"""Actor class."""
@@ -39,7 +46,12 @@ class Actor:
         self.parms = parms
         if self.parms.algo == "HES":
             if self.parms.amortized:
-                self.maps = AmortizedNetwork(
+                if self.parms.env_name == "AntBO":
+                    amor_net = AmortizedNetworkAntBO
+                else:
+                    amor_net = AmortizedNetwork
+
+                self.maps = amor_net(
                     input_dim=self.parms.x_dim + self.parms.y_dim,
                     output_dim=self.parms.x_dim,
                     hidden_dim=self.parms.hidden_dim,
@@ -49,6 +61,9 @@ class Actor:
                 self.maps = self.maps.to(
                     dtype=self.parms.torch_dtype, device=self.parms.device
                 )
+                print("Number of AmortizedNet params:",
+                      sum(p.numel() for p in self.maps.parameters() if p.requires_grad)
+                )
 
                 self._parameters = list(self.maps.parameters())
 
@@ -57,6 +72,7 @@ class Actor:
 
         # Initialize some actor attributes
         self.lookahead_steps = self.parms.lookahead_steps
+        self.acqf_params = {}
 
     def reset_parameters(
         self,
@@ -75,12 +91,13 @@ class Actor:
             prev_X (Tensor): Previous design points
             prev_y (Tensor): Previous observations
         """
+        print('Resetting actor parameters...')
         project2range = Project2Range(self.parms.bounds[0], self.parms.bounds[1])
 
         if self.parms.amortized:
             optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
 
-            for _ in range(10):
+            for _ in tqdm(range(10)):
                 optimizer.zero_grad()
                 return_dict = self.acqf(
                     prev_X=prev_X,
@@ -127,7 +144,18 @@ class Actor:
             self.maps.append(a)
             self._parameters = self.maps
 
-    def construct_acqf(self, WM, buffer):
+    def set_initial_acqf_params(self):
+        """Set initial acquisition function parameters."""
+        if self.parms.algo == "BudgetedBO":
+            self.objective_X = torch.empty(0)
+            self.cost_X = torch.empty(0)
+            self.acqf_params["initial_budget"] = self.parms.budget
+            self.acqf_params["current_budget"] = None
+            self.acqf_params["current_budget_plus_cumulative_cost"] = None
+            self.acqf_params["lower_bound"] = None
+            self.acqf_params["budget_left"] = self.parms.budget
+
+    def construct_acqf(self, WM, buffer, **kwargs):
         """Contruct aquisition function.
 
         Args:
@@ -141,8 +169,22 @@ class Actor:
             AcquisitionFunction: An aquisition function instance
         """
         if self.parms.algo == "HES":
-            nf_design_pts = [self.parms.n_samples] * 4
-            nf_design_pts = nf_design_pts + [1] * (self.lookahead_steps - 4)
+            if self.lookahead_steps == 1:
+                nf_design_pts = [64]
+            elif self.lookahead_steps == 2:
+                nf_design_pts = [64, 64]
+            elif self.lookahead_steps == 3:
+                nf_design_pts = [64, 32, 8]
+            elif self.lookahead_steps >= 4:
+                nf_design_pts = [16, 8, 8, 8]
+                nf_design_pts = nf_design_pts + [1] * (self.lookahead_steps - 4)
+                
+            # nf_design_pts = [self.parms.n_samples]
+            # for s in range(1, self.lookahead_steps):
+            #     next_nf = nf_design_pts[s-1] // 4
+            #     if next_nf < 1:
+            #         next_nf = 1
+            #     nf_design_pts.append(next_nf)
 
             self.acqf = qMultiStepHEntropySearch(
                 model=WM,
@@ -156,7 +198,7 @@ class Actor:
                 cost_func_hypers=self.parms.cost_func_hypers,
             )
 
-        elif self.parms.algo == "kg":
+        elif self.parms.algo == "qKG":
             self.acqf = qKnowledgeGradient(model=WM, num_fantasies=self.parms.n_samples)
 
         elif self.parms.algo == "qEI":
@@ -164,7 +206,9 @@ class Actor:
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
             self.acqf = qExpectedImprovement(
-                model=WM, best_f=buffer["y"].max(), sampler=sampler
+                model=WM,
+                best_f=buffer["y"].max(),
+                sampler=sampler,
             )
 
         elif self.parms.algo == "qPI":
@@ -189,9 +233,70 @@ class Actor:
 
         elif self.parms.algo == "qMSL":
             num_fantasies = [self.parms.n_samples] * self.lookahead_steps
+            # num_fantasies = [self.parms.n_samples]
+            # for s in range(1, self.lookahead_steps):
+            #     next_nf = num_fantasies[s-1] // 4
+            #     if next_nf < 1:
+            #         next_nf = 1
+            #     num_fantasies.append(next_nf)
+                
             self.acqf = qMultiStepLookahead(
                 model=WM,
                 batch_sizes=[1] * self.lookahead_steps,
+                num_fantasies=num_fantasies,
+            )
+
+        elif self.parms.aglo == "qNIPV":
+            sampler = SobolQMCNormalSampler(
+                sample_shape=self.parms.n_samples, seed=0, resample=False
+            )
+            self.acqf = qNegIntegratedPosteriorVariance(
+                model=WM, mc_points=0, sampler=sampler  # TODO
+            )
+
+        elif self.parms.algo == "BudgetedBO":
+            objective_new_x, cost_new_X = evaluate_obj_and_cost_at_X(
+                X=buffer["x"],
+                objective_function=self.parms.objective_function,
+                cost_function=self.parms.cost_function,
+                objective_cost_function=self.parms.objective_cost_function,
+            )
+
+            self.objective_X = torch.cat([self.objective_X, objective_new_x], 0)
+            self.cost_X = torch.cat([self.cost_X, cost_new_X], 0)
+
+            suggested_budget, lower_bound = get_suggested_budget(
+                strategy="fantasy_costs_from_aux_policy",
+                refill_until_lower_bound_is_reached=self.parms.refill_until_lower_bound_is_reached,
+                budget_left=self.acqf_params["budget_left"],
+                model=WM,
+                n_lookahead_steps=self.lookahead_steps + 1,
+                X=buffer["x"],
+                objective_X=self.objective_X,
+                cost_X=self.cost_X,
+                init_budget=self.acqf_params["init_budget"],
+                previous_budget=self.acqf_params["current_budget"],
+                lower_bound=self.acqf_params["lower_bound"],
+            )
+
+            cumulative_cost = self.cost_X.sum().item()
+            self.acqf_params["budget_left"] = (
+                self.acqf_params["init_budget"] - cumulative_cost
+            )
+            self.acqf_params["current_budget"] = suggested_budget
+            self.acqf_params["current_budget_plus_cumulative_cost"] = (
+                suggested_budget + cumulative_cost
+            )
+            self.acqf_params["lower_bound"] = lower_bound
+
+            num_fantasies = [self.parms.n_samples] * self.lookahead_steps
+            self.acqf = BudgetedMultiStepExpectedImprovement(
+                model=WM,
+                budget_plus_cumulative_cost=self.acqf_params[
+                    "current_budget_plus_cumulative_cost"
+                ],
+                batch_size=1,
+                lookahead_batch_sizes=[1] * self.lookahead_steps,
                 num_fantasies=num_fantasies,
             )
 
@@ -237,7 +342,6 @@ class Actor:
             costs = []
 
             for ep in range(self.parms.acq_opt_iter):
-                print(f"\nEpoch {ep:05d}", end="\t", flush=True)
                 return_dict = self.acqf.forward(
                     prev_X=prev_X,
                     prev_y=prev_y,
@@ -252,12 +356,13 @@ class Actor:
                 losses.append(acqf_loss.item())
                 costs.append(acqf_cost.item())
 
-                loss = acqf_loss + acqf_cost
+                loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
                 loss.backward()
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
-                print(f"Loss {loss.item():.5f}", end="\r")
+                
+                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}", end="\r", flush=True)
 
             loss = return_dict["acqf_loss"] + return_dict["acqf_cost"]
 
@@ -277,35 +382,75 @@ class Actor:
                 # >>> n_restarts * hidden_dim
 
             acqf_loss = loss[idx]
-            print("Acqf loss:", acqf_loss.item())
             # >>> n_actions * 1
 
-            actions = return_dict["actions"][..., idx, :, :]
+            actions = return_dict["actions"][..., idx, :, :].detach()
 
             # Draw losses by acq_opt_iter
             draw_loss_and_cost(self.parms.save_dir, losses, costs, iteration)
 
-        else:
+        elif self.parms.algo == "BudgetedBO":
             bounds = torch.tensor(
                 [self.parms.bounds] * self.parms.x_dim,
                 dtype=self.parms.torch_dtype,
                 device=self.parms.device,
             ).T
-            # Optimize acqf
-            next_X, acqf_loss = optimize_acqf(
-                acq_function=self.acqf,
+
+            next_X = optimize_acqf_and_get_suggested_point(
+                acq_func=self.acqf,
                 bounds=bounds,
-                q=self.parms.n_actions,
-                num_restarts=self.parms.n_restarts,
-                raw_samples=self.parms.n_samples,
+                batch_size=1,
+                algo_params=self.acqf_params,
             )
+        else:
+            # The total numbers of branches
+            q = 1 + sum(
+                [self.parms.n_samples**s for s in range(1, self.lookahead_steps + 1)]
+            )
+
+            if self.parms.env_name == "AntBO":
+                choices = torch.tensor(
+                    list(range(nm_AAs)), dtype=torch.long, device=self.parms.device
+                )
+                choices = choices.reshape(-1, 1).expand(-1, self.parms.x_dim)
+
+                # Optimize acqf
+                next_X, acqf_loss = optimize_acqf_discrete(
+                    acq_function=self.acqf,
+                    q=q,
+                    choices=choices,
+                )
+
+            else:
+                # bounds = torch.tensor(
+                #     [self.parms.bounds] * self.parms.x_dim,
+                #     dtype=self.parms.torch_dtype,
+                #     device=self.parms.device,
+                # ).T
+
+                lb = prev_X[-1] - self.parms.cost_func_hypers["radius"]
+                ub = prev_X[-1] + self.parms.cost_func_hypers["radius"]
+                lb[lb < self.parms.bounds[0]] = self.parms.bounds[0]
+                ub[ub > self.parms.bounds[1]] = self.parms.bounds[1]
+                
+                bounds = torch.stack([lb, ub], dim=0)
+
+                # Optimize acqf
+                next_X, acqf_loss = optimize_acqf(
+                    acq_function=self.acqf,
+                    bounds=bounds,
+                    q=q,
+                    num_restarts=self.parms.n_restarts,
+                    raw_samples=self.parms.n_restarts,
+                )
 
             hidden_state = prev_hid_state[0]
             actions = None
 
         next_X = next_X.detach()
-        actions = actions.detach()
         acqf_loss = acqf_loss.detach()
         hidden_state = hidden_state.detach()
+
+        print("Acqf loss:", acqf_loss.item())
 
         return next_X, hidden_state, actions

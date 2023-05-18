@@ -1,6 +1,6 @@
 import os
+import torch
 import subprocess
-import numpy as np
 import pandas as pd
 from abc import ABC
 
@@ -44,7 +44,7 @@ class Absolut(BaseTool):
         """
         x: categorical vector (num_Seq x Length)
         """
-        x = x.astype("int32")
+        x = x.to(dtype=torch.int32).cpu().detach().numpy()
         if len(x.shape) == 1:
             x = x.reshape(1, -1)
 

@@ -70,9 +70,10 @@ class AntBO(TestFunction):
     # this should be changed if we are tackling a mixed, or continuous problem, for e.g.
     problem_type = "categorical"
 
-    def __init__(self, device, n_categories, seq_len, bbox=None, normalise=True):
+    def __init__(self, n_categories, seq_len, bbox=None, normalise=True):
         super(AntBO, self).__init__(normalise)
-        self.device = device
+        self.dtype = torch.float32
+        self.device = "cpu"
         self.bbox = bbox
         self.n_vertices = n_categories
         self.config = self.n_vertices
@@ -83,12 +84,17 @@ class AntBO(TestFunction):
         else:
             assert 0, f"{self.config['tool']} Not Implemented"
 
-    def __call__(self, x):
+    def __call__(self, x, negate=True):
         """
         x: categorical vector
         """
         energy, _ = self.fbox.Energy(x)
-        energy = torch.tensor(energy, dtype=torch.float32).to(self.device)
+        energy = torch.tensor(energy, dtype=self.dtype).to(self.device)
+        
+        # Negate engergy, because our settings is maximization
+        if negate:
+            energy = -energy
+            
         return energy
 
     def idx_to_seq(self, x):
@@ -96,6 +102,11 @@ class AntBO(TestFunction):
         for seq in x:
             seqs.append("".join(self.fbox.idx_to_AA[int(aa)] for aa in seq))
         return seqs
+
+    def to(self, dtype, device):
+        self.dtype = dtype
+        self.device = device
+        return self
 
 
 def check_constraint_satisfaction(x):
