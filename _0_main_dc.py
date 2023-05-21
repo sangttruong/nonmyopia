@@ -9,6 +9,7 @@ r"""Run the main experiments."""
 import os
 import copy
 import torch
+import pickle
 import numpy as np
 import dill as pickle
 
@@ -93,12 +94,6 @@ class Parameters:
             self.radius = 0.15
             self.initial_points = [
                 [0.2, 0.7], [0.0, -0.4], [0.45, 0.5],
-                
-                [0.4, 0.4],[0.4, 0.35],[0.4, 0.2],
-                [0.4, 0.1],[0.4, 0.0],[0.35, -0.1],
-                [0.2, -0.2],[0.2, -0.2],[0.1, -0.3],
-                [0.1, -0.4],[0.1, -0.5],[0.0, -0.5],
-                [-0.1, -0.55],[-0.2, -0.55],[-0.1, -0.5],
             ]
             
         elif self.env_name == "HolderTable":
@@ -394,8 +389,6 @@ if __name__ == "__main__":
             # Assign loss to dictionary of metrics
             metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
 
-            import pickle
-
             pickle.dump(
                 metrics, open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb")
             )
@@ -434,4 +427,10 @@ if __name__ == "__main__":
             algo_metrics.append(metrics[f"eval_metric_{algo}_{seed}"])
         list_metrics.append(algo_metrics)
 
-    draw_metric("results", list_metrics, args.algos)
+    draw_metric(
+        save_dir="results", 
+        metrics=list_metrics, 
+        algos=args.algos, 
+        num_initial_points=local_parms.n_initial_points, 
+        num_steps=args.n_iterations
+    )

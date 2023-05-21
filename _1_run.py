@@ -128,20 +128,6 @@ def run(parms, env) -> None:
     fit_gpytorch_model(mll)
     actor.construct_acqf(WM=WM, buffer=buffer[:parms.n_initial_points])
     
-    # Alpine
-    
-    real_loss, _ = eval_and_plot(
-            func=env,
-            wm=WM,
-            cfg=parms,
-            acqf=actor.acqf,
-            buffer=buffer[:parms.n_initial_points-1],
-            next_x=buffer['x'][parms.n_initial_points-1],
-            actions=None,
-            iteration=parms.n_initial_points-1,
-        )
-    return
-    
     real_loss, _ = eval_func(
         func=env,
         cfg=parms,

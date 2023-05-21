@@ -9,6 +9,7 @@ r"""Run the main experiments."""
 import os
 import copy
 import torch
+import pickle
 import numpy as np
 import dill as pickle
 
@@ -114,12 +115,6 @@ class Parameters:
             self.initial_points = [
                 [7.5, 7.5], [5.0, 5.0], [4.0, 7.0],
                 [7.0, 3.2], [2.8, 5], [5.0, 4.0],
-                
-                [5.24, 4.29], [5.78, 4.67], [5.95, 5.34],
-                [6.29, 5.66], [6.87, 6.03], [7.19, 6.56],
-                [7.25, 6.97], [7.64, 7.43], [7.87, 7.77],
-                [8.02, 7.91], [8.14, 8.05]
-                
             ]
         else:
             raise NotImplementedError
@@ -393,8 +388,6 @@ if __name__ == "__main__":
             # Assign loss to dictionary of metrics
             metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
 
-            import pickle
-
             pickle.dump(
                 metrics, open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb")
             )
@@ -433,4 +426,10 @@ if __name__ == "__main__":
             algo_metrics.append(metrics[f"eval_metric_{algo}_{seed}"])
         list_metrics.append(algo_metrics)
 
-    draw_metric("results", list_metrics, args.algos)
+    draw_metric(
+        save_dir="results", 
+        metrics=list_metrics, 
+        algos=args.algos, 
+        num_initial_points=local_parms.n_initial_points, 
+        num_steps=args.n_iterations
+    )

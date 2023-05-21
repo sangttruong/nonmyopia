@@ -368,24 +368,11 @@ def draw_metric(save_dir, metrics, algos, num_initial_points, num_steps):
         std = np.std(metrics[i], axis=0)[num_initial_points-1:num_steps]
         x = list(range(num_initial_points-1, num_initial_points + mean.shape[0]-1))
         
-        # lower = np.min(metrics[i], axis=0)
-        # upper = np.max(metrics[i], axis=0)
-
-        # xnew = np.linspace(2, 18, 300) 
-        # spl = make_interp_spline(x[2:18], mean[2:18], k=1)  # type: BSpline
-        # mean = spl(xnew)
-        # spl = make_interp_spline(x[2:18], lower[2:18], k=1)  # type: BSpline
-        # lower = spl(xnew)
-        # spl = make_interp_spline(x[2:18], upper[2:18], k=1)  # type: BSpline
-        # upper = spl(xnew)
-        
         plt.plot(x, mean, label=algo)
         plt.fill_between(x, mean-std, mean+std, alpha=0.1)
 
     plt.xlabel("Iteration")
     plt.ylabel("Loss")
-    # plt.ylim(-1.5, 1)
-    
     plt.legend()
     plt.savefig(f"{save_dir}/eval_metric.pdf")
     plt.close()
