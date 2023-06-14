@@ -355,25 +355,39 @@ def eval_and_plot(config, wm, env, acqf, buffer, next_x, actions, iteration):
         raise NotImplementedError
 
 
-def draw_metric(save_dir, metrics, algos, num_initial_points, num_steps):
-    r"""Draw the evaluation metric of each algorithm."""
-    # if isinstance(metrics, list):
-    #     metrics = np.array(metrics)
-
-    from scipy.interpolate import make_interp_spline, BSpline
-    plt.figure()
-    for i, algo in enumerate(algos):
+def draw_metric(save_dir, dict_metrics, env_names, algos, num_initial_points, num_steps):
+    r"""Draw the evaluation metric of all algorithms in all environments."""
+    # Draw a figure with grid Nx3, each cell is a plot of all metrics
+    # corresponding to all algorithms in one environment.
+    # The number of rows is the number of environments divided by 3.
+    assert len(env_names) != 0, "No environment to draw"
+    
+    num_rows = len(env_names) // 3
+    if len(env_names) % 3 != 0:
+        num_rows += 1
+    fig, axs = plt.subplots(num_rows, 3, figsize=(12, 3 * num_rows))
+    for i, env_name in enumerate(env_names):
+        row = i // 3
+        col = i % 3
+        ax = axs[row * i + col]
+        metrics = dict_metrics[env_name]
+        for j, algo in enumerate(algos):
+            nip = num_initial_points[env_name]
+            ns = num_steps[env_name]
+            mean = np.mean(metrics[j], axis=0)[nip-1:ns]
+            std = np.std(metrics[j], axis=0)[nip-1:ns]
+            x = list(range(nip-1, ns))
+            
+            ax.plot(x, mean, label=algo)
+            ax.fill_between(x, mean-std, mean+std, alpha=0.1)
+            
+        ax.set_title(env_name)
+        ax.set_xlabel("Iteration")
+        ax.set_ylabel("Loss")
         
-        mean = np.mean(metrics[i], axis=0)[num_initial_points-1:num_steps]
-        std = np.std(metrics[i], axis=0)[num_initial_points-1:num_steps]
-        x = list(range(num_initial_points-1, num_initial_points + mean.shape[0]-1))
+        handles, labels = ax.get_legend_handles_labels()
         
-        plt.plot(x, mean, label=algo)
-        plt.fill_between(x, mean-std, mean+std, alpha=0.1)
-
-    plt.xlabel("Iteration")
-    plt.ylabel("Loss")
-    plt.legend()
+    fig.legend(handles, labels, loc='outside upper center', ncol=8)
     plt.savefig(f"{save_dir}/eval_metric.pdf")
     plt.close()
 

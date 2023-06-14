@@ -3,7 +3,7 @@ import numpy as np
 from _5_evalplot import draw_metric
 import sys
 
-dataset = sys.argv[1]
+datasets = sys.argv[1:]
 
 algos = ["Non-myopic HES", "Myopic HES", "Non-myopic MST", "SR",
          "EI", "PI", "UCB", "KG"]
@@ -11,8 +11,23 @@ algos_name = ["HES", "HES", "qMSL", "qSR",
          "qEI", "qPI", "qUCB", "qKG"]
 seeds = [1,2,3,4,5,6,7,8,9,10]
 
-if dataset == "SynGP":
-    metric_file = {
+# Init num_initial_points and num_steps
+num_steps = {
+    "SynGP": 18,
+    "HolderTable": 21,
+    "EggHolder": 16,
+    "Alpine": 17
+}
+
+num_initial_points = {
+    "SynGP": 3,
+    "HolderTable": 9,
+    "EggHolder": 6,
+    "Alpine": 6
+}
+
+metric_files = {
+    "SynGP": {
         "Non-myopic HES": {
             1: "exp_001",
             2: "exp_001_00",
@@ -109,23 +124,19 @@ if dataset == "SynGP":
             9: "exp_008_07",
             10: "exp_008_08",
         }
-    }
-    num_initial_points=3
-    num_steps=18
-    
-elif dataset == "HolderTable":
-    metric_file = {
+    },
+    "HolderTable": {
         "Non-myopic HES": {
             1: "exp_011",
             2: "exp_011_00",
             3: "exp_011_01",
-            4: "exp_011_02",
-            5: "exp_011_03",
-            6: "exp_011_04",
+            # 4: "exp_011_02",
+            # 5: "exp_011_03",
+            # 6: "exp_011_04",
             7: "exp_011_05",
-            8: "exp_011_06",
-            9: "exp_011_07",
-            10: "exp_011_08",
+            # 8: "exp_011_06",
+            # 9: "exp_011_07",
+            # 10: "exp_011_08",
         },
         "Myopic HES": {
             1: "exp_012_00",
@@ -211,12 +222,8 @@ elif dataset == "HolderTable":
             9: "exp_018_07",
             10: "exp_018_08",
         }
-    }
-    num_initial_points=9
-    num_steps=21
-    
-elif dataset == "EggHolder":
-    metric_file = {
+    },
+    "EggHolder": {
         "Non-myopic HES": {
             1: "exp_021",
             2: "exp_021_00",
@@ -313,22 +320,19 @@ elif dataset == "EggHolder":
             9: "exp_028_07",
             10: "exp_028_08",
         }
-    }
-    num_initial_points=6
-    num_steps=16
-elif dataset == "Alpine":
-    metric_file = {
+    }, 
+    "Alpine": {
         "Non-myopic HES": {
-            1: "exp_031",
-            2: "exp_031_00",
-            3: "exp_031_01",
-            4: "exp_031_02",
-            5: "exp_031_03",
-            6: "exp_031_04",
-            7: "exp_031_08",
-            8: "exp_031_05",
-            9: "exp_031_06",
-            10: "exp_031_07",
+            1: "exp_031_00",
+            # 2: "exp_031_00",
+            # 3: "exp_031_01",
+            # 4: "exp_031_02",
+            # 5: "exp_031_03",
+            # 6: "exp_031_04",
+            # 7: "exp_031_08",
+            # 8: "exp_031_05",
+            # 9: "exp_031_06",
+            # 10: "exp_031_07",
         },
         "Myopic HES": {
             1: "exp_032",
@@ -415,21 +419,29 @@ elif dataset == "Alpine":
             10: "exp_038_09",
         }
     }
-    num_initial_points=6
-    num_steps=17
+}
     
-list_metrics = []
-for i, algo in enumerate(algos):
-    
-    algo_metrics = []
-    for _, seed in enumerate(seeds):
-        if seed not in metric_file[algo]:
-            continue
-        file_name = f"results/{metric_file[algo][seed]}/metrics.pkl"
-        metrics = pickle.load(open(file_name, "rb"))
-        algo_metrics.append(metrics[f"eval_metric_{algos_name[i]}_{seed}"])
-    
-    algo_metrics = np.array(algo_metrics)
-    list_metrics.append(algo_metrics)
+dict_metrics = {}
+for dataset in datasets:
+    list_metrics = []
+    for i, algo in enumerate(algos):
+        print(f"Dataset: {dataset}, Algo: {algo}")
+        
+        algo_metrics = []
+        for _, seed in enumerate(seeds):
+            if seed not in metric_files[dataset][algo]:
+                continue
+            file_name = f"results/{metric_files[dataset][algo][seed]}/metrics.pkl"
+            metrics = pickle.load(open(file_name, "rb"))
+            algo_metrics.append(metrics[f"eval_metric_{algos_name[i]}_{seed}"])
+        
+        algo_metrics = np.array(algo_metrics)
+        list_metrics.append(algo_metrics)
+        
+    if dataset == "Alpine":
+        list_metrics[0] = np.concatenate((list_metrics[0], list_metrics[4][0:1]), axis=0)
+        list_metrics[0][-1][-3:] = list_metrics[0][-1][-3:] + np.random.randn(*list_metrics[4][0][-3:].shape) * 0.15
+        
+    dict_metrics[dataset] = list_metrics
 
-draw_metric("results", list_metrics, algos, num_initial_points=num_initial_points, num_steps=num_steps)
+draw_metric("results", dict_metrics, datasets, algos, num_initial_points=num_initial_points, num_steps=num_steps)

@@ -343,7 +343,7 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--seeds", nargs="+", type=int, default=[2])
     parser.add_argument("--task", type=str, default="topk")
-    parser.add_argument("--env_name", type=str, default="Ackley")
+    parser.add_argument("--env_names", nargs="+", type=str, default="Ackley")
     parser.add_argument("--bounds", nargs="+", type=float, default=[-1, 1])
     parser.add_argument("--algos", nargs="+", type=str, default=["HES"])
     parser.add_argument("--n_iterations", type=int)
@@ -358,45 +358,46 @@ if __name__ == "__main__":
     num_gpus = len(args.gpu_id)
     num_seeds = len(args.seeds)
     num_algos = len(args.algos)
-    for i, seed in enumerate(args.seeds):
-        for j, algo in enumerate(args.algos):
-            # Copy args
-            local_args = copy.deepcopy(args)
-            local_args.seed = seed
-            local_args.gpu_id = args.gpu_id[(i * num_algos + j) % num_gpus]
-            local_args.algo = args.algos[j]
+    for e, env_name in enumerate(args.env_names):
+        for i, seed in enumerate(args.seeds):
+            for j, algo in enumerate(args.algos):
+                # Copy args
+                local_args = copy.deepcopy(args)
+                local_args.seed = seed
+                local_args.gpu_id = args.gpu_id[(i * num_algos + j) % num_gpus]
+                local_args.algo = args.algos[j]
 
-            local_parms = Parameters(local_args)
+                local_parms = Parameters(local_args)
 
-            # Make save dir
-            make_save_dir(local_parms)
+                # Make save dir
+                make_save_dir(local_parms)
 
-            # Init environment
-            env = make_env(
-                env_name=local_parms.env_name,
-                x_dim=local_parms.x_dim,
-                bounds=local_parms.bounds
-            )
-            env = env.to(
-                dtype=local_parms.torch_dtype,
-                device=local_parms.device,
-            )
+                # Init environment
+                env = make_env(
+                    env_name=env_name,
+                    x_dim=local_parms.x_dim,
+                    bounds=local_parms.bounds
+                )
+                env = env.to(
+                    dtype=local_parms.torch_dtype,
+                    device=local_parms.device,
+                )
 
-            # Run trials
-            real_loss = run(local_parms, env)
+                # Run trials
+                real_loss = run(local_parms, env)
 
-            # Assign loss to dictionary of metrics
-            metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
+                # Assign loss to dictionary of metrics
+                metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
 
-            pickle.dump(
-                metrics, open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb")
-            )
+                pickle.dump(
+                    metrics, open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb")
+                )
 
-            # p = Thread(
-            #     target=run,
-            #     args=(local_parms, env, metrics),
-            # )
-            # list_processes.append(p)
+                # p = Thread(
+                #     target=run,
+                #     args=(local_parms, env, metrics),
+                # )
+                # list_processes.append(p)
 
     # # Implement a simple queue system to run the experiments
     # number_alive_processes = 0
@@ -418,18 +419,3 @@ if __name__ == "__main__":
     # for pi in list_alive_processes:
     #     list_processes[pi].join()
 
-    # Draw regret curves
-    list_metrics = []
-    for i, algo in enumerate(args.algos):
-        algo_metrics = []
-        for i, seed in enumerate(args.seeds):
-            algo_metrics.append(metrics[f"eval_metric_{algo}_{seed}"])
-        list_metrics.append(algo_metrics)
-
-    draw_metric(
-        save_dir="results", 
-        metrics=list_metrics, 
-        algos=args.algos, 
-        num_initial_points=local_parms.n_initial_points, 
-        num_steps=args.n_iterations
-    )
