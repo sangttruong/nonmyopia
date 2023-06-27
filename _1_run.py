@@ -19,6 +19,7 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from _2_actor import Actor
 from _5_evalplot import eval_and_plot_1D, eval_and_plot_2D, eval_func
 from _9_semifuncs import generate_random_X
+from _13_embedder import DiscreteEmbbeder
 
 
 def run(parms, env) -> None:
@@ -116,25 +117,33 @@ def run(parms, env) -> None:
     buffer["h"][: parms.n_initial_points] = data_hidden_state
 
     actor = Actor(parms=parms)
-    
+
+    if parms.discretized:
+        embedder = DiscreteEmbbeder(
+            num_categories=parms.num_categories,
+            bounds=parms.bounds,
+        ).to(device=parms.device, dtype=parms.torch_dtype)
+    else:
+        embedder = None
+
     WM = SingleTaskGP(
-            buffer["x"][:parms.n_initial_points],
-            buffer["y"][:parms.n_initial_points],
-            outcome_transform=Standardize(1),
-            covar_module=parms.kernel,
-        ).to(parms.device)
-        
+        buffer["x"][:parms.n_initial_points],
+        buffer["y"][:parms.n_initial_points],
+        outcome_transform=Standardize(1),
+        covar_module=parms.kernel,
+    ).to(parms.device)
+
     mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
     fit_gpytorch_model(mll)
     actor.construct_acqf(WM=WM, buffer=buffer[:parms.n_initial_points])
-    
+
     real_loss, _ = eval_func(
         func=env,
         cfg=parms,
         acqf=actor.acqf
     )
     buffer["real_loss"][parms.n_initial_points-1] = real_loss
-    
+
     # Run BO loop
     for i in range(parms.n_initial_points, parms.n_iterations):
         # Initialize model (which is the GP in this case)
@@ -144,7 +153,7 @@ def run(parms, env) -> None:
             outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
-        
+
         mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
         fit_gpytorch_model(mll)
         # Adjust lookahead steps
@@ -153,7 +162,11 @@ def run(parms, env) -> None:
         actor.construct_acqf(WM=WM, buffer=buffer[:i])
 
         # Query and observe next point
-        next_x, hidden_state, actions = actor.query(buffer, i)
+        next_x, hidden_state, actions = actor.query(
+            buffer=buffer,
+            iteration=i,
+            embedder=embedder
+        )
         next_y = env(next_x).reshape(-1, 1)
 
         # Evaluate and plot
@@ -166,6 +179,8 @@ def run(parms, env) -> None:
             next_x=next_x,
             actions=actions,
             iteration=i,
+            num_categories=parms.num_categories,
+            embedder=embedder
         )
 
         buffer["x"][i] = next_x
@@ -174,11 +189,11 @@ def run(parms, env) -> None:
         buffer["real_loss"][i] = real_loss
 
         print("Real loss:", real_loss.item())
-        
+
         # Save buffer to file after each iteration
         torch.save(buffer, f'{parms.save_dir}/buffer.pt')
         print("Buffer saved to file.")
-            
+
         # Save model to file after each iteration
         torch.save(WM.state_dict(), f'{parms.save_dir}/world_model.pt')
         print("Model saved to file.")
