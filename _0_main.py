@@ -40,6 +40,7 @@ from _9_semifuncs import AntBO, nm_AAs
 from _11_kernels import TransformedCategorical
 from _12_alpine import AlpineN1
 
+
 class Parameters:
     r"""Class to store all parameters for the experiment."""
 
@@ -66,6 +67,12 @@ class Parameters:
         self.n_iterations = args.n_iterations
         self.lookahead_steps = args.lookahead_steps
         self.func_noise = 0.0
+        if args.discretized:
+            self.discretized = True
+            self.num_categories = 20
+        else:
+            self.discretized = False
+            self.num_categories = None
 
         self.n_samples = 64
         self.amortized = True if self.algo == "HES" else False
@@ -78,38 +85,38 @@ class Parameters:
         elif self.algo == "qMSL" and self.lookahead_steps > 1:
             self.n_restarts = 16
             self.n_samples = 8
-        
+
         if self.env_name == "AntBO":
             self.x_dim = 11
             self.kernel = TransformedCategorical(
-                lengthscale_constraint=Interval(0.01, 0.5), 
-                ard_num_dims=self.x_dim, 
+                lengthscale_constraint=Interval(0.01, 0.5),
+                ard_num_dims=self.x_dim,
             )
         else:
             # Using default MaternKernel
             self.kernel = None
-            
+
         if self.env_name == "SynGP":
             self.radius = 0.15
             self.initial_points = [
                 [0.2, 0.7], [0.0, -0.4], [0.45, 0.5]
             ]
-            
+
         elif self.env_name == "HolderTable":
             self.radius = 0.75
             self.initial_points = [
                 [7.0, 9.0], [8.0, 5.4], [7.0, 4.2],
-                [2.0, 4.5], [7.0, 2.0], [4.0, 8.3], 
+                [2.0, 4.5], [7.0, 2.0], [4.0, 8.3],
                 [2.0, 3.0], [6.5, 1.0], [5.0, 5.0],
             ]
-            
+
         elif self.env_name == "EggHolder":
             self.radius = 80.0
             self.initial_points = [
                 [-300.0, 400.0], [-200.0, 0.0], [200, -200],
                 [300.0, 0.0], [100.0, 300.0], [0.0, 0.0],
             ]
-            
+
         elif self.env_name == "Alpine":
             self.radius = 0.80
             self.initial_points = [
@@ -118,11 +125,11 @@ class Parameters:
             ]
         else:
             raise NotImplementedError
-        
+
         self.n_initial_points = len(self.initial_points)
         self.task = args.task
         self.set_task_parms()
-            
+
     def set_task_parms(self):
         r"""Set task-specific parameters."""
         if self.task == "topk":
@@ -133,14 +140,14 @@ class Parameters:
                 dist_weight=1,
                 dist_threshold=0.5,
             )
-                
+
             if self.algo == "BudgetedBO":
                 self.budget = 50
                 self.refill_until_lower_bound_is_reached = True
-                self.objective_function=objective_function
-                self.cost_function=cost_function
-                self.objective_cost_function=objective_cost_function
-                
+                self.objective_function = objective_function
+                self.cost_function = cost_function
+                self.objective_cost_function = objective_cost_function
+
         elif self.task == "minmax":
             self.n_actions = 2
         else:
@@ -291,8 +298,9 @@ def make_env(env_name, x_dim, bounds):
         assert x_dim == 11, "AntBO only runs on 11-dim X"
         bbox = {
             "tool": "Absolut",
-            "antigen": "1ADQ_A", # 1ADQ_A; 1FBI_X
-            "path": "/dfs/user/sttruong/Absolut/bin",  # Put path to Absolut (/ABS/PATH/TO/Absolut/)
+            "antigen": "1ADQ_A",  # 1ADQ_A; 1FBI_X
+            # Put path to Absolut (/ABS/PATH/TO/Absolut/)
+            "path": "/dfs/user/sttruong/Absolut/bin",
             "process": 8,  # Number of cores
             "startTask": 0,  # start core id
         }
@@ -312,7 +320,7 @@ def make_env(env_name, x_dim, bounds):
     if env_name != "AntBO":
         f_.bounds[0, :].fill_(bounds[0])
         f_.bounds[1, :].fill_(bounds[1])
-        
+
     return f_
 
 
@@ -348,6 +356,7 @@ if __name__ == "__main__":
     parser.add_argument("--algos", nargs="+", type=str, default=["HES"])
     parser.add_argument("--n_iterations", type=int)
     parser.add_argument("--lookahead_steps", type=int)
+    parser.add_argument("--discretized", action="store_true")
     parser.add_argument("--exp_id", type=int, default=0)
     parser.add_argument("--gpu_id", nargs="+", type=int)
     parser.add_argument("--n_jobs", type=int, default=1)
@@ -366,6 +375,7 @@ if __name__ == "__main__":
                 local_args.seed = seed
                 local_args.gpu_id = args.gpu_id[(i * num_algos + j) % num_gpus]
                 local_args.algo = args.algos[j]
+                local_args.env_name = env_name
 
                 local_parms = Parameters(local_args)
 
@@ -390,7 +400,8 @@ if __name__ == "__main__":
                 metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
 
                 pickle.dump(
-                    metrics, open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb")
+                    metrics, open(os.path.join(
+                        local_parms.save_dir, "metrics.pkl"), "wb")
                 )
 
                 # p = Thread(
@@ -418,4 +429,3 @@ if __name__ == "__main__":
 
     # for pi in list_alive_processes:
     #     list_processes[pi].join()
-

@@ -88,26 +88,28 @@ do
     # Print the current experiment
     echo "Running discrete experiment for $env and $algo"
     exp_id=$((exp_id+1))
-    python _0_main_dc.py --exp_id $exp_id \
+    python _0_main.py --exp_id $exp_id \
                          --gpu_id $gpu_id \
                          --algo $algo \
                          --env_name $env \
                          --seeds 0 \
                          --n_iterations ${env_iterations[$env]} \
                          --lookahead_steps ${algo_lookahead[$env,$algo]} \
-                         --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]}
+                         --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} \
+                         --discetized
 
     if [ "$algo" == "HES" ]
     then
         exp_id=$((exp_id+1))
-        python _0_main_dc.py --exp_id $exp_id \
+        python _0_main.py --exp_id $exp_id \
                              --gpu_id $gpu_id \
                              --algo $algo \
                              --env_name $env \
                              --seeds 0 \
                              --n_iterations ${env_iterations[$env]} \
                              --lookahead_steps 1 \
-                             --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]}
+                             --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} \
+                             --discetized
     fi
 done
 
