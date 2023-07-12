@@ -9,6 +9,7 @@ r"""Implement a BO loop."""
 import torch
 import random
 import numpy as np
+import os
 
 from tensordict import TensorDict
 from botorch import fit_gpytorch_model
@@ -29,7 +30,6 @@ def run(parms, env) -> None:
         parms (Parameter): List of input parameters
         env: Environment
     """
-
     random.seed(parms.seed)
     # torch.backends.cudnn.deterministic=True
     # torch.backends.cudnn.benchmark = False
@@ -83,8 +83,10 @@ def run(parms, env) -> None:
         dtype=parms.torch_dtype,
     )
 
+    actor = Actor(parms=parms)
     buffer_size = parms.n_iterations
     fill_value = float("nan")
+    continue_iter = 0
     buffer = TensorDict(
         dict(
             x=torch.full(
@@ -112,11 +114,34 @@ def run(parms, env) -> None:
         device=parms.device,
     )
 
-    buffer["x"][: parms.n_initial_points] = data_x
-    buffer["y"][: parms.n_initial_points] = data_y
-    buffer["h"][: parms.n_initial_points] = data_hidden_state
+    if parms.continue_once:
+        # Load buffers from previous iterations
+        buffer_old = torch.load(os.path.join(parms.continue_once, "buffer.pt"))
+        for key in list(buffer_old.keys()):
+            buffer[key] = buffer_old[key]
+        for idx, x in enumerate(buffer_old["x"]):
+            if torch.isnan(x).any():
+                continue_iter = idx - 1
+                break
+        del buffer_old
+        torch.cuda.empty_cache()
+    else:
+        buffer["x"][: parms.n_initial_points] = data_x
+        buffer["y"][: parms.n_initial_points] = data_y
+        buffer["h"][: parms.n_initial_points] = data_hidden_state
+        WM = SingleTaskGP(
+            buffer["x"][: parms.n_initial_points],
+            buffer["y"][: parms.n_initial_points],
+            outcome_transform=Standardize(1),
+            covar_module=parms.kernel,
+        ).to(parms.device)
 
-    actor = Actor(parms=parms)
+        mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+        fit_gpytorch_model(mll)
+        actor.construct_acqf(WM=WM, buffer=buffer[: parms.n_initial_points])
+
+        real_loss, _ = eval_func(func=env, cfg=parms, acqf=actor.acqf)
+        buffer["real_loss"][parms.n_initial_points - 1] = real_loss
 
     if parms.discretized:
         embedder = DiscreteEmbbeder(
@@ -125,26 +150,9 @@ def run(parms, env) -> None:
         ).to(device=parms.device, dtype=parms.torch_dtype)
     else:
         embedder = None
-
-    WM = SingleTaskGP(
-        buffer["x"][:parms.n_initial_points],
-        buffer["y"][:parms.n_initial_points],
-        outcome_transform=Standardize(1),
-        covar_module=parms.kernel,
-    ).to(parms.device)
-
-    mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
-    fit_gpytorch_model(mll)
-    actor.construct_acqf(WM=WM, buffer=buffer[:parms.n_initial_points])
-
-    real_loss, _ = eval_func(
-        func=env,
-        cfg=parms,
-        acqf=actor.acqf
-    )
-    buffer["real_loss"][parms.n_initial_points-1] = real_loss
-
+    print("Continue from iteration: {}".format(continue_iter))
     # Run BO loop
+    continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
     for i in range(parms.n_initial_points, parms.n_iterations):
         # Initialize model (which is the GP in this case)
         WM = SingleTaskGP(
@@ -157,15 +165,15 @@ def run(parms, env) -> None:
         mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
         fit_gpytorch_model(mll)
         # Adjust lookahead steps
-        if actor.lookahead_steps > 1 and (parms.n_iterations - i < actor.lookahead_steps):
+        if actor.lookahead_steps > 1 and (
+            parms.n_iterations - i < actor.lookahead_steps
+        ):
             actor.lookahead_steps -= 1
         actor.construct_acqf(WM=WM, buffer=buffer[:i])
 
         # Query and observe next point
         next_x, hidden_state, actions = actor.query(
-            buffer=buffer,
-            iteration=i,
-            embedder=embedder
+            buffer=buffer, iteration=i, embedder=embedder
         )
         next_y = env(next_x).reshape(-1, 1)
 
@@ -179,8 +187,7 @@ def run(parms, env) -> None:
             next_x=next_x,
             actions=actions,
             iteration=i,
-            num_categories=parms.num_categories,
-            embedder=embedder
+            embedder=embedder,
         )
 
         buffer["x"][i] = next_x
@@ -191,11 +198,11 @@ def run(parms, env) -> None:
         print("Real loss:", real_loss.item())
 
         # Save buffer to file after each iteration
-        torch.save(buffer, f'{parms.save_dir}/buffer.pt')
+        torch.save(buffer, f"{parms.save_dir}/buffer.pt")
         print("Buffer saved to file.")
 
         # Save model to file after each iteration
-        torch.save(WM.state_dict(), f'{parms.save_dir}/world_model.pt')
+        torch.save(WM.state_dict(), f"{parms.save_dir}/world_model.pt")
         print("Model saved to file.")
 
     return buffer["real_loss"].cpu().detach().numpy().tolist()

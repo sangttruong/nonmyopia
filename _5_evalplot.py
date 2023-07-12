@@ -17,7 +17,7 @@ from _4_qhes import qLossFunctionTopK
 plt.rcParams.update(bundles.iclr2023())
 
 
-def eval_func(cfg, acqf, func, *args, **kwargs):
+def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
     # Quality of the best decision from the current posterior distribution ###
 
     if cfg.algo == "HES":
