@@ -11,6 +11,8 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 
+from torch.distributions import OneHotCategoricalStraightThrough
+
 
 class AmortizedNetwork(nn.Module):
     r"""Amortized network."""
@@ -60,8 +62,11 @@ class AmortizedNetwork(nn.Module):
 
         self.rnn = nn.GRUCell(self.hidden_dim, self.hidden_dim)
 
-        output_action_dim = self.output_dim * self.n_actions if not self.discrete else \
-            self.output_dim * self.n_actions * self.num_categories
+        output_action_dim = (
+            self.output_dim * self.n_actions
+            if not self.discrete
+            else self.output_dim * self.n_actions * self.num_categories
+        )
         self.postpro_A = nn.Sequential(
             nn.Linear(self.hidden_dim * 2, self.hidden_dim),
             nn.ELU(),
@@ -72,8 +77,11 @@ class AmortizedNetwork(nn.Module):
             nn.Linear(self.hidden_dim, output_action_dim),
         )
 
-        output_x_dim = self.output_dim if not self.discrete else \
-            self.output_dim * self.num_categories
+        output_x_dim = (
+            self.output_dim
+            if not self.discrete
+            else self.output_dim * self.num_categories
+        )
         self.postpro_X = nn.Sequential(
             nn.Linear(self.hidden_dim * 2, self.hidden_dim),
             nn.ELU(),
@@ -83,7 +91,8 @@ class AmortizedNetwork(nn.Module):
         )
 
         self.project_output = Project2Range(
-            self.output_bounds[0], self.output_bounds[1])
+            self.output_bounds[0], self.output_bounds[1]
+        )
 
     def forward(self, x, y, prev_hid_state, return_actions):
         r"""Forward pass.
@@ -115,7 +124,16 @@ class AmortizedNetwork(nn.Module):
         output = postpro(preprocess_x)
         if self.discrete:
             output = output.reshape(output.shape[0], -1, self.num_categories)
-            output = output.softmax(dim=-1)
+            # breakpoint()
+            # output = output.softmax(dim=-1)
+            # output = torch.nn.functional.gumbel_softmax(output, hard=False)
+            y_soft = output.softmax(dim=-1)
+            index = y_soft.max(dim=-1, keepdim=True)[1]
+            y_hard = torch.zeros_like(
+                output, memory_format=torch.legacy_contiguous_format
+            ).scatter_(-1, index, 1.0)
+            output = y_hard - y_soft.detach() + y_soft
+            return output, hidden_state
 
         return self.project_output(output), hidden_state
 

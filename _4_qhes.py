@@ -10,7 +10,6 @@ from typing import Dict, List, Optional, Tuple, Type
 
 import torch
 import torch.nn as nn
-from copy import deepcopy
 from torch import Tensor
 from botorch.acquisition.monte_carlo import MCAcquisitionFunction
 from botorch.sampling.base import MCSampler
@@ -120,11 +119,9 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         num_categories = prev_X.shape[2] if embedder is not None else 0
         previous_X = prev_X
         previous_y = prev_y
-
         fantasized_model = self.model
         X_returned = []
         hidden_state_returned = []
-
         for step in range(self.lookahead_steps):
             # condition on X[step], then sample, then condition on (x, y)
             if use_amortized_map:
@@ -148,11 +145,9 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             X_expanded_shape = [n_fantasies] + [-1] * len(X_shape)
             X_expanded = X[None, ...].expand(*X_expanded_shape)
             # >>> n_samples * num_x_{step} * 1 * dim
-
             if embedder is not None:
                 X = embedder.encode(X)
                 # >>> num_x_{step} * x_dim
-
             X_returned.append(X)
             hidden_state_returned.append(hidden_state)
 
@@ -179,7 +174,6 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             prev_hid_state = hidden_state[None, ...]
             prev_hid_state = prev_hid_state.expand(n_fantasies, -1, -1)
             prev_hid_state = prev_hid_state.reshape(-1, hidden_state.shape[-1])
-
         # Compute actions
         if use_amortized_map:
             actions, hidden_state = maps(
@@ -374,3 +368,38 @@ class qCostFunctionL2(nn.Module):
         """
         diff = torch.sqrt(torch.pow(current_X - prev_X, 2).sum(-1))
         return diff
+
+
+class qCostFunctionEditDistance(nn.Module):
+    """Edit Distance cost function."""
+
+    def __init__(self, radius: float) -> None:
+        r"""Edit Distance cost function."""
+        super().__init__()
+        self.register_buffer("radius", torch.as_tensor(radius))
+
+    def forward(self, prev_X: Tensor, current_X: Tensor):
+        """Calculate EditDistance cost.
+
+        If number of edit points is radius,
+        the cost will be zero. Otherwise, the cost will be a
+        number of edit points.
+
+        Args:
+            prev_X (Tensor): A tensor of ... x x_dim of previous X
+            current_X (Tensor): A tensor of n_fantasies x ... x
+                x_dim of current X
+
+        Returns:
+            Tensor: A tensor of ... x 1 cost values
+        """
+        diff = prev_X[..., None, :] - current_X[..., None, :, :]
+        # diff[torch.abs(diff) > 1e-5] = 1
+        nb_idx = torch.abs(diff) >= 1e-5
+        diff = torch.abs(diff) * nb_idx.float()
+        nb_idx2 = diff > 0
+        diff = 1 - (1 - diff) * (1 - nb_idx2.float())
+        diff1 = torch.squeeze(torch.sum(diff, dim=-1).to(dtype=torch.int64), dim=-1)
+        nb_idx3 = diff1 == self.radius
+        diff2 = (diff1 + 1)*(1 - nb_idx3.float())
+        return diff2
