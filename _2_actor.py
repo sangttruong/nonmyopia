@@ -365,21 +365,24 @@ class Actor:
                     maps=self.maps,
                     embedder=embedder,
                 )
-
+                # if ep == 49:
+                #     breakpoint()
                 acqf_loss = return_dict["acqf_loss"].mean()
                 acqf_cost = return_dict["acqf_cost"].mean()
                 # >> n_restart
                 losses.append(acqf_loss.item())
                 costs.append(acqf_cost.item())
-                loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
+                loss = (0 * return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
                 # loss.backward()
+                breakpoint()
                 grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
                 for param, grad in zip(self._parameters, grads):
                     param.grad = grad
                 optimizer.step()
                 lr_scheduler.step()
                 # optimizer.zero_grad()
-                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}", end="\r", flush=True)
+                print(return_dict["acqf_cost"].mean())
+                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}")
 
             loss = return_dict["acqf_loss"] + return_dict["acqf_cost"]
             # Choose which restart produce the lowest loss
