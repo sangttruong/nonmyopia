@@ -71,7 +71,7 @@ class Parameters:
         self.func_noise = 0.0
         if args.discretized:
             self.discretized = True
-            self.num_categories = 3
+            self.num_categories = 20
         else:
             self.discretized = False
             self.num_categories = None
@@ -153,7 +153,7 @@ class Parameters:
     def set_task_parms(self):
         r"""Set task-specific parameters."""
         if self.task == "topk":
-            self.cost_function_class = qCostFunctionSpotlight
+            self.cost_function_class = qCostFunctionEditDistance
             self.cost_func_hypers = dict(radius=self.radius)
             self.loss_function_class = qLossFunctionTopK
             self.loss_func_hypers = dict(
@@ -243,6 +243,7 @@ class SynGP:
     def get_post_mean(self, test_x):
         """
         Return mean of model posterior (given self.domain_samples, self.prior_samples)
+
         at the test_x inputs.
         """
         post_mean, _ = gp_post(
@@ -254,6 +255,7 @@ class SynGP:
             self.hypers["sigma"],
             self.kernel,
         )
+
         return post_mean
 
     def process_function_input(self, test_x):

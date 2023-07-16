@@ -126,7 +126,10 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             # condition on X[step], then sample, then condition on (x, y)
             if use_amortized_map:
                 X, hidden_state = maps(
-                    x=previous_X, y=previous_y, prev_hid_state=prev_hid_state, return_actions=False
+                    x=previous_X,
+                    y=previous_y,
+                    prev_hid_state=prev_hid_state,
+                    return_actions=False,
                 )
                 # >>> n_restart x x_dim x (num_categories)
             else:
@@ -135,19 +138,28 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             n_fantasies = self.n_fantasy_at_design_pts[step]
             if num_categories > 0:
                 X_shape = self.n_fantasy_at_design_pts[:step][::-1] + [
-                    n_restarts, 1, x_dim, num_categories]
+                    n_restarts,
+                    1,
+                    x_dim,
+                    num_categories,
+                ]
             else:
                 X_shape = self.n_fantasy_at_design_pts[:step][::-1] + [
-                    n_restarts, 1, x_dim]
+                    n_restarts,
+                    1,
+                    x_dim,
+                ]
             X = X.reshape(*X_shape)
             # >>> num_x_{step} * x_dim
 
             X_expanded_shape = [n_fantasies] + [-1] * len(X_shape)
             X_expanded = X[None, ...].expand(*X_expanded_shape)
             # >>> n_samples * num_x_{step} * 1 * dim
+
             if embedder is not None:
                 X = embedder.encode(X)
                 # >>> num_x_{step} * x_dim
+
             X_returned.append(X)
             hidden_state_returned.append(hidden_state)
 
@@ -160,7 +172,8 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
 
                 # Update conditions
                 fantasized_model = fantasized_model.condition_on_observations(
-                    X=fantasized_model.transform_inputs(X), Y=ys)
+                    X=fantasized_model.transform_inputs(X), Y=ys
+                )
 
             # Update previous_Xy
             if num_categories > 0:
@@ -177,7 +190,10 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         # Compute actions
         if use_amortized_map:
             actions, hidden_state = maps(
-                x=previous_X, y=previous_y, prev_hid_state=prev_hid_state, return_actions=True
+                x=previous_X,
+                y=previous_y,
+                prev_hid_state=prev_hid_state,
+                return_actions=True,
             )
         else:
             actions = maps[self.lookahead_steps]
@@ -203,15 +219,13 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         first_prev_X = prev_X[:, None, ...]
         if embedder is not None:
             first_prev_X = embedder.encode(first_prev_X)
-        acqf_cost = self.cost_function(
-            prev_X=first_prev_X, current_X=X_returned[0]
-        )
+        acqf_cost = self.cost_function(prev_X=first_prev_X, current_X=X_returned[0])
         for i in range(self.lookahead_steps - 1):
             cX = X_returned[i + 1]
             pX = X_returned[i][None, ...].expand_as(cX)
             acqf_cost = acqf_cost + self.cost_function(prev_X=pX, current_X=cX)
         for i in range(self.n_actions):
-            cX = actions[..., i: i + 1, :]
+            cX = actions[..., i : i + 1, :]
             pX = X_returned[-1][None, ...].expand_as(cX)
             acqf_cost = acqf_cost + self.cost_function(prev_X=pX, current_X=cX)
         acqf_cost = acqf_cost.squeeze(dim=-1)
@@ -247,14 +261,12 @@ def set_sampler_and_n_fantasy(
     """
     if sampler is None:
         if n_fantasy is None:
-            raise ValueError(
-                "Must specify `n_fantasy` if no `sampler` is provided.")
+            raise ValueError("Must specify `n_fantasy` if no `sampler` is provided.")
         # base samples should be fixed for joint optimization
 
         if n_fantasy == 1:
             sampler = PosteriorMeanSampler(
-                sample_shape=n_fantasy,
-                collapse_batch_dims=True
+                sample_shape=n_fantasy, collapse_batch_dims=True
             )
         else:
             sampler = SobolQMCNormalSampler(
@@ -308,8 +320,7 @@ class qLossFunctionTopK(nn.Module):
             # >>> n_fantasy_at_design_pts x batch_size x num_actions
             # ... x num_actions
 
-            A_distance_triu[A_distance_triu >
-                            self.dist_threshold] = self.dist_threshold
+            A_distance_triu[A_distance_triu > self.dist_threshold] = self.dist_threshold
             denominator = num_actions * (num_actions - 1) / 2.0
             dist_reward = A_distance_triu.sum((-1, -2)) / denominator
             # >>> n_fantasy_at_design_pts x batch_size
@@ -344,7 +355,7 @@ class qCostFunctionSpotlight(nn.Module):
             Tensor: A tensor of ... x 1 cost values
         """
         diff = torch.sqrt(torch.pow(current_X - prev_X, 2).sum(-1))
-        nb_idx = diff < self.radius
+        nb_idx = diff <= self.radius
         diff = diff * (1 - nb_idx.float()) * 100
         return diff
 
@@ -393,13 +404,17 @@ class qCostFunctionEditDistance(nn.Module):
         Returns:
             Tensor: A tensor of ... x 1 cost values
         """
+        diff = self.editdistance(prev_X, current_X)
+        nb_idx = diff <= self.radius
+        diff = diff * (1 - nb_idx.float()) * 100
+        return diff
+
+    def editdistance(self, prev_X: Tensor, current_X: Tensor):
         diff = prev_X[..., None, :] - current_X[..., None, :, :]
-        # diff[torch.abs(diff) > 1e-5] = 1
         nb_idx = torch.abs(diff) >= 1e-5
         diff = torch.abs(diff) * nb_idx.float()
         nb_idx2 = diff > 0
         diff = 1 - (1 - diff) * (1 - nb_idx2.float())
         diff1 = torch.squeeze(torch.sum(diff, dim=-1).to(dtype=torch.int64), dim=-1)
-        nb_idx3 = diff1 == self.radius
-        diff2 = (diff1 + 1)*(1 - nb_idx3.float())
-        return diff2
+
+        return diff1

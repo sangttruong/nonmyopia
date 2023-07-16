@@ -7,7 +7,7 @@ seeds=(1)
 # Declear an array containing all the algorithms
 algos=(HES)
 # Declare an array containing all environments
-envs=(SynGP)
+envs=(Sequence)
 # Declare a hash map containing all the bounds for each environment
 declare -A env_lower_bounds
 declare -A env_upper_bounds

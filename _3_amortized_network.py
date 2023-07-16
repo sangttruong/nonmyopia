@@ -108,16 +108,17 @@ class AmortizedNetwork(nn.Module):
         postpro = self.postpro_A if return_actions else self.postpro_X
 
         if self.discrete:
-            x = self.embedding_x(x)
-            y = self.embedding_y(y)
+            x1 = self.embedding_x(x)
+            y1 = self.embedding_y(y)
 
-            x = x.sum(dim=-2)
+            x1 = x1.sum(dim=-2)
             # >>> batch x hidden_dim
+        # if x1.isnan().any():
+        #     breakpoint()
+        x1 = torch.cat([x1, y1], dim=-1)
+        x1 = self.embedding(x1)
 
-        x = torch.cat([x, y], dim=-1)
-        x = self.embedding(x)
-
-        preprocess_x = self.prepro(x)
+        preprocess_x = self.prepro(x1)
         hidden_state = self.rnn(preprocess_x, prev_hid_state)
         preprocess_x = torch.cat([preprocess_x, hidden_state], dim=-1)
 
@@ -125,15 +126,17 @@ class AmortizedNetwork(nn.Module):
         if self.discrete:
             output = output.reshape(output.shape[0], -1, self.num_categories)
             # breakpoint()
-            # output = output.softmax(dim=-1)
+            output = output.softmax(dim=-1)
             # output = torch.nn.functional.gumbel_softmax(output, hard=False)
-            y_soft = output.softmax(dim=-1)
-            index = y_soft.max(dim=-1, keepdim=True)[1]
-            y_hard = torch.zeros_like(
-                output, memory_format=torch.legacy_contiguous_format
-            ).scatter_(-1, index, 1.0)
-            output = y_hard - y_soft.detach() + y_soft
-            return output, hidden_state
+            # y_soft = output.softmax(dim=-1)
+            # index = y_soft.max(dim=-1, keepdim=True)[1]
+            # y_hard = torch.zeros_like(
+            #     output, memory_format=torch.legacy_contiguous_format
+            # ).scatter_(-1, index, 1.0)
+            # output = y_hard - y_soft.detach() + y_soft
+            dist = OneHotCategoricalStraightThrough(probs=output)
+            output1 = dist.mode + dist.probs - dist.probs.detach()
+            return output1, hidden_state
 
         return self.project_output(output), hidden_state
 
