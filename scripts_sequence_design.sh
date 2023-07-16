@@ -1,21 +1,21 @@
 #!/bin/bash
 
 # Declear the intended GPU id
-gpu_id=6
+gpu_id=2
 # Declare an array contraining all the seeds
-seeds=(1 2 3 4 5 6 7 8 9 10)
+seeds=(1)
 # Declear an array containing all the algorithms
 algos=(HES)
 # Declare an array containing all environments
-envs=(Alpine)
+envs=(SynGP)
 # Declare a hash map containing all the bounds for each environment
 declare -A env_lower_bounds
 declare -A env_upper_bounds
-env_lower_bounds=(["SynGP"]=-1 ["HolderTable"]=1 ["EggHolder"]=-512 ["Alpine"]=0)
-env_upper_bounds=(["SynGP"]=1 ["HolderTable"]=10 ["EggHolder"]=512 ["Alpine"]=10)
+env_lower_bounds=(["SynGP"]=-1 ["HolderTable"]=1 ["EggHolder"]=-512 ["Alpine"]=0 ["Sequence"]=0)
+env_upper_bounds=(["SynGP"]=1 ["HolderTable"]=10 ["EggHolder"]=512 ["Alpine"]=10 ["Sequence"]=3)
 # Declare a hash map containing all the iterations for each environment
 declare -A env_iterations
-env_iterations=(["SynGP"]=18 ["HolderTable"]=21 ["EggHolder"]=16 ["Alpine"]=17)
+env_iterations=(["SynGP"]=18 ["HolderTable"]=21 ["EggHolder"]=16 ["Alpine"]=17 ["Sequence"]=18)
 # Declare a hash map containing all the lookahead steps for each algorithm in each environment
 declare -A algo_lookahead
 algo_lookahead=( \
@@ -27,6 +27,7 @@ algo_lookahead=( \
         ["EggHolder,qPI"]=0 ["EggHolder,qUCB"]=0 ["EggHolder,qKG"]=0 \
         ["Alpine,HES"]=11 ["Alpine,qMSL"]=3 ["Alpine,qSR"]=0 ["Alpine,qEI"]=0 \
         ["Alpine,qPI"]=0 ["Alpine,qUCB"]=0 ["Alpine,qKG"]=0 \
+        ["Sequence,HES"]=5 \
 )
         
 
@@ -56,7 +57,8 @@ do
                           --seeds ${seeds[@]} \
                           --n_iterations ${env_iterations[$env]} \
                           --lookahead_steps ${algo_lookahead[$env,$algo]} \
-                          --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]}
+                          --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} \
+                          --discretized
 
         # if [ "$algo" == "HES" ]
         # then
@@ -96,21 +98,21 @@ done
 #                          --n_iterations ${env_iterations[$env]} \
 #                          --lookahead_steps ${algo_lookahead[$env,$algo]} \
 #                          --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} \
-#                          --discetized
+#                          --discretized
 
-#     if [ "$algo" == "HES" ]
-#     then
-#         exp_id=$((exp_id+1))
-#         python _0_main.py --exp_id $exp_id \
-#                              --gpu_id $gpu_id \
-#                              --algo $algo \
-#                              --env_name $env \
-#                              --seeds 0 \
-#                              --n_iterations ${env_iterations[$env]} \
-#                              --lookahead_steps 1 \
-#                              --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} \
-#                              --discetized
-#     fi
+    # if [ "$algo" == "HES" ]
+    # then
+    #     exp_id=$((exp_id+1))
+    #     python _0_main.py --exp_id $exp_id \
+    #                          --gpu_id $gpu_id \
+    #                          --algo $algo \
+    #                          --env_name $env \
+    #                          --seeds 0 \
+    #                          --n_iterations ${env_iterations[$env]} \
+    #                          --lookahead_steps 1 \
+    #                          --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} \
+    #                          --discetized
+    # fi
 # done
 
 

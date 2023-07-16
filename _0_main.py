@@ -9,12 +9,10 @@ r"""Run the main experiments."""
 import os
 import copy
 import torch
-import pickle
 import numpy as np
 import dill as pickle
 
 from pathlib import Path
-from threading import Thread
 from argparse import ArgumentParser
 
 from botorch.test_functions.synthetic import (
@@ -28,17 +26,18 @@ from botorch.test_functions.synthetic import (
     EggHolder,
     Powell,
     Griewank,
-    HolderTable
+    HolderTable,
 )
 from gpytorch.constraints import Interval
 
 from _1_run import run
-from _4_qhes import qCostFunctionSpotlight, qLossFunctionTopK
+from _4_qhes import qCostFunctionSpotlight, qLossFunctionTopK, qCostFunctionEditDistance
 from _5_evalplot import draw_metric
 from _7_utils import kern_exp_quad_noard, sample_mvn, gp_post, unif_random_sample_domain
 from _9_semifuncs import AntBO, nm_AAs
 from _11_kernels import TransformedCategorical
 from _12_alpine import AlpineN1
+from _14_sequence_design_func import SequenceDesignFunction
 
 
 class Parameters:
@@ -54,8 +53,11 @@ class Parameters:
         print("Using device:", self.device)
         self.gpu_id = args.gpu_id
         self.exp_id = args.exp_id
-        self.save_dir = f"./results/exp_{self.exp_id:03d}"
+        self.save_dir = (
+            f"./results/exp_{args.algo}_{args.env_name}_{args.lookahead_steps}"
+        )
         self.torch_dtype = torch.float32
+        self.continue_once = args.continue_once
 
         self.algo = args.algo
         self.env_name = args.env_name
@@ -69,7 +71,7 @@ class Parameters:
         self.func_noise = 0.0
         if args.discretized:
             self.discretized = True
-            self.num_categories = 20
+            self.num_categories = 3
         else:
             self.discretized = False
             self.num_categories = None
@@ -92,37 +94,55 @@ class Parameters:
                 lengthscale_constraint=Interval(0.01, 0.5),
                 ard_num_dims=self.x_dim,
             )
+        elif self.env_name == "Sequence":
+            self.x_dim = 8
+            self.kernel = TransformedCategorical()
         else:
             # Using default MaternKernel
             self.kernel = None
 
         if self.env_name == "SynGP":
-            self.radius = 0.15
-            self.initial_points = [
-                [0.2, 0.7], [0.0, -0.4], [0.45, 0.5]
-            ]
+            self.radius = 0.015
+            self.initial_points = [[0.2, 0.7], [0.0, -0.4], [0.45, 0.5]]
 
         elif self.env_name == "HolderTable":
             self.radius = 0.75
             self.initial_points = [
-                [7.0, 9.0], [8.0, 5.4], [7.0, 4.2],
-                [2.0, 4.5], [7.0, 2.0], [4.0, 8.3],
-                [2.0, 3.0], [6.5, 1.0], [5.0, 5.0],
+                [7.0, 9.0],
+                [8.0, 5.4],
+                [7.0, 4.2],
+                [2.0, 4.5],
+                [7.0, 2.0],
+                [4.0, 8.3],
+                [2.0, 3.0],
+                [6.5, 1.0],
+                [5.0, 5.0],
             ]
 
         elif self.env_name == "EggHolder":
             self.radius = 80.0
             self.initial_points = [
-                [-300.0, 400.0], [-200.0, 0.0], [200, -200],
-                [300.0, 0.0], [100.0, 300.0], [0.0, 0.0],
+                [-300.0, 400.0],
+                [-200.0, 0.0],
+                [200, -200],
+                [300.0, 0.0],
+                [100.0, 300.0],
+                [0.0, 0.0],
             ]
 
         elif self.env_name == "Alpine":
             self.radius = 0.80
             self.initial_points = [
-                [7.5, 7.5], [5.0, 5.0], [4.0, 7.0],
-                [7.0, 3.2], [2.8, 5], [5.0, 4.0],
+                [7.5, 7.5],
+                [5.0, 5.0],
+                [4.0, 7.0],
+                [7.0, 3.2],
+                [2.8, 5],
+                [5.0, 4.0],
             ]
+        elif self.env_name == "Sequence":
+            self.radius = 1
+            self.initial_points = [[2, 2, 2, 0, 0, 0, 0, 0]]
         else:
             raise NotImplementedError
 
@@ -314,6 +334,8 @@ def make_env(env_name, x_dim, bounds):
     elif env_name == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
             return pickle.load(file_handle)
+    elif env_name == "Sequence":
+        f_ = SequenceDesignFunction(dim=x_dim)
     else:
         raise NotImplementedError
 
@@ -360,6 +382,7 @@ if __name__ == "__main__":
     parser.add_argument("--exp_id", type=int, default=0)
     parser.add_argument("--gpu_id", nargs="+", type=int)
     parser.add_argument("--n_jobs", type=int, default=1)
+    parser.add_argument("--continue_once", type=str, default="")
     args = parser.parse_args()
 
     metrics = {}
@@ -386,7 +409,7 @@ if __name__ == "__main__":
                 env = make_env(
                     env_name=env_name,
                     x_dim=local_parms.x_dim,
-                    bounds=local_parms.bounds
+                    bounds=local_parms.bounds,
                 )
                 env = env.to(
                     dtype=local_parms.torch_dtype,
@@ -400,8 +423,8 @@ if __name__ == "__main__":
                 metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
 
                 pickle.dump(
-                    metrics, open(os.path.join(
-                        local_parms.save_dir, "metrics.pkl"), "wb")
+                    metrics,
+                    open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb"),
                 )
 
                 # p = Thread(

@@ -9,3 +9,5 @@ __pycache__/
 .DS_Store
 results/*
 draw_script.py
+draw_mst_and_hes.py
+script_*.sh
