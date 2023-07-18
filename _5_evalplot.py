@@ -12,22 +12,24 @@ import torch
 from tueplots import bundles
 from botorch.optim.optimize import optimize_acqf, optimize_acqf_discrete
 from botorch.sampling.normal import SobolQMCNormalSampler
-from _4_qhes import qLossFunctionTopK
+from _4_qhes import qLossFunctionTopK, qCostFunctionSpotlight
 
 plt.rcParams.update(bundles.iclr2023())
 
 
-def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
+def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, *args, **kwargs):
     # Quality of the best decision from the current posterior distribution ###
 
     if cfg.algo == "HES":
         # Initialize A consistently across fantasies
-        A = torch.rand(
+        A = torch.empty(
             [1, cfg.n_restarts, cfg.n_actions, cfg.x_dim],
-            requires_grad=True,
             device=cfg.device,
             dtype=cfg.torch_dtype,
         )
+        A[0] = buffer["x"][iteration].clone().repeat(cfg.n_restarts, cfg.n_actions, 1)
+        A = A + torch.randn_like(A) * 0.01
+        A.requires_grad = True
 
         # Initialize optimizer
         optimizer = torch.optim.Adam([A], lr=0.001)
@@ -35,7 +37,6 @@ def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
 
         for i in range(2000):
             A_ = A.permute(1, 0, 2, 3)
-            A_ = torch.sigmoid(A_) * (ba_u - ba_l) + ba_l
             posterior = acqf.model.posterior(A_)
             fantasized_outcome = acqf.action_sampler(posterior)
             # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
@@ -44,10 +45,12 @@ def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
             fantasized_outcome = fantasized_outcome.squeeze(dim=-1)
             # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
             # ... x batch_size x num_actions
-            losses = acqf.loss_function(A=A_, Y=fantasized_outcome) #+ acqf.cost_function(prev_X=pX, current_X=cX)
+            
+            losses = acqf.loss_function(A=A_, Y=fantasized_outcome) + \
+                     acqf.cost_function(prev_X=buffer["x"][iteration], current_X=A_)
             # >>> n_fantasy_at_design_pts x batch_size
 
-            loss = losses.mean(dim=0).sum()
+            loss = losses.mean()
             loss.backward()
             optimizer.step()
             optimizer.zero_grad()
@@ -56,7 +59,6 @@ def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
                 print(f"Eval optim round: {i}, Loss: {loss.item():.2f}")
 
         A = A.permute(1, 0, 2, 3)
-        A = torch.sigmoid(A) * (ba_u - ba_l) + ba_l
         A = A.cpu().detach()
         bayes_loss = acqf.loss_function(A=A, Y=fantasized_outcome)
 
@@ -64,9 +66,9 @@ def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
         bayes_loss = bayes_loss[chosen_idx].item()
         bayes_action = A[chosen_idx, 0]
 
-        real_loss = acqf.loss_function(
+        real_loss = optimal_value + acqf.loss_function(
             A=A[chosen_idx, 0][None, ...], Y=func(A[chosen_idx, 0])[None, None, ...]
-        )
+        ) + acqf.cost_function(prev_X=buffer["x"][iteration].cpu(), current_X=A[chosen_idx, 0][None, ...])
 
     else:
         q = 1 + sum([cfg.n_samples**s for s in range(1, cfg.lookahead_steps + 1)])
@@ -107,24 +109,27 @@ def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
             #     num_restarts=cfg.n_restarts,
             #     raw_samples=cfg.n_restarts,
             # )
-            A = torch.rand(
+            
+            A = torch.empty(
                 [1, cfg.n_restarts, cfg.n_actions, cfg.x_dim],
-                requires_grad=True,
                 device=cfg.device,
                 dtype=cfg.torch_dtype,
             )
+            A[0] = buffer["x"][iteration].clone().repeat(cfg.n_restarts, cfg.n_actions, 1)
+            A = A + torch.randn_like(A) * 0.01
+            A.requires_grad = True
 
             # Initialize optimizer
             optimizer = torch.optim.Adam([A], lr=0.001)
             ba_l, ba_u = cfg.bounds
             loss_function = qLossFunctionTopK(**cfg.loss_func_hypers)
+            cost_function = qCostFunctionSpotlight(**cfg.cost_func_hypers)
             sampler = SobolQMCNormalSampler(
                 sample_shape=64, resample=False, collapse_batch_dims=True
             )
 
             for i in range(2000):
                 A_ = A.permute(1, 0, 2, 3)
-                A_ = torch.sigmoid(A_) * (ba_u - ba_l) + ba_l
                 posterior = acqf.model.posterior(A_)
                 fantasized_outcome = sampler(posterior)
                 # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
@@ -133,10 +138,12 @@ def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
                 fantasized_outcome = fantasized_outcome.squeeze(dim=-1)
                 # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
                 # ... x batch_size x num_actions
-                losses = loss_function(A=A_, Y=fantasized_outcome)
+                
+                losses = loss_function(A=A_, Y=fantasized_outcome) + \
+                         cost_function(prev_X=buffer["x"][iteration], current_X=A_)
                 # >>> n_fantasy_at_design_pts x batch_size
 
-                loss = losses.mean(dim=0).sum()
+                loss = losses.mean()
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
@@ -145,7 +152,6 @@ def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
                     print(f"Eval optim round: {i}, Loss: {loss.item():.2f}")
 
             A = A.permute(1, 0, 2, 3)
-            A = torch.sigmoid(A) * (ba_u - ba_l) + ba_l
             A = A.cpu().detach()
             bayes_loss = loss_function(A=A, Y=fantasized_outcome)
 
@@ -153,16 +159,16 @@ def eval_func(cfg, acqf, func, embedder=None, *args, **kwargs):
             bayes_loss = bayes_loss[chosen_idx].item()
             bayes_action = A[chosen_idx, 0]
             
-            real_loss = loss_function(
+            real_loss = optimal_value + loss_function(
                 A=A[chosen_idx, 0][None, ...], Y=func(A[chosen_idx, 0])[None, None, ...]
-            )
+            ) + cost_function(prev_X=buffer["x"][iteration].cpu(), current_X=A[chosen_idx, 0][None, ...])
             
     return real_loss, bayes_action
 
 
-def eval_and_plot_2D(func, wm, cfg, acqf, next_x, actions, buffer, iteration, n_space=100, embedder=None):
+def eval_and_plot_2D(func, wm, cfg, acqf, next_x, buffer, optimal_value, iteration, n_space=100, embedder=None):
     r"""Evaluate and plot 2D function."""
-    real_loss, bayes_action = eval_func(cfg, acqf, func)
+    real_loss, bayes_action = eval_func(cfg, acqf, func, buffer, optimal_value, iteration)
     data_x = buffer["x"].cpu().detach()
     next_x = next_x.cpu().detach()
     

@@ -108,17 +108,16 @@ class AmortizedNetwork(nn.Module):
         postpro = self.postpro_A if return_actions else self.postpro_X
 
         if self.discrete:
-            x1 = self.embedding_x(x)
-            y1 = self.embedding_y(y)
+            x = self.embedding_x(x)
+            y = self.embedding_y(y)
 
-            x1 = x1.sum(dim=-2)
+            x = x.sum(dim=-2)
             # >>> batch x hidden_dim
-        # if x1.isnan().any():
-        #     breakpoint()
-        x1 = torch.cat([x1, y1], dim=-1)
-        x1 = self.embedding(x1)
+        
+        x = torch.cat([x, y], dim=-1)
+        x = self.embedding(x)
 
-        preprocess_x = self.prepro(x1)
+        preprocess_x = self.prepro(x)
         hidden_state = self.rnn(preprocess_x, prev_hid_state)
         preprocess_x = torch.cat([preprocess_x, hidden_state], dim=-1)
 

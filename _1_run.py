@@ -11,6 +11,7 @@ import random
 import numpy as np
 import os
 
+from tqdm import tqdm
 from tensordict import TensorDict
 from botorch import fit_gpytorch_model
 from botorch.models import SingleTaskGP
@@ -45,7 +46,44 @@ def run(parms, env) -> None:
     else:
         print("Plotting is only done when x_dim is 1 or 2.")
         eval_and_plot = eval_func
-
+        
+    # Finding maxima of env using gradient descent
+    print("Computing optimal value...")
+    if not parms.discretized and parms.env_name != "SynGP":
+        maxima = torch.tensor(
+            (2, 2),
+            device=parms.device,
+            dtype=parms.torch_dtype,
+            requires_grad=True,
+        )
+        maxima_optimizer = torch.optim.Adam([maxima], lr=parms.acq_opt_lr)
+        for i in tqdm(range(1000), desc="Finding maxima"):
+            maxima_optimizer.zero_grad()
+            maxima_ = torch.sigmoid(maxima) * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
+            maxima_value = - env(maxima_)
+            maxima_value.backward()
+            maxima_optimizer.step()
+        
+        maxima = maxima.cpu().detach().requires_grad_(False)
+        maxima = torch.sigmoid(maxima) * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
+        optimal_value = env(maxima)
+        print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
+    else:
+        # Finding maxima of env using grid search
+        if not parms.discretized and parms.env_name == "SynGP":
+            categories = torch.linspace(parms.bounds[0], parms.bounds[1], 100)
+        else:
+            categories = torch.arange(0, parms.num_categories)
+            
+        categories = categories.to(device=parms.device, dtype=parms.torch_dtype)
+        X = [categories] * parms.x_dim
+        X = torch.stack(torch.meshgrid(*X), dim=-1).reshape(-1, parms.x_dim)
+        y = env(X)
+        optimal_value, idx = torch.max(y, dim=0)
+        maxima = X[idx].cpu().detach()
+        optimal_value = optimal_value.cpu().detach()
+        print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
+        
     # Generate initial observations and initialize model
     # data_x = torch.rand(
     #     [parms.n_initial_points, parms.x_dim],
@@ -72,10 +110,10 @@ def run(parms, env) -> None:
     # >>> n_initial_points x dim
 
     data_y = env(data_x).reshape(-1, 1)
-    # >>> n_initial_points x 1
     data_y = data_y + parms.func_noise * torch.randn_like(
         data_y, dtype=parms.torch_dtype
     )
+    # >>> n_initial_points x 1
 
     data_hidden_state = torch.ones(
         [parms.n_initial_points, parms.hidden_dim],
@@ -114,9 +152,9 @@ def run(parms, env) -> None:
         device=parms.device,
     )
 
-    if parms.continue_once:
+    if parms.continue_once and not parms.test_only:
         # Load buffers from previous iterations
-        buffer_old = torch.load(os.path.join(parms.continue_once, "buffer.pt"))
+        buffer_old = torch.load(os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device)
         for key in list(buffer_old.keys()):
             buffer[key] = buffer_old[key]
         for idx, x in enumerate(buffer_old["x"]):
@@ -125,6 +163,8 @@ def run(parms, env) -> None:
                 break
         del buffer_old
         torch.cuda.empty_cache()
+    elif parms.continue_once and parms.test_only:
+        buffer = torch.load(os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device)
     else:
         buffer["x"][: parms.n_initial_points] = data_x
         buffer["y"][: parms.n_initial_points] = data_y
@@ -140,7 +180,7 @@ def run(parms, env) -> None:
         fit_gpytorch_model(mll)
         actor.construct_acqf(WM=WM, buffer=buffer[: parms.n_initial_points])
 
-        real_loss, _ = eval_func(func=env, cfg=parms, acqf=actor.acqf)
+        real_loss, _ = eval_func(func=env, cfg=parms, acqf=actor.acqf, buffer=buffer, optimal_value=optimal_value, iteration=parms.n_initial_points-1)
         buffer["real_loss"][parms.n_initial_points - 1] = real_loss
 
     if parms.discretized:
@@ -153,6 +193,7 @@ def run(parms, env) -> None:
     print("Continue from iteration: {}".format(continue_iter))
     # Run BO loop
     continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
+        
     for i in range(parms.n_initial_points, parms.n_iterations):
         # Initialize model (which is the GP in this case)
         WM = SingleTaskGP(
@@ -171,31 +212,32 @@ def run(parms, env) -> None:
             actor.lookahead_steps -= 1
         actor.construct_acqf(WM=WM, buffer=buffer[:i])
 
-        # Query and observe next point
-        next_x, hidden_state, actions = actor.query(
-            buffer=buffer, iteration=i, embedder=embedder
-        )
-        next_y = env(next_x).reshape(-1, 1)
+        if not parms.test_only:
+            # Query and observe next point
+            next_x, hidden_state, actions = actor.query(
+                buffer=buffer, iteration=i, embedder=embedder
+            )
+            next_y = env(next_x).reshape(-1, 1)
 
+            buffer["x"][i] = next_x
+            buffer["y"][i] = next_y
+            buffer["h"][i] = hidden_state
+        else:
+            next_x = buffer["x"][i]
+        
         # Evaluate and plot
-        real_loss, _ = eval_and_plot(
+        buffer["real_loss"][i], _ = eval_and_plot(
             func=env,
             wm=WM,
             cfg=parms,
             acqf=actor.acqf,
             buffer=buffer,
             next_x=next_x,
-            actions=actions,
+            optimal_value=optimal_value,
             iteration=i,
             embedder=embedder,
         )
-
-        buffer["x"][i] = next_x
-        buffer["y"][i] = next_y
-        buffer["h"][i] = hidden_state
-        buffer["real_loss"][i] = real_loss
-
-        print("Real loss:", real_loss.item())
+        print("Real loss:", buffer["real_loss"][i].item())
 
         # Save buffer to file after each iteration
         torch.save(buffer, f"{parms.save_dir}/buffer.pt")

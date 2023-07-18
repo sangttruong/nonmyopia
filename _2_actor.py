@@ -343,11 +343,11 @@ class Actor:
         # Optimize the acquisition function
         if self.parms.algo == "HES":
             # Reset the actor parameters for diversity
-            # if iteration == self.parms.n_initial_points:
-            #     self.reset_parameters(
-            #         prev_X=prev_X, prev_y=prev_y, prev_hid_state=prev_hid_state,
-            #         embedder=embedder,
-            #     )
+            if iteration == self.parms.n_initial_points:
+                self.reset_parameters(
+                    prev_X=prev_X, prev_y=prev_y, prev_hid_state=prev_hid_state,
+                    embedder=embedder,
+                )
 
             optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
             lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -357,7 +357,6 @@ class Actor:
             costs = []
 
             for ep in range(self.parms.acq_opt_iter):
-                optimizer.zero_grad()
                 return_dict = self.acqf.forward(
                     prev_X=prev_X,
                     prev_y=prev_y,
@@ -365,24 +364,24 @@ class Actor:
                     maps=self.maps,
                     embedder=embedder,
                 )
-                # if ep == 49:
-                #     breakpoint()
+                
                 acqf_loss = return_dict["acqf_loss"].mean()
                 acqf_cost = return_dict["acqf_cost"].mean()
                 # >> n_restart
+                
                 losses.append(acqf_loss.item())
                 costs.append(acqf_cost.item())
-                loss = (0 * return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
+                loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
+                
                 # loss.backward()
-                breakpoint()
                 grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
                 for param, grad in zip(self._parameters, grads):
                     param.grad = grad
                 optimizer.step()
                 lr_scheduler.step()
-                # optimizer.zero_grad()
-                print(return_dict["acqf_cost"].mean())
-                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}")
+                optimizer.zero_grad()
+                
+                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}", end="\r", flush=True)
 
             loss = return_dict["acqf_loss"] + return_dict["acqf_cost"]
             # Choose which restart produce the lowest loss

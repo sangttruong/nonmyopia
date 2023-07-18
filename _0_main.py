@@ -52,13 +52,12 @@ class Parameters:
             self.device = "cpu"
         print("Using device:", self.device)
         self.gpu_id = args.gpu_id
-        self.exp_id = args.exp_id
         self.save_dir = (
             f"./results/exp_{args.algo}_{args.env_name}_{args.lookahead_steps}"
         )
         self.torch_dtype = torch.float32
         self.continue_once = args.continue_once
-
+        self.test_only = args.test_only
         self.algo = args.algo
         self.env_name = args.env_name
         self.seed = args.seed
@@ -153,7 +152,7 @@ class Parameters:
     def set_task_parms(self):
         r"""Set task-specific parameters."""
         if self.task == "topk":
-            self.cost_function_class = qCostFunctionEditDistance
+            self.cost_function_class = qCostFunctionSpotlight
             self.cost_func_hypers = dict(radius=self.radius)
             self.loss_function_class = qLossFunctionTopK
             self.loss_func_hypers = dict(
@@ -381,10 +380,10 @@ if __name__ == "__main__":
     parser.add_argument("--n_iterations", type=int)
     parser.add_argument("--lookahead_steps", type=int)
     parser.add_argument("--discretized", action="store_true")
-    parser.add_argument("--exp_id", type=int, default=0)
     parser.add_argument("--gpu_id", nargs="+", type=int)
     parser.add_argument("--n_jobs", type=int, default=1)
     parser.add_argument("--continue_once", type=str, default="")
+    parser.add_argument("--test_only", action="store_true")
     args = parser.parse_args()
 
     metrics = {}
