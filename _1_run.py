@@ -151,6 +151,14 @@ def run(parms, env) -> None:
         batch_size=[buffer_size],
         device=parms.device,
     )
+    
+    if parms.discretized:
+        embedder = DiscreteEmbbeder(
+            num_categories=parms.num_categories,
+            bounds=parms.bounds,
+        ).to(device=parms.device, dtype=parms.torch_dtype)
+    else:
+        embedder = None
 
     if parms.continue_once and not parms.test_only:
         # Load buffers from previous iterations
@@ -163,8 +171,34 @@ def run(parms, env) -> None:
                 break
         del buffer_old
         torch.cuda.empty_cache()
+        print("Continue from iteration: {}".format(continue_iter))
+        
     elif parms.continue_once and parms.test_only:
         buffer = torch.load(os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device)
+        WM = SingleTaskGP(
+            buffer["x"][: parms.n_initial_points],
+            buffer["y"][: parms.n_initial_points],
+            outcome_transform=Standardize(1),
+            covar_module=parms.kernel,
+        ).to(parms.device)
+
+        mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+        fit_gpytorch_model(mll)
+        actor.construct_acqf(WM=WM, buffer=buffer[: parms.n_initial_points])
+
+        real_loss, _ = eval_and_plot(
+            func=env,
+            wm=WM,
+            cfg=parms,
+            acqf=actor.acqf, 
+            buffer=buffer,
+            next_x=buffer["x"][parms.n_initial_points-1],
+            optimal_value=optimal_value, 
+            iteration=parms.n_initial_points-1,
+            embedder=embedder,
+        )
+        buffer["real_loss"][parms.n_initial_points - 1] = real_loss
+
     else:
         buffer["x"][: parms.n_initial_points] = data_x
         buffer["y"][: parms.n_initial_points] = data_y
@@ -180,21 +214,32 @@ def run(parms, env) -> None:
         fit_gpytorch_model(mll)
         actor.construct_acqf(WM=WM, buffer=buffer[: parms.n_initial_points])
 
-        real_loss, _ = eval_func(func=env, cfg=parms, acqf=actor.acqf, buffer=buffer, optimal_value=optimal_value, iteration=parms.n_initial_points-1)
+        ############
+        X, actions = actor.query(
+            buffer=buffer, iteration=parms.n_initial_points, embedder=embedder, initial=True
+        )
+        ############
+        
+        real_loss, _ = eval_and_plot(
+            func=env,
+            wm=WM,
+            cfg=parms,
+            acqf=actor.acqf, 
+            buffer=buffer,
+            next_x=buffer["x"][parms.n_initial_points-1],
+            optimal_value=optimal_value, 
+            iteration=parms.n_initial_points-1,
+            embedder=embedder,
+            actions=actions,
+            X = X
+        )
         buffer["real_loss"][parms.n_initial_points - 1] = real_loss
 
-    if parms.discretized:
-        embedder = DiscreteEmbbeder(
-            num_categories=parms.num_categories,
-            bounds=parms.bounds,
-        ).to(device=parms.device, dtype=parms.torch_dtype)
-    else:
-        embedder = None
-    print("Continue from iteration: {}".format(continue_iter))
+    
     # Run BO loop
     continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
         
-    for i in range(parms.n_initial_points, parms.n_iterations):
+    for i in range(continue_iter, parms.n_iterations):
         # Initialize model (which is the GP in this case)
         WM = SingleTaskGP(
             buffer["x"][:i],
@@ -224,6 +269,7 @@ def run(parms, env) -> None:
             buffer["h"][i] = hidden_state
         else:
             next_x = buffer["x"][i]
+            actions = None
         
         # Evaluate and plot
         buffer["real_loss"][i], _ = eval_and_plot(
@@ -236,6 +282,7 @@ def run(parms, env) -> None:
             optimal_value=optimal_value,
             iteration=i,
             embedder=embedder,
+            actions=actions
         )
         print("Real loss:", buffer["real_loss"][i].item())
 

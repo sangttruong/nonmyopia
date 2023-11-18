@@ -52,15 +52,25 @@ class Parameters:
             self.device = "cpu"
         print("Using device:", self.device)
         self.gpu_id = args.gpu_id
-        self.save_dir = (
-            f"./results/exp_{args.algo}_{args.env_name}_{args.lookahead_steps}"
-        )
         self.torch_dtype = torch.float32
         self.continue_once = args.continue_once
         self.test_only = args.test_only
+        self.seed = args.seed
+        if not self.test_only:
+            self.save_dir = (
+                f"./results/exp_{args.algo}_{args.env_name}_{args.lookahead_steps}"
+            )
+        else:
+            self.save_dir = self.continue_once
+            with open(os.path.join(self.save_dir, "parameters.json"), "r") as file_handle:
+                text = file_handle.read()
+                lines = text.split("\n")
+                for line in lines:
+                    if 'seed' in line:
+                        self.seed = int(line.split(": ")[1])
+                        
         self.algo = args.algo
         self.env_name = args.env_name
-        self.seed = args.seed
         self.n_actions = 1
         self.x_dim = 2
         self.y_dim = 1
@@ -71,6 +81,7 @@ class Parameters:
         if args.discretized:
             self.discretized = True
             self.num_categories = 20
+            self.save_dir += "_discretized"
         else:
             self.discretized = False
             self.num_categories = None
@@ -101,20 +112,32 @@ class Parameters:
             self.kernel = None
 
         if self.env_name == "SynGP":
-            self.radius = 0.015
-            self.initial_points = [[0.2, 0.7], [0.0, -0.4], [0.45, 0.5]]
+            self.radius = 0.15
+            self.initial_points = [
+                [0.2, 0.7], 
+                [0.0, -0.4], 
+                [-0.2, 0.8],
+                [-0.5, 0.5],
+                [-0.3, 0.0],
+                [0.8, -0.1],
+                [-0.4, -0.5],
+                [0.5, -0.5],
+                [-0.7, -0.6],
+                [0.45, 0.5]
+            ]
 
         elif self.env_name == "HolderTable":
             self.radius = 0.75
             self.initial_points = [
-                [7.0, 9.0],
+                [7.5, 9.2],
                 [8.0, 5.4],
                 [7.0, 4.2],
-                [2.0, 4.5],
+                [3.0, 4.5],
                 [7.0, 2.0],
                 [4.0, 8.3],
                 [2.0, 3.0],
-                [6.5, 1.0],
+                [4.5, 2.5],
+                [1.5, 9.0],
                 [5.0, 5.0],
             ]
 
@@ -133,11 +156,15 @@ class Parameters:
             self.radius = 0.80
             self.initial_points = [
                 [7.5, 7.5],
-                [5.0, 5.0],
+                [6.0, 7.5],
                 [4.0, 7.0],
-                [7.0, 3.2],
-                [2.8, 5],
-                [5.0, 4.0],
+                [8.0, 4.0],
+                [2.8, 5.0],
+                [7.0, 2.0],
+                [2.0, 7.5],
+                [4.0, 2.0],
+                [2.0, 2.0],
+                [5.0, 5.0],
             ]
         elif self.env_name == "Sequence":
             self.radius = 1
@@ -187,7 +214,8 @@ class SynGP:
         self.bounds = torch.tensor([[-1, 1]] * dim).T
         self.seed = seed
         self.n_obs = 10
-        self.hypers = {"ls": 0.25, "alpha": 1.0, "sigma": 1e-2, "n_dimx": dim}
+        self.hypers = {"ls": 0.25, "alpha": 10.0, "sigma": 1e-2, "n_dimx": dim}
+        # self.hypers = {"ls": 0.25, "alpha": 1.0, "sigma": 1e-2, "n_dimx": dim}
         self.domain_samples = None
         self.prior_samples = None
 
@@ -349,10 +377,13 @@ def make_env(env_name, x_dim, bounds):
 
 def make_save_dir(config):
     r"""Create save directory without overwriting directories."""
+    if config.test_only:
+        return
+    
     init_dir_path = Path(config.save_dir)
     dir_path = Path(str(init_dir_path))
 
-    for i in range(50):
+    for i in range(100):
         try:
             dir_path.mkdir(parents=True, exist_ok=False)
             break
@@ -421,7 +452,7 @@ if __name__ == "__main__":
                 real_loss = run(local_parms, env)
 
                 # Assign loss to dictionary of metrics
-                metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
+                metrics[f"eval_metric_{local_args.algo}_{local_parms.seed}"] = real_loss
 
                 pickle.dump(
                     metrics,

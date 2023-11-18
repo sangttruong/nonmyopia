@@ -8,6 +8,7 @@ r"""Multi-step H-Entropy Search with one-shot optimization."""
 
 from typing import Dict, List, Optional, Tuple, Type
 
+import copy
 import torch
 import torch.nn as nn
 from torch import Tensor
@@ -67,6 +68,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         """
         super().__init__(model=model)
         self.model = model
+        self._model = None
         self.lookahead_steps = lookahead_steps
         self.n_actions = n_actions
         self.cost_function = cost_function_class(**cost_func_hypers)
@@ -91,6 +93,16 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         self.action_sampler = action_sampler
         self.n_fantasy_at_action_pts = n_fantasy_at_action_pts
 
+    def dump_model(self):
+        """Dump model."""
+        self._model = copy.deepcopy(self.model)
+    
+    def clean_dump_model(self):
+        """Clean dump model."""
+        del self._model
+        torch.cuda.empty_cache()
+        self._model = None
+    
     def forward(
         self,
         prev_X: Tensor,
@@ -119,7 +131,11 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         num_categories = prev_X.shape[2] if embedder is not None else 0
         previous_X = prev_X
         previous_y = prev_y
-        fantasized_model = self.model
+        if self._model is None:
+            fantasized_model = self.model
+        else:
+            fantasized_model = self._model
+        
         X_returned = []
         hidden_state_returned = []
         for step in range(self.lookahead_steps):
@@ -187,6 +203,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             prev_hid_state = hidden_state[None, ...]
             prev_hid_state = prev_hid_state.expand(n_fantasies, -1, -1)
             prev_hid_state = prev_hid_state.reshape(-1, hidden_state.shape[-1])
+            
         # Compute actions
         if use_amortized_map:
             actions, hidden_state = maps(
@@ -355,8 +372,8 @@ class qCostFunctionSpotlight(nn.Module):
             Tensor: A tensor of ... x 1 cost values
         """
         diff = torch.sqrt(torch.pow(current_X - prev_X, 2).sum(-1))
-        nb_idx = diff <= self.radius
-        diff = diff * (1 - nb_idx.float()) * 100
+        nb_idx = diff > self.radius
+        diff = diff * nb_idx.float()
         return diff
 
 
