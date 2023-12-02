@@ -244,13 +244,13 @@ done
 
 
 # # HolderTable - HES - Non-myopic
-# python _0_main.py --gpu_id 0 \
-#                   --algo HES \
-#                   --env_name HolderTable \
-#                   --seeds 1\
-#                   --n_iterations 30 \
-#                   --lookahead_steps 8 \
-#                   --bounds 1 10
+python _0_main.py --gpu_id 0 \
+                  --algo HES \
+                  --env_name HolderTable \
+                  --seeds 1\
+                  --n_iterations 30 \
+                  --lookahead_steps 15 \
+                  --bounds 1 10
 
 # # HolderTable - HES - Myopic
 # python _0_main.py --gpu_id 6 \

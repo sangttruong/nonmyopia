@@ -24,6 +24,7 @@ from botorch.optim.optimize import optimize_acqf, optimize_acqf_discrete
 from _3_amortized_network import AmortizedNetwork, Project2Range
 from _3_amortized_network_antbo import AmortizedNetworkAntBO
 from _4_qhes import qMultiStepHEntropySearch
+from _4_qhes_ts import qMultiStepHEntropySearchTS
 from _5_evalplot import draw_loss_and_cost
 from _9_semifuncs import nm_AAs
 from _10_budgeted_bo import (
@@ -44,6 +45,11 @@ class Actor:
             parms (Parameters): A set of hyperparameters
         """
         self.parms = parms
+        if self.parms.ts:
+            self.acqf_class = qMultiStepHEntropySearchTS
+        else:
+            self.acqf_class = qMultiStepHEntropySearch
+
         if self.parms.algo == "HES":
             if self.parms.amortized:
                 if self.parms.env_name == "AntBO":
@@ -141,6 +147,7 @@ class Actor:
                 
                 print(f"Loss resetting: {loss.item():.5f}", end="\r", flush=True)
                 # loss.backward()
+                
                 grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
                 for param, grad in zip(self._parameters, grads):
                     param.grad = grad
@@ -196,15 +203,17 @@ class Actor:
             AcquisitionFunction: An aquisition function instance
         """
         if self.parms.algo == "HES":
-            if self.lookahead_steps == 1:
-                nf_design_pts = [64]
-            elif self.lookahead_steps == 2:
-                nf_design_pts = [64, 8]  # [64, 64]
-            elif self.lookahead_steps == 3:
-                nf_design_pts = [64, 4, 2] # [64, 32, 8]
-            elif self.lookahead_steps >= 4:
-                nf_design_pts = [64, 4, 2, 1] # [16, 8, 8, 8]
-                nf_design_pts = nf_design_pts + [1] * (self.lookahead_steps - 4)
+            nf_design_pts = [1] * self.lookahead_steps
+            
+            # if self.lookahead_steps == 1:
+            #     nf_design_pts = [64]
+            # elif self.lookahead_steps == 2:
+            #     nf_design_pts = [64, 8]  # [64, 64]
+            # elif self.lookahead_steps == 3:
+            #     nf_design_pts = [64, 4, 2] # [64, 32, 8]
+            # elif self.lookahead_steps >= 4:
+            #     nf_design_pts = [64, 4, 2, 1] # [16, 8, 8, 8]
+            #     nf_design_pts = nf_design_pts + [1] * (self.lookahead_steps - 4)
 
             # nf_design_pts = [self.parms.n_samples]
             # for s in range(1, self.lookahead_steps):
@@ -213,7 +222,7 @@ class Actor:
             #         next_nf = 1
             #     nf_design_pts.append(next_nf)
 
-            self.acqf = qMultiStepHEntropySearch(
+            self.acqf = self.acqf_class(
                 model=WM,
                 lookahead_steps=self.lookahead_steps,
                 n_actions=self.parms.n_actions,

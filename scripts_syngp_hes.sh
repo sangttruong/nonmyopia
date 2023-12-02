@@ -167,7 +167,7 @@ done
 # #=========================================================
 
 # # SynGP - HES - Non-myopic
-# python _0_main.py --gpu_id 4 \
+# python _0_main.py --gpu_id 0 \
 #                   --algo HES \
 #                   --env_name SynGP \
 #                   --seeds 1 \

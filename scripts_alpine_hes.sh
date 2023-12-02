@@ -413,13 +413,13 @@ done
 
 
 # # Alpine - HES - Non-myopic
-# python _0_main.py --gpu_id 3 \
-#                   --algo HES \
-#                   --env_name Alpine \
-#                   --seeds 1 \
-#                   --n_iterations 30 \
-#                   --lookahead_steps 15 \
-#                   --bounds 0 10
+python _0_main.py --gpu_id 3 \
+                  --algo HES \
+                  --env_name Alpine \
+                  --seeds 1 \
+                  --n_iterations 30 \
+                  --lookahead_steps 20 \
+                  --bounds 0 10
 
 # # Alpine - HES - Myopic
 # python _0_main.py --gpu_id 0 \
