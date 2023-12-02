@@ -52,16 +52,26 @@ class Parameters:
             self.device = "cpu"
         print("Using device:", self.device)
         self.gpu_id = args.gpu_id
-        self.exp_id = args.exp_id
-        self.save_dir = (
-            f"./results/exp_{args.algo}_{args.env_name}_{args.lookahead_steps}"
-        )
         self.torch_dtype = torch.float32
         self.continue_once = args.continue_once
-
-        self.algo = args.algo
-        self.env_name = args.env_name
+        self.test_only = args.test_only
         self.seed = args.seed
+        if not self.test_only:
+            self.save_dir = (
+                f"./results/exp_{args.algo}_{args.env_name}_{args.lookahead_steps}"
+            )
+        else:
+            self.save_dir = self.continue_once
+            with open(os.path.join(self.save_dir, "parameters.json"), "r") as file_handle:
+                text = file_handle.read()
+                lines = text.split("\n")
+                for line in lines:
+                    if 'seed' in line:
+                        self.seed = int(line.split(": ")[1])
+                        
+        self.algo = args.algo
+        self.ts = args.ts
+        self.env_name = args.env_name
         self.n_actions = 1
         self.x_dim = 2
         self.y_dim = 1
@@ -72,18 +82,21 @@ class Parameters:
         if args.discretized:
             self.discretized = True
             self.num_categories = 20
+            self.save_dir += "_discretized"
         else:
             self.discretized = False
             self.num_categories = None
 
-        self.n_samples = 64
+        self.n_samples = 1 # 64
         self.amortized = True if self.algo == "HES" else False
         self.hidden_dim = 32
         self.acq_opt_lr = 0.001 if self.amortized else 1e-3
         self.acq_opt_iter = 500 if self.amortized else 500
         self.n_restarts = 64
+        
         if self.algo == "HES" and self.lookahead_steps > 1:
             self.n_restarts = 16
+            
         elif self.algo == "qMSL" and self.lookahead_steps > 1:
             self.n_restarts = 16
             self.n_samples = 8
@@ -94,28 +107,42 @@ class Parameters:
                 lengthscale_constraint=Interval(0.01, 0.5),
                 ard_num_dims=self.x_dim,
             )
+            
         elif self.env_name == "Sequence":
             self.x_dim = 8
             self.kernel = TransformedCategorical()
+            
         else:
             # Using default MaternKernel
             self.kernel = None
 
         if self.env_name == "SynGP":
-            self.radius = 0.015
-            self.initial_points = [[0.2, 0.7], [0.0, -0.4], [0.45, 0.5]]
+            self.radius = 0.15
+            self.initial_points = [
+                [0.2, 0.7], 
+                [0.0, -0.4], 
+                [-0.2, 0.8],
+                [-0.5, 0.5],
+                [-0.3, 0.0],
+                [0.8, -0.1],
+                [-0.4, -0.5],
+                [0.5, -0.5],
+                [-0.7, -0.6],
+                [0.45, 0.5]
+            ]
 
         elif self.env_name == "HolderTable":
             self.radius = 0.75
             self.initial_points = [
-                [7.0, 9.0],
+                [7.5, 9.2],
                 [8.0, 5.4],
                 [7.0, 4.2],
-                [2.0, 4.5],
+                [3.0, 4.5],
                 [7.0, 2.0],
                 [4.0, 8.3],
                 [2.0, 3.0],
-                [6.5, 1.0],
+                [4.5, 2.5],
+                [1.5, 9.0],
                 [5.0, 5.0],
             ]
 
@@ -134,11 +161,15 @@ class Parameters:
             self.radius = 0.80
             self.initial_points = [
                 [7.5, 7.5],
-                [5.0, 5.0],
+                [6.0, 7.5],
                 [4.0, 7.0],
-                [7.0, 3.2],
-                [2.8, 5],
-                [5.0, 4.0],
+                [8.0, 4.0],
+                [2.8, 5.0],
+                [7.0, 2.0],
+                [2.0, 7.5],
+                [4.0, 2.0],
+                [2.0, 2.0],
+                [5.0, 5.0],
             ]
         elif self.env_name == "Sequence":
             self.radius = 1
@@ -153,7 +184,7 @@ class Parameters:
     def set_task_parms(self):
         r"""Set task-specific parameters."""
         if self.task == "topk":
-            self.cost_function_class = qCostFunctionEditDistance
+            self.cost_function_class = qCostFunctionSpotlight
             self.cost_func_hypers = dict(radius=self.radius)
             self.loss_function_class = qLossFunctionTopK
             self.loss_func_hypers = dict(
@@ -188,7 +219,8 @@ class SynGP:
         self.bounds = torch.tensor([[-1, 1]] * dim).T
         self.seed = seed
         self.n_obs = 10
-        self.hypers = {"ls": 0.25, "alpha": 1.0, "sigma": 1e-2, "n_dimx": dim}
+        self.hypers = {"ls": 0.25, "alpha": 10.0, "sigma": 1e-2, "n_dimx": dim}
+        # self.hypers = {"ls": 0.25, "alpha": 1.0, "sigma": 1e-2, "n_dimx": dim}
         self.domain_samples = None
         self.prior_samples = None
 
@@ -350,10 +382,13 @@ def make_env(env_name, x_dim, bounds):
 
 def make_save_dir(config):
     r"""Create save directory without overwriting directories."""
+    if config.test_only:
+        return
+    
     init_dir_path = Path(config.save_dir)
     dir_path = Path(str(init_dir_path))
 
-    for i in range(50):
+    for i in range(100):
         try:
             dir_path.mkdir(parents=True, exist_ok=False)
             break
@@ -378,13 +413,14 @@ if __name__ == "__main__":
     parser.add_argument("--env_names", nargs="+", type=str, default="Ackley")
     parser.add_argument("--bounds", nargs="+", type=float, default=[-1, 1])
     parser.add_argument("--algos", nargs="+", type=str, default=["HES"])
+    parser.add_argument("--ts", type=bool, default=True)
     parser.add_argument("--n_iterations", type=int)
     parser.add_argument("--lookahead_steps", type=int)
     parser.add_argument("--discretized", action="store_true")
-    parser.add_argument("--exp_id", type=int, default=0)
     parser.add_argument("--gpu_id", nargs="+", type=int)
     parser.add_argument("--n_jobs", type=int, default=1)
     parser.add_argument("--continue_once", type=str, default="")
+    parser.add_argument("--test_only", action="store_true")
     args = parser.parse_args()
 
     metrics = {}
@@ -422,7 +458,7 @@ if __name__ == "__main__":
                 real_loss = run(local_parms, env)
 
                 # Assign loss to dictionary of metrics
-                metrics[f"eval_metric_{local_args.algo}_{local_args.seed}"] = real_loss
+                metrics[f"eval_metric_{local_args.algo}_{local_parms.seed}"] = real_loss
 
                 pickle.dump(
                     metrics,

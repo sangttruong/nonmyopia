@@ -1,0 +1,33 @@
+device: cuda:5
+gpu_id: 5
+save_dir: results/exp_qKG_HolderTable_0_06
+torch_dtype: torch.float32
+continue_once: 
+test_only: False
+algo: qKG
+env_name: HolderTable
+seed: 8
+n_actions: 1
+x_dim: 2
+y_dim: 1
+bounds: [1.0, 10.0]
+n_iterations: 24
+lookahead_steps: 0
+func_noise: 0.0
+discretized: False
+num_categories: None
+n_samples: 64
+amortized: False
+hidden_dim: 32
+acq_opt_lr: 0.001
+acq_opt_iter: 500
+n_restarts: 64
+kernel: None
+radius: 0.75
+initial_points: [[7.0, 9.0], [8.0, 5.4], [7.0, 4.2], [2.0, 4.5], [7.0, 2.0], [4.0, 8.3], [2.0, 3.0], [6.5, 1.0], [5.0, 5.0]]
+n_initial_points: 9
+task: topk
+cost_function_class: <class '_4_qhes.qCostFunctionSpotlight'>
+cost_func_hypers: {'radius': 0.75}
+loss_function_class: <class '_4_qhes.qLossFunctionTopK'>
+loss_func_hypers: {'dist_weight': 1, 'dist_threshold': 0.5}

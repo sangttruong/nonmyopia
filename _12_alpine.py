@@ -70,21 +70,16 @@ class AlpineN1:
         # transform input to original scale
         X = X / self.x_scale
 
-        res = np.sum(np.abs(X * np.sin(X) + 0.1*X))
+        res = torch.sum(torch.abs(X * torch.sin(X) + 0.1*X), dim=-1)
         return res
 
     def call_tensor(self, x_list):
-        x_list = [xi.cpu().detach().numpy().tolist() for xi in x_list]
-        x_list = np.array(x_list).reshape(-1, self.d)
-        y_list = [self.call_single(x) for x in x_list]
-        y_list = y_list[0] if len(y_list) == 1 else y_list
-        y_tensor = torch.tensor(np.array(y_list).reshape(-1, 1))
+        assert x_list.shape[-1] == self.d
+        y_tensor = self.call_single(x_list)
         return y_tensor
 
     def __call__(self, x):
-        if isinstance(x, Tensor):
-            tensor = True
-        y = self.call_tensor(x) if tensor else self.call_single(x)
+        y = self.call_tensor(x)
 
         # transform y from original to new scale
         y = y * self.y_scale
