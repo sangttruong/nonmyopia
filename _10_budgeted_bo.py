@@ -15,7 +15,7 @@ from botorch.acquisition.multi_step_lookahead import (
 from botorch.acquisition.objective import (
     LinearMCObjective,
     MCAcquisitionObjective,
-    ScalarizedObjective,
+    ScalarizedPosteriorTransform,
 )
 from botorch.models.model import Model
 from botorch.sampling.base import MCSampler
@@ -23,7 +23,6 @@ from botorch.sampling.normal import SobolQMCNormalSampler, IIDNormalSampler
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.acquisition.analytic import AnalyticAcquisitionFunction, PosteriorMean
 from botorch.acquisition.monte_carlo import MCAcquisitionFunction
-from botorch.utils.objective import soft_eval_constraint
 from botorch.utils.transforms import concatenate_pending_points, t_batch_mode_transform
 from botorch.generation.gen import get_best_candidates
 
@@ -52,7 +51,7 @@ class BudgetedExpectedImprovement(AnalyticAcquisitionFunction):
         best_f: Union[float, Tensor],
         budget: Union[float, Tensor],
         maximize: bool = True,
-        objective: Optional[ScalarizedObjective] = None,
+        objective: Optional[ScalarizedPosteriorTransform] = None,
     ) -> None:
         r"""Analytic Budgeted Expected Improvement.
         Args:
@@ -100,7 +99,8 @@ class BudgetedExpectedImprovement(AnalyticAcquisitionFunction):
         cdf_u = standard_normal.cdf(u)
         ei = sigma_obj * (pdf_u + u * cdf_u)  # (b) x 1
         # (b) x 1
-        prob_feas = self._compute_prob_feas(means=means[..., 1], sigmas=sigmas[..., 1])
+        prob_feas = self._compute_prob_feas(
+            means=means[..., 1], sigmas=sigmas[..., 1])
         bc_ei = ei.mul(prob_feas)  # (b) x 1
         return bc_ei.squeeze(dim=-1)
 
@@ -171,6 +171,9 @@ class qBudgetedExpectedImprovement(MCAcquisitionFunction):
         self.X_pending = X_pending
         self.register_buffer("best_f", torch.as_tensor(best_f))
         self.register_buffer("budget", torch.as_tensor(budget))
+
+    def soft_eval_constraint(self, x, eta=0.001):
+        return 1 / (1 + torch.exp(x / eta))
 
     @concatenate_pending_points
     @t_batch_mode_transform()
@@ -245,7 +248,7 @@ class BudgetedMultiStepExpectedImprovement(qMultiStepLookahead):
 
             inner_mc_samples = [128 for bs in batch_sizes]
         else:
-            objective = ScalarizedObjective(weights=weights)
+            objective = ScalarizedPosteriorTransform(weights=weights)
 
             valfunc_cls = [BudgetedExpectedImprovement for _ in batch_sizes]
 
@@ -295,7 +298,7 @@ class ExpectedImprovementPerUnitOfCost(AnalyticAcquisitionFunction):
         best_f: Union[float, Tensor],
         cost_exponent: Union[float, Tensor] = 1.0,
         maximize: bool = True,
-        objective: Optional[ScalarizedObjective] = None,
+        objective: Optional[ScalarizedPosteriorTransform] = None,
     ) -> None:
         r"""Single-outcome Expected Improvement (analytic).
         Args:
@@ -430,7 +433,8 @@ def custom_warmstart_multistep(
         i += 1
 
     # Fantasize objective and cost values
-    sampler = IIDNormalSampler(num_samples=1, resample=True, collapse_batch_dims=True)
+    sampler = IIDNormalSampler(
+        num_samples=1, resample=True, collapse_batch_dims=True)
     posterior_new_x = model.posterior(new_x, observation_noise=True)
     fantasy_obs = sampler(posterior_new_x).squeeze(dim=0).detach()
     fantasy_cost = torch.exp(fantasy_obs[0, 1]).item()
@@ -464,7 +468,8 @@ def custom_warmstart_multistep(
     new_x, acq_value = optimize_acqf(
         acq_function=aux_acq_func,
         bounds=standard_bounds,
-        q=aux_acq_func.get_augmented_q_batch_size(1) if n_lookahead_steps > 0 else 1,
+        q=aux_acq_func.get_augmented_q_batch_size(
+            1) if n_lookahead_steps > 0 else 1,
         num_restarts=5 * input_dim,
         raw_samples=100 * input_dim,
         options={
@@ -627,7 +632,8 @@ def optimize_acqf_and_get_suggested_point(
     """Optimizes the acquisition function, and returns the candidate solution."""
     is_ms = isinstance(acq_func, qMultiStepLookahead)
     input_dim = bounds.shape[1]
-    q = acq_func.get_augmented_q_batch_size(batch_size) if is_ms else batch_size
+    q = acq_func.get_augmented_q_batch_size(
+        batch_size) if is_ms else batch_size
     raw_samples = 200 * input_dim * batch_size
     num_restarts = 10 * input_dim * batch_size
 
@@ -670,12 +676,14 @@ def optimize_acqf_and_get_suggested_point(
         algo_params["suggested_x_full_tree"] = candidates.clone()
         candidates = acq_func.extract_candidates(candidates)
 
-    acq_values_sorted, indices = torch.sort(acq_values.squeeze(), descending=True)
+    acq_values_sorted, indices = torch.sort(
+        acq_values.squeeze(), descending=True)
     print("Acquisition values:")
     print(acq_values_sorted)
     print("Candidates:")
     print(candidates[indices].squeeze())
     print(candidates.squeeze())
 
-    new_x = get_best_candidates(batch_candidates=candidates, batch_values=acq_values)
+    new_x = get_best_candidates(
+        batch_candidates=candidates, batch_values=acq_values)
     return new_x
