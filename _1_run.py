@@ -10,6 +10,7 @@ import torch
 import random
 import numpy as np
 import os
+import time
 
 from tqdm import tqdm
 from tensordict import TensorDict
@@ -46,7 +47,7 @@ def run(parms, env) -> None:
     else:
         print("Plotting is only done when x_dim is 1 or 2.")
         eval_and_plot = eval_func
-        
+
     # Finding maxima of env using gradient descent
     print("Computing optimal value...")
     if not parms.discretized and parms.env_name != "SynGP":
@@ -59,13 +60,15 @@ def run(parms, env) -> None:
         maxima_optimizer = torch.optim.Adam([maxima], lr=parms.acq_opt_lr)
         for i in tqdm(range(1000), desc="Finding maxima"):
             maxima_optimizer.zero_grad()
-            maxima_ = torch.sigmoid(maxima) * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
+            maxima_ = torch.sigmoid(
+                maxima) * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
             maxima_value = - env(maxima_)
             maxima_value.backward()
             maxima_optimizer.step()
-        
+
         maxima = maxima.cpu().detach().requires_grad_(False)
-        maxima = torch.sigmoid(maxima) * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
+        maxima = torch.sigmoid(
+            maxima) * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
         optimal_value = env(maxima)
         print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
     else:
@@ -74,8 +77,9 @@ def run(parms, env) -> None:
             categories = torch.linspace(parms.bounds[0], parms.bounds[1], 100)
         else:
             categories = torch.arange(0, parms.num_categories)
-            
-        categories = categories.to(device=parms.device, dtype=parms.torch_dtype)
+
+        categories = categories.to(
+            device=parms.device, dtype=parms.torch_dtype)
         X = [categories] * parms.x_dim
         X = torch.stack(torch.meshgrid(*X), dim=-1).reshape(-1, parms.x_dim)
         y = env(X)
@@ -83,7 +87,7 @@ def run(parms, env) -> None:
         maxima = X[idx].cpu().detach()
         optimal_value = optimal_value.cpu().detach()
         print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
-        
+
     # Generate initial observations and initialize model
     # data_x = torch.rand(
     #     [parms.n_initial_points, parms.x_dim],
@@ -147,11 +151,16 @@ def run(parms, env) -> None:
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
+            runtime=torch.full(
+                (buffer_size,),
+                fill_value,
+                dtype=parms.torch_dtype,
+            ),
         ),
         batch_size=[buffer_size],
         device=parms.device,
     )
-    
+
     if parms.discretized:
         embedder = DiscreteEmbbeder(
             num_categories=parms.num_categories,
@@ -162,7 +171,8 @@ def run(parms, env) -> None:
 
     if parms.continue_once and not parms.test_only:
         # Load buffers from previous iterations
-        buffer_old = torch.load(os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device)
+        buffer_old = torch.load(os.path.join(
+            parms.continue_once, "buffer.pt"), map_location=parms.device)
         for key in list(buffer_old.keys()):
             buffer[key] = buffer_old[key]
         for idx, x in enumerate(buffer_old["x"]):
@@ -172,9 +182,10 @@ def run(parms, env) -> None:
         del buffer_old
         torch.cuda.empty_cache()
         print("Continue from iteration: {}".format(continue_iter))
-        
+
     elif parms.continue_once and parms.test_only:
-        buffer = torch.load(os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device)
+        buffer = torch.load(os.path.join(
+            parms.continue_once, "buffer.pt"), map_location=parms.device)
         WM = SingleTaskGP(
             buffer["x"][: parms.n_initial_points],
             buffer["y"][: parms.n_initial_points],
@@ -190,10 +201,10 @@ def run(parms, env) -> None:
             func=env,
             wm=WM,
             cfg=parms,
-            acqf=actor.acqf, 
+            acqf=actor.acqf,
             buffer=buffer,
             next_x=buffer["x"][parms.n_initial_points-1],
-            optimal_value=optimal_value, 
+            optimal_value=optimal_value,
             iteration=parms.n_initial_points-1,
             embedder=embedder,
         )
@@ -219,27 +230,28 @@ def run(parms, env) -> None:
             buffer=buffer, iteration=parms.n_initial_points, embedder=embedder, initial=True
         )
         ############
-        
+
         real_loss, _ = eval_and_plot(
             func=env,
             wm=WM,
             cfg=parms,
-            acqf=actor.acqf, 
+            acqf=actor.acqf,
             buffer=buffer,
             next_x=buffer["x"][parms.n_initial_points-1],
-            optimal_value=optimal_value, 
+            optimal_value=optimal_value,
             iteration=parms.n_initial_points-1,
             embedder=embedder,
             actions=actions,
-            X = X
+            X=X
         )
         buffer["real_loss"][parms.n_initial_points - 1] = real_loss
 
-    
     # Run BO loop
     continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
-        
+
     for i in range(continue_iter, parms.n_iterations):
+        iter_start_time = time.time()
+
         # Initialize model (which is the GP in this case)
         WM = SingleTaskGP(
             buffer["x"][:i],
@@ -270,7 +282,10 @@ def run(parms, env) -> None:
         else:
             next_x = buffer["x"][i]
             actions = None
-        
+
+        iter_end_time = time.time()
+        buffer["runtime"][i] = iter_end_time - iter_start_time
+
         # Evaluate and plot
         buffer["real_loss"][i], _ = eval_and_plot(
             func=env,

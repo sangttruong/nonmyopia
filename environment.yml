@@ -1,0 +1,17 @@
+name: bo
+channels:
+  - pytorch
+  - gpytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch=2.2.2
+  - pip:
+      - botorch==0.10.0
+      - dill==0.3.8
+      - gpytorch==1.11
+      - matplotlib==3.8.4
+      - pandas==2.2.1
+      - tensordict==0.3.1
+      - tueplots==0.0.14
