@@ -16,7 +16,7 @@ from _4_qhes import qLossFunctionTopK, qCostFunctionSpotlight
 
 plt.rcParams.update(bundles.iclr2023())
 
-    
+
 def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, *args, **kwargs):
     # Quality of the best decision from the current posterior distribution ###
 
@@ -27,7 +27,8 @@ def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, 
             device=cfg.device,
             dtype=cfg.torch_dtype,
         )
-        A = buffer["x"][iteration].clone().repeat(cfg.n_restarts, cfg.n_actions, 1)
+        A = buffer["x"][iteration].clone().repeat(
+            cfg.n_restarts, cfg.n_actions, 1)
         A = A + torch.randn_like(A) * 0.01
         A.requires_grad = True
 
@@ -44,9 +45,10 @@ def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, 
             fantasized_outcome = fantasized_outcome.squeeze(dim=-1)
             # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
             # ... x batch_size x num_actions
-            
+
             losses = acqf.loss_function(A=A, Y=fantasized_outcome) + \
-                     acqf.cost_function(prev_X=buffer["x"][iteration], current_X=A)
+                acqf.cost_function(
+                    prev_X=buffer["x"][iteration].expand_as(A), current_X=A, previous_cost=0)
             # >>> n_fantasy_at_design_pts x batch_size
 
             loss = losses.mean()
@@ -69,7 +71,8 @@ def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, 
         )
 
     else:
-        q = 1 + sum([cfg.n_samples**s for s in range(1, cfg.lookahead_steps + 1)])
+        q = 1 + \
+            sum([cfg.n_samples**s for s in range(1, cfg.lookahead_steps + 1)])
         if cfg.env_name == "AntBO":
             choices = torch.tensor(
                 list(range(20)), dtype=torch.long, device=cfg.device
@@ -84,7 +87,7 @@ def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, 
             )
             real_loss = -func(bayes_action)
             bayes_action = bayes_action.cpu().detach().numpy()
-            
+
         else:
             # bounds = torch.tensor(
             #     [cfg.bounds] * cfg.x_dim, dtype=cfg.torch_dtype, device=cfg.device
@@ -99,7 +102,7 @@ def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, 
             #         batch_sizes=[1],
             #         num_fantasies=[64],
             #     )
-                
+
             # bayes_action, bayes_loss = optimize_acqf(
             #     acq_function=acqf,
             #     bounds=bounds,
@@ -107,13 +110,14 @@ def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, 
             #     num_restarts=cfg.n_restarts,
             #     raw_samples=cfg.n_restarts,
             # )
-            
+
             A = torch.empty(
                 [1, cfg.n_restarts, cfg.n_actions, cfg.x_dim],
                 device=cfg.device,
                 dtype=cfg.torch_dtype,
             )
-            A[0] = buffer["x"][iteration].clone().repeat(cfg.n_restarts, cfg.n_actions, 1)
+            A[0] = buffer["x"][iteration].clone().repeat(
+                cfg.n_restarts, cfg.n_actions, 1)
             A = A + torch.randn_like(A) * 0.01
             A.requires_grad = True
 
@@ -136,9 +140,10 @@ def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, 
                 fantasized_outcome = fantasized_outcome.squeeze(dim=-1)
                 # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
                 # ... x batch_size x num_actions
-                
+
                 losses = loss_function(A=A_, Y=fantasized_outcome) + \
-                         cost_function(prev_X=buffer["x"][iteration], current_X=A_)
+                    cost_function(
+                        prev_X=buffer["x"][iteration], current_X=A_, previous_cost=0)
                 # >>> n_fantasy_at_design_pts x batch_size
 
                 loss = losses.mean()
@@ -156,12 +161,14 @@ def eval_func(cfg, acqf, func, buffer, optimal_value, iteration, embedder=None, 
             chosen_idx = torch.argmin(bayes_loss)
             bayes_loss = bayes_loss[chosen_idx].item()
             bayes_action = A[chosen_idx, 0]
-        
+
             real_loss = optimal_value + loss_function(
-                A=bayes_action[None, ...], Y=func(bayes_action)[None, None, ...]
-            ) 
-                
+                A=bayes_action[None, ...], Y=func(
+                    bayes_action)[None, None, ...]
+            )
+
     return real_loss, bayes_action
+
 
 def eval_and_plot_2D(func, wm, cfg, acqf, next_x, buffer, optimal_value, iteration, n_space=100, embedder=None, *args, **kwargs):
     if iteration < cfg.n_initial_points:
@@ -169,12 +176,14 @@ def eval_and_plot_2D(func, wm, cfg, acqf, next_x, buffer, optimal_value, iterati
     else:
         return eval_and_plot_2D_without_posterior(func, wm, cfg, acqf, next_x, buffer, optimal_value, iteration, n_space, embedder, *args, **kwargs)
 
+
 def eval_and_plot_2D_with_posterior(func, wm, cfg, acqf, next_x, buffer, optimal_value, iteration, n_space=100, embedder=None, *args, **kwargs):
     r"""Evaluate and plot 2D function."""
-    real_loss, bayes_action = eval_func(cfg, acqf, func, buffer, optimal_value, iteration)
+    real_loss, bayes_action = eval_func(
+        cfg, acqf, func, buffer, optimal_value, iteration)
     data_x = buffer["x"].cpu().detach()
     next_x = next_x.cpu().detach()
-    
+
     # Plotting ###############################################################
     # fig, ax = plt.subplots(1, 1)
     fig, ax = plt.subplots(1, 2)
@@ -182,16 +191,18 @@ def eval_and_plot_2D_with_posterior(func, wm, cfg, acqf, next_x, buffer, optimal
         bounds_plot_x = bounds_plot_y = [0, n_space-1]
     else:
         bounds_plot_x = bounds_plot_y = cfg.bounds
-    ax[0].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_x, ylim=bounds_plot_y)
-    ax[1].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_x, ylim=bounds_plot_y)
-    
+    ax[0].set(xlabel="$x_1$", ylabel="$x_2$",
+              xlim=bounds_plot_x, ylim=bounds_plot_y)
+    ax[1].set(xlabel="$x_1$", ylabel="$x_2$",
+              xlim=bounds_plot_x, ylim=bounds_plot_y)
+
     if cfg.algo == "HES":
         title = "$\mathcal{H}_{\ell, \mathcal{A}}$-Entropy Search " + cfg.task
     elif cfg.algo == "qMSL":
         title = "Multi-Step Trees " + cfg.task
     else:
         title = cfg.algo + ' ' + cfg.task
-    
+
     ax[0].set_title(label=title)
     ax[1].set_title(label="Posterior mean")
 
@@ -202,14 +213,15 @@ def eval_and_plot_2D_with_posterior(func, wm, cfg, acqf, next_x, buffer, optimal
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
     Z = func(XY.reshape(2, -1).T).reshape(X.shape)
 
-    Z_post = wm.posterior(XY.to(cfg.device, cfg.torch_dtype).permute(1, 2, 0)).mean
+    Z_post = wm.posterior(
+        XY.to(cfg.device, cfg.torch_dtype).permute(1, 2, 0)).mean
     Z_post = Z_post.squeeze(-1).cpu().detach()
     # >> 100 x 100 x 1
 
     if embedder is not None:
         X = embedder.decode(torch.tensor(X)).long().cpu().detach().numpy()
         Y = embedder.decode(torch.tensor(Y)).long().cpu().detach().numpy()
-        
+
     cs = ax[0].contourf(X, Y, Z, levels=30, cmap="bwr", alpha=0.7)
     ax[0].set_aspect(aspect="equal")
 
@@ -225,70 +237,78 @@ def eval_and_plot_2D_with_posterior(func, wm, cfg, acqf, next_x, buffer, optimal
     # Plot data, optimal actions, next query #################################
     if embedder is not None:
         ax.scatter(
-            embedder.decode(data_x[:iteration, 0]).long(), 
-            embedder.decode(data_x[:iteration, 1]).long(), 
+            embedder.decode(data_x[:iteration, 0]).long(),
+            embedder.decode(data_x[:iteration, 1]).long(),
             label="Data"
         )
         ax.scatter(
-            embedder.decode(bayes_action[..., 0]).long(), 
-            embedder.decode(bayes_action[..., 1]).long(), 
+            embedder.decode(bayes_action[..., 0]).long(),
+            embedder.decode(bayes_action[..., 1]).long(),
             label="Action"
         )
         ax.scatter(
-            embedder.decode(next_x[..., 0]).long(), 
-            embedder.decode(next_x[..., 1]).long(), 
+            embedder.decode(next_x[..., 0]).long(),
+            embedder.decode(next_x[..., 1]).long(),
             label="Next query"
         )
-        
+
         # Draw grid
-        plt.vlines(np.arange(0, n_space), 0, n_space, linestyles='dashed', alpha=0.05)
-        plt.hlines(np.arange(0, n_space), 0, n_space, linestyles='dashed', alpha=0.05)
-        
+        plt.vlines(np.arange(0, n_space), 0, n_space,
+                   linestyles='dashed', alpha=0.05)
+        plt.hlines(np.arange(0, n_space), 0, n_space,
+                   linestyles='dashed', alpha=0.05)
+
         # Splotlight cost
         previous_x = embedder.decode(buffer['x'][iteration-1].squeeze()).long()
         previous_x = previous_x.cpu().detach()
         splotlight = plt.Rectangle(
-            (previous_x[0] - cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0]), 
+            (previous_x[0] - cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0]),
              previous_x[1] - cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0])),
-            2 * cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0]),
-            2 * cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0]),
+            2 * cfg.cost_func_hypers["radius"] *
+            n_space / (cfg.bounds[1] - cfg.bounds[0]),
+            2 * cfg.cost_func_hypers["radius"] *
+            n_space / (cfg.bounds[1] - cfg.bounds[0]),
             color="black",
-            linestyle = 'dashed',
+            linestyle='dashed',
             fill=False,
         )
         ax.add_patch(splotlight)
-        
+
         ax.set_xticks(range(0, n_space, 2))
         ax.set_yticks(range(0, n_space, 2))
-        
+
     else:
-        ax[0].scatter(data_x[:iteration, 0], data_x[:iteration, 1], label="Data")
-        ax[0].scatter(bayes_action[..., 0], bayes_action[..., 1], label="Action")
+        ax[0].scatter(data_x[:iteration, 0],
+                      data_x[:iteration, 1], label="Data")
+        ax[0].scatter(bayes_action[..., 0],
+                      bayes_action[..., 1], label="Action")
 
         if 'actions' in kwargs:
             actions = kwargs['actions']
             actions = actions.cpu().detach().numpy()
-            ax[0].scatter(actions[..., 0].reshape(-1, 1), actions[..., 1].reshape(-1, 1), label="Imaged Action")
+            ax[0].scatter(actions[..., 0].reshape(-1, 1),
+                          actions[..., 1].reshape(-1, 1), label="Imaged Action")
         if 'X' in kwargs:
             for X in kwargs['X'][::-1]:
-                ax[0].scatter(X[..., 0].reshape(-1, 1), X[..., 1].reshape(-1, 1))
-                
+                ax[0].scatter(X[..., 0].reshape(-1, 1),
+                              X[..., 1].reshape(-1, 1))
+
         ax[0].scatter(next_x[..., 0], next_x[..., 1], label="Next query")
-        
+
         # Splotlight cost
         previous_x = buffer['x'][iteration-1].squeeze()
         previous_x = previous_x.cpu().detach().numpy()
         splotlight = plt.Rectangle(
-            (previous_x[0] - cfg.cost_func_hypers["radius"], previous_x[1] - cfg.cost_func_hypers["radius"]),
+            (previous_x[0] - cfg.cost_func_hypers["radius"],
+             previous_x[1] - cfg.cost_func_hypers["radius"]),
             2 * cfg.cost_func_hypers["radius"],
             2 * cfg.cost_func_hypers["radius"],
             color="black",
-            linestyle = 'dashed',
+            linestyle='dashed',
             fill=False,
         )
         ax[0].add_patch(splotlight)
-    
-    
+
     fig.legend()
 
     plt.savefig(f"{cfg.save_dir}/{iteration}.pdf")
@@ -296,19 +316,22 @@ def eval_and_plot_2D_with_posterior(func, wm, cfg, acqf, next_x, buffer, optimal
 
     return real_loss, bayes_action
 
+
 def eval_and_plot_2D_without_posterior(func, wm, cfg, acqf, next_x, buffer, optimal_value, iteration, n_space=100, embedder=None, *args, **kwargs):
     r"""Evaluate and plot 2D function."""
-    real_loss, bayes_action = eval_func(cfg, acqf, func, buffer, optimal_value, iteration)
+    real_loss, bayes_action = eval_func(
+        cfg, acqf, func, buffer, optimal_value, iteration)
     data_x = buffer["x"].cpu().detach()
     next_x = next_x.cpu().detach()
-    
+
     # Plotting ###############################################################
     fig, ax = plt.subplots(1, 1)
     if embedder is not None:
         bounds_plot_x = bounds_plot_y = [0, n_space-1]
     else:
         bounds_plot_x = bounds_plot_y = cfg.bounds
-    ax.set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_x, ylim=bounds_plot_y)
+    ax.set(xlabel="$x_1$", ylabel="$x_2$",
+           xlim=bounds_plot_x, ylim=bounds_plot_y)
     # ax[1].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot, ylim=bounds_plot)
     if cfg.algo == "HES":
         title = "$\mathcal{H}_{\ell, \mathcal{A}}$-Entropy Search " + cfg.task
@@ -316,7 +339,7 @@ def eval_and_plot_2D_without_posterior(func, wm, cfg, acqf, next_x, buffer, opti
         title = "Multi-Step Trees " + cfg.task
     else:
         title = cfg.algo + ' ' + cfg.task
-    
+
     ax.set_title(label=title)
     # ax[1].set_title(label="Posterior mean")
 
@@ -334,7 +357,7 @@ def eval_and_plot_2D_without_posterior(func, wm, cfg, acqf, next_x, buffer, opti
     if embedder is not None:
         X = embedder.decode(torch.tensor(X)).long().cpu().detach().numpy()
         Y = embedder.decode(torch.tensor(Y)).long().cpu().detach().numpy()
-        
+
     cs = ax.contourf(X, Y, Z, levels=30, cmap="bwr", alpha=0.7)
     ax.set_aspect(aspect="equal")
 
@@ -350,42 +373,46 @@ def eval_and_plot_2D_without_posterior(func, wm, cfg, acqf, next_x, buffer, opti
     # Plot data, optimal actions, next query #################################
     if embedder is not None:
         ax.scatter(
-            embedder.decode(data_x[:iteration, 0]).long(), 
-            embedder.decode(data_x[:iteration, 1]).long(), 
+            embedder.decode(data_x[:iteration, 0]).long(),
+            embedder.decode(data_x[:iteration, 1]).long(),
             label="Data"
         )
         ax.scatter(
-            embedder.decode(bayes_action[..., 0]).long(), 
-            embedder.decode(bayes_action[..., 1]).long(), 
+            embedder.decode(bayes_action[..., 0]).long(),
+            embedder.decode(bayes_action[..., 1]).long(),
             label="Action"
         )
         ax.scatter(
-            embedder.decode(next_x[..., 0]).long(), 
-            embedder.decode(next_x[..., 1]).long(), 
+            embedder.decode(next_x[..., 0]).long(),
+            embedder.decode(next_x[..., 1]).long(),
             label="Next query"
         )
-        
+
         # Draw grid
-        plt.vlines(np.arange(0, n_space), 0, n_space, linestyles='dashed', alpha=0.05)
-        plt.hlines(np.arange(0, n_space), 0, n_space, linestyles='dashed', alpha=0.05)
-        
+        plt.vlines(np.arange(0, n_space), 0, n_space,
+                   linestyles='dashed', alpha=0.05)
+        plt.hlines(np.arange(0, n_space), 0, n_space,
+                   linestyles='dashed', alpha=0.05)
+
         # Splotlight cost
         previous_x = embedder.decode(buffer['x'][iteration-1].squeeze()).long()
         previous_x = previous_x.cpu().detach()
         splotlight = plt.Rectangle(
-            (previous_x[0] - cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0]), 
+            (previous_x[0] - cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0]),
              previous_x[1] - cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0])),
-            2 * cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0]),
-            2 * cfg.cost_func_hypers["radius"] * n_space / (cfg.bounds[1] - cfg.bounds[0]),
+            2 * cfg.cost_func_hypers["radius"] *
+            n_space / (cfg.bounds[1] - cfg.bounds[0]),
+            2 * cfg.cost_func_hypers["radius"] *
+            n_space / (cfg.bounds[1] - cfg.bounds[0]),
             color="black",
-            linestyle = 'dashed',
+            linestyle='dashed',
             fill=False,
         )
         ax.add_patch(splotlight)
-        
+
         ax.set_xticks(range(0, n_space, 2))
         ax.set_yticks(range(0, n_space, 2))
-        
+
     else:
         ax.scatter(data_x[:iteration, 0], data_x[:iteration, 1], label="Data")
         ax.scatter(bayes_action[..., 0], bayes_action[..., 1], label="Action")
@@ -393,21 +420,21 @@ def eval_and_plot_2D_without_posterior(func, wm, cfg, acqf, next_x, buffer, opti
         # actions = actions.cpu().detach().numpy()
         # ax[0].scatter(actions[..., 0].reshape(-1, 1), actions[..., 1].reshape(-1, 1), label="Imaged Action")
         ax.scatter(next_x[..., 0], next_x[..., 1], label="Next query")
-        
+
         # Splotlight cost
         previous_x = buffer['x'][iteration-1].squeeze()
         previous_x = previous_x.cpu().detach().numpy()
         splotlight = plt.Rectangle(
-            (previous_x[0] - cfg.cost_func_hypers["radius"], previous_x[1] - cfg.cost_func_hypers["radius"]),
+            (previous_x[0] - cfg.cost_func_hypers["radius"],
+             previous_x[1] - cfg.cost_func_hypers["radius"]),
             2 * cfg.cost_func_hypers["radius"],
             2 * cfg.cost_func_hypers["radius"],
             color="black",
-            linestyle = 'dashed',
+            linestyle='dashed',
             fill=False,
         )
         ax.add_patch(splotlight)
-    
-    
+
     ax.legend()
 
     plt.savefig(f"{cfg.save_dir}/{iteration}.pdf")
@@ -447,7 +474,8 @@ def eval_and_plot_1D(func, wm, cfg, acqf, next_x, actions, buffer, iteration):
     # Plot data, optimal actions, next query #################################
     ub = np.max(upper)
     lb = np.min(lower)
-    plt.vlines(data_x[iteration], lb, ub, color="black", label="current location")
+    plt.vlines(data_x[iteration], lb, ub,
+               color="black", label="current location")
     plt.vlines(
         data_x[iteration] - cfg.cost_func_hypers["radius"],
         lb,
@@ -484,9 +512,11 @@ def eval_and_plot_1D(func, wm, cfg, acqf, next_x, actions, buffer, iteration):
 def eval_and_plot(config, wm, env, acqf, buffer, next_x, actions, iteration):
     r"""Draw the posterior of the model."""
     if config.x_dim == 1:
-        eval_and_plot_1D(env, wm, config, acqf, next_x, actions, buffer, iteration)
+        eval_and_plot_1D(env, wm, config, acqf, next_x,
+                         actions, buffer, iteration)
     elif config.x_dim == 2:
-        eval_and_plot_2D(env, wm, config, acqf, next_x, actions, buffer, iteration)
+        eval_and_plot_2D(env, wm, config, acqf, next_x,
+                         actions, buffer, iteration)
     else:
         raise NotImplementedError
 
@@ -497,7 +527,7 @@ def draw_metric(save_dir, dict_metrics, env_names, algos, num_initial_points, nu
     # corresponding to all algorithms in one environment.
     # The number of rows is the number of environments divided by 3.
     assert len(env_names) != 0, "No environment to draw"
-    
+
     num_rows = len(env_names) // 3
     if len(env_names) % 3 != 0:
         num_rows += 1
@@ -515,15 +545,15 @@ def draw_metric(save_dir, dict_metrics, env_names, algos, num_initial_points, nu
             # min_ = np.min(metrics[j], axis=0)[nip-1:ns]
             # max_ = np.max(metrics[j], axis=0)[nip-1:ns]
             x = list(range(nip-1, ns))
-            
+
             ax.plot(x, mean, label=algo)
             ax.fill_between(x, mean-std, mean+std, alpha=0.1)
             # ax.fill_between(x, min_, max_, alpha=0.1)
-            
+
         ax.set_title(env_name)
         ax.set_xlabel("Iteration")
         ax.set_ylabel("Regret")
-        
+
         if env_name == "SynGP":
             max_y = 20
         elif env_name == "HolderTable":
@@ -531,9 +561,9 @@ def draw_metric(save_dir, dict_metrics, env_names, algos, num_initial_points, nu
         elif env_name == "Alpine":
             max_y = 20
         ax.set_ylim([None, max_y])
-        
+
         handles, labels = ax.get_legend_handles_labels()
-        
+
     fig.legend(handles, labels, loc='outside upper center', ncol=8)
     plt.savefig(f"{save_dir}/eval_metric.pdf")
     plt.close()

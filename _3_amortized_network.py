@@ -113,7 +113,7 @@ class AmortizedNetwork(nn.Module):
 
             x = x.sum(dim=-2)
             # >>> batch x hidden_dim
-        
+
         x = torch.cat([x, y], dim=-1)
         x = self.embedding(x)
 

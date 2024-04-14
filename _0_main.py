@@ -68,7 +68,7 @@ class Parameters:
                 for line in lines:
                     if 'seed' in line:
                         self.seed = int(line.split(": ")[1])
-                        
+
         self.algo = args.algo
         self.ts = args.ts
         self.env_name = args.env_name
@@ -87,16 +87,16 @@ class Parameters:
             self.discretized = False
             self.num_categories = None
 
-        self.n_samples = 1 # 64
+        self.n_samples = 1  # 64
         self.amortized = True if self.algo == "HES" else False
         self.hidden_dim = 32
         self.acq_opt_lr = 0.001 if self.amortized else 1e-3
         self.acq_opt_iter = 500 if self.amortized else 500
         self.n_restarts = 64
-        
+
         if self.algo == "HES" and self.lookahead_steps > 1:
             self.n_restarts = 16
-            
+
         elif self.algo == "qMSL" and self.lookahead_steps > 1:
             self.n_restarts = 16
             self.n_samples = 8
@@ -107,20 +107,26 @@ class Parameters:
                 lengthscale_constraint=Interval(0.01, 0.5),
                 ard_num_dims=self.x_dim,
             )
-            
+
         elif self.env_name == "Sequence":
             self.x_dim = 8
             self.kernel = TransformedCategorical()
-            
+
         else:
             # Using default MaternKernel
             self.kernel = None
 
+        self.spotlight_k = args.spotlight_k
+        self.p_norm = args.p_norm
+        self.max_noise = args.max_noise
+        self.discount = args.discount
+        self.discount_threshold = args.discount_threshold
+
         if self.env_name == "SynGP":
             self.radius = 0.15
             self.initial_points = [
-                [0.2, 0.7], 
-                [0.0, -0.4], 
+                [0.2, 0.7],
+                [0.0, -0.4],
                 [-0.2, 0.8],
                 [-0.5, 0.5],
                 [-0.3, 0.0],
@@ -185,7 +191,14 @@ class Parameters:
         r"""Set task-specific parameters."""
         if self.task == "topk":
             self.cost_function_class = qCostFunctionSpotlight
-            self.cost_func_hypers = dict(radius=self.radius)
+            self.cost_func_hypers = dict(
+                radius=self.radius,
+                k=self.spotlight_k,
+                p_norm=self.p_norm,
+                max_noise=self.max_noise,
+                discount=self.discount,
+                discount_threshold=self.discount_threshold,
+            )
             self.loss_function_class = qLossFunctionTopK
             self.loss_func_hypers = dict(
                 dist_weight=1,
@@ -384,7 +397,7 @@ def make_save_dir(config):
     r"""Create save directory without overwriting directories."""
     if config.test_only:
         return
-    
+
     init_dir_path = Path(config.save_dir)
     dir_path = Path(str(init_dir_path))
 
@@ -413,7 +426,7 @@ if __name__ == "__main__":
     parser.add_argument("--env_names", nargs="+", type=str, default="Ackley")
     parser.add_argument("--bounds", nargs="+", type=float, default=[-1, 1])
     parser.add_argument("--algos", nargs="+", type=str, default=["HES"])
-    parser.add_argument("--ts", type=bool, default=True)
+    parser.add_argument("--ts", action="store_true")
     parser.add_argument("--n_iterations", type=int)
     parser.add_argument("--lookahead_steps", type=int)
     parser.add_argument("--discretized", action="store_true")
@@ -421,6 +434,11 @@ if __name__ == "__main__":
     parser.add_argument("--n_jobs", type=int, default=1)
     parser.add_argument("--continue_once", type=str, default="")
     parser.add_argument("--test_only", action="store_true")
+    parser.add_argument("--spotlight_k", type=int, default=1)
+    parser.add_argument("--p_norm", type=float, default=2.0)
+    parser.add_argument("--max_noise", type=float, default=1e-5)
+    parser.add_argument("--discount", type=float, default=0.0)
+    parser.add_argument("--discount_threshold", type=float, default=-1)
     args = parser.parse_args()
 
     metrics = {}
