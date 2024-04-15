@@ -71,7 +71,8 @@ class Actor:
                 )
                 print(
                     "Number of AmortizedNet params:",
-                    sum(p.numel() for p in self.maps.parameters() if p.requires_grad),
+                    sum(p.numel()
+                        for p in self.maps.parameters() if p.requires_grad),
                 )
 
                 self._parameters = list(self.maps.parameters())
@@ -107,7 +108,8 @@ class Actor:
         )
 
         if self.parms.amortized:
-            optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
+            optimizer = torch.optim.AdamW(
+                self._parameters, lr=self.parms.acq_opt_lr)
 
             if embedder is not None:
                 encoded_prev_X = embedder.encode(prev_X)
@@ -129,7 +131,7 @@ class Actor:
                 * (self.algo_lookahead_steps + 1),
                 min=torch.tensor(self.parms.bounds[..., 0]),
             )
-            A_randomized = A_randomized * (ub - lb) + lb
+            A_randomized = (A_randomized * (ub - lb) + lb).detach()
 
             X_randomizeds = []
             for i in range(self.algo_lookahead_steps):
@@ -137,16 +139,21 @@ class Actor:
                     (1000, 2), device=self.parms.device, dtype=self.parms.torch_dtype
                 )
                 ub = torch.clamp(
-                    encoded_prev_X[0] + self.parms.cost_func_hypers["radius"] * (i + 1),
+                    encoded_prev_X[0] +
+                    self.parms.cost_func_hypers["radius"] * (i + 1),
                     max=torch.tensor(self.parms.bounds[..., 1]),
                 )
                 lb = torch.clamp(
-                    encoded_prev_X[0] - self.parms.cost_func_hypers["radius"] * (i + 1),
+                    encoded_prev_X[0] -
+                    self.parms.cost_func_hypers["radius"] * (i + 1),
                     min=torch.tensor(self.parms.bounds[..., 0]),
                 )
 
-                X_randomized = X_randomized * (ub - lb) + lb
+                X_randomized = (X_randomized * (ub - lb) + lb).detach()
                 X_randomizeds.append(X_randomized)
+
+            std = (self.parms.bounds[..., 1] -
+                   self.parms.bounds[..., 0]).mean() / 2
 
             for _ in tqdm(range(20)):
                 optimizer.zero_grad()
@@ -163,24 +170,20 @@ class Actor:
                     mean = return_dict["X"][i].mean(
                         dim=tuple(range(return_dict["X"][i].dim() - 1))
                     )
-                    std = return_dict["X"][i].std(
-                        dim=tuple(range(return_dict["X"][i].dim() - 1))
-                    )
                     dist = torch.distributions.Normal(mean, std)
                     loss += -dist.log_prob(X_randomizeds[i]).mean()
 
                 mean = return_dict["actions"].mean(
                     dim=tuple(range(return_dict["actions"].dim() - 1))
                 )
-                std = return_dict["actions"].std(
-                    dim=tuple(range(return_dict["actions"].dim() - 1))
-                )
                 dist = torch.distributions.Normal(mean, std)
                 loss += -dist.log_prob(A_randomized).mean()
 
-                print(f"Loss resetting: {loss.item():.5f}", end="\r", flush=True)
+                print(f"Loss resetting: {loss.item():.5f}",
+                      end="\r", flush=True)
 
-                grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
+                grads = torch.autograd.grad(
+                    loss, self._parameters, allow_unused=True)
                 for param, grad in zip(self._parameters, grads):
                     param.grad = grad
                 optimizer.step()
@@ -270,7 +273,8 @@ class Actor:
             )
 
         elif self.parms.algo == "qKG":
-            self.acqf = qKnowledgeGradient(model=WM, num_fantasies=self.parms.n_samples)
+            self.acqf = qKnowledgeGradient(
+                model=WM, num_fantasies=self.parms.n_samples)
 
         elif self.parms.algo == "qEI":
             sampler = SobolQMCNormalSampler(
@@ -300,7 +304,8 @@ class Actor:
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
-            self.acqf = qUpperConfidenceBound(model=WM, beta=0.1, sampler=sampler)
+            self.acqf = qUpperConfidenceBound(
+                model=WM, beta=0.1, sampler=sampler)
 
         elif self.parms.algo == "qMSL":
             num_fantasies = [self.parms.n_samples] * self.algo_lookahead_steps
@@ -333,7 +338,8 @@ class Actor:
                 objective_cost_function=self.parms.objective_cost_function,
             )
 
-            self.objective_X = torch.cat([self.objective_X, objective_new_x], 0)
+            self.objective_X = torch.cat(
+                [self.objective_X, objective_new_x], 0)
             self.cost_X = torch.cat([self.cost_X, cost_new_X], 0)
 
             suggested_budget, lower_bound = get_suggested_budget(
@@ -385,7 +391,7 @@ class Actor:
         """
         assert self.acqf is not None, "Acquisition function is not initialized."
 
-        prev_X = buffer["x"][iteration - 1 : iteration].expand(
+        prev_X = buffer["x"][iteration - 1: iteration].expand(
             self.parms.n_restarts, -1
         )
 
@@ -397,10 +403,10 @@ class Actor:
             ).to(dtype=self.parms.torch_dtype)
             # >>> n_restarts x x_dim x n_categories
 
-        prev_y = buffer["y"][iteration - 1 : iteration].expand(
+        prev_y = buffer["y"][iteration - 1: iteration].expand(
             self.parms.n_restarts, -1
         )
-        prev_hid_state = buffer["h"][iteration - 1 : iteration].expand(
+        prev_hid_state = buffer["h"][iteration - 1: iteration].expand(
             self.parms.n_restarts, -1
         )
         # Optimize the acquisition function
@@ -430,7 +436,8 @@ class Actor:
 
                 return return_X, return_dict["actions"].detach()
 
-            optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
+            optimizer = torch.optim.AdamW(
+                self._parameters, lr=self.parms.acq_opt_lr)
             lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=20, eta_min=1e-5
             )
@@ -459,10 +466,12 @@ class Actor:
 
                 losses.append(acqf_loss.item())
                 costs.append(acqf_cost.item())
-                loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
+                loss = (return_dict["acqf_loss"] +
+                        return_dict["acqf_cost"]).mean()
 
                 if best_loss.mean() - loss > 0.1:
-                    best_loss = return_dict["acqf_loss"] + return_dict["acqf_cost"]
+                    best_loss = return_dict["acqf_loss"] + \
+                        return_dict["acqf_cost"]
                     best_next_X = return_dict["X"]
                     best_actions = return_dict["actions"]
                     best_hidden_state = return_dict["hidden_state"]
@@ -471,14 +480,16 @@ class Actor:
                 else:
                     if iteration > self.parms.n_initial_points or ep >= 200:
                         early_stop += 1
-                grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
+                grads = torch.autograd.grad(
+                    loss, self._parameters, allow_unused=True)
                 for param, grad in zip(self._parameters, grads):
                     param.grad = grad
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
-                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}", end="\r", flush=True)
+                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}",
+                      end="\r", flush=True)
                 if early_stop > 50:
                     break
 
@@ -495,7 +506,7 @@ class Actor:
             # >>> n_restarts * hidden_dim
 
             if self.parms.amortized:
-                hidden_state = hidden_state[idx : idx + 1]
+                hidden_state = hidden_state[idx: idx + 1]
                 # >>> n_restarts * hidden_dim
                 self.maps.load_state_dict(best_map)
 

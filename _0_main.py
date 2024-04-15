@@ -269,39 +269,39 @@ class Parameters:
         return "\n".join(output)
 
 
-def make_env(env_name, x_dim, bounds, noise_std=0.0):
+def make_env(name, x_dim, bounds, noise_std=0.0):
     r"""Make environment."""
-    if env_name == "Ackley":
+    if name == "Ackley":
         f_ = Ackley(dim=x_dim, negate=True, noise_std=noise_std)
-    elif env_name == "Alpine":
+    elif name == "Alpine":
         f_ = AlpineN1(dim=x_dim, noise_std=noise_std)
-    elif env_name == "Beale":
+    elif name == "Beale":
         f_ = Beale(negate=True, noise_std=noise_std)
-    elif env_name == "Branin":
+    elif name == "Branin":
         f_ = Branin(negate=True, noise_std=noise_std)
-    elif env_name == "Cosine8":
+    elif name == "Cosine8":
         f_ = Cosine8(noise_std=noise_std)
-    elif env_name == "EggHolder":
+    elif name == "EggHolder":
         f_ = EggHolder(negate=True, noise_std=noise_std)
-    elif env_name == "Griewank":
+    elif name == "Griewank":
         f_ = Griewank(dim=x_dim, noise_std=noise_std)
-    elif env_name == "Hartmann":
+    elif name == "Hartmann":
         f_ = Hartmann(dim=x_dim, negate=True, noise_std=noise_std)
-    elif env_name == "HolderTable":
+    elif name == "HolderTable":
         f_ = HolderTable(negate=True, noise_std=noise_std)
-    elif env_name == "Levy":
+    elif name == "Levy":
         f_ = Levy(dim=x_dim, negate=True, noise_std=noise_std)
-    elif env_name == "Powell":
+    elif name == "Powell":
         f_ = Powell(dim=x_dim, negate=True, noise_std=noise_std)
-    elif env_name == "Rosenbrock":
+    elif name == "Rosenbrock":
         f_ = Rosenbrock(dim=x_dim, negate=True, noise_std=noise_std)
-    elif env_name == "SixHumpCamel":
+    elif name == "SixHumpCamel":
         f_ = SixHumpCamel(negate=True, noise_std=noise_std)
-    elif env_name == "StyblinskiTang":
+    elif name == "StyblinskiTang":
         f_ = StyblinskiTang(dim=x_dim, negate=True, noise_std=noise_std)
-    elif env_name == "SynGP":
+    elif name == "SynGP":
         f_ = SynGP(dim=x_dim, noise_std=noise_std)
-    elif env_name == "AntBO":
+    elif name == "AntBO":
         assert x_dim == 11, "AntBO only runs on 11-dim X"
         bbox = {
             "tool": "Absolut",
@@ -318,15 +318,15 @@ def make_env(env_name, x_dim, bounds, noise_std=0.0):
             bbox=bbox,
             normalise=False,
         )
-    elif env_name == "chemical":
+    elif name == "chemical":
         with open("examples/semisynthetic.pt", "rb") as file_handle:
             return pickle.load(file_handle)
-    elif env_name == "Sequence":
+    elif name == "Sequence":
         f_ = SequenceDesignFunction(dim=x_dim)
     else:
         raise NotImplementedError
 
-    if env_name != "AntBO":
+    if name != "AntBO":
         f_.bounds[0, :] = torch.tensor(bounds[..., 0], device=f_.bounds.device)
         f_.bounds[1, :] = torch.tensor(bounds[..., 1], device=f_.bounds.device)
 
@@ -353,7 +353,7 @@ def make_save_dir(config):
 
     # Save config to save_dir as parameters.json
     config_path = dir_path / "parameters.json"
-    with open(str(config_path), "w") as file_handle:
+    with open(str(config_path), "w", encoding="utf-8") as file_handle:
         config_dict = str(config)
         file_handle.write(config_dict)
 
@@ -404,7 +404,7 @@ if __name__ == "__main__":
 
                 # Init environment
                 env = make_env(
-                    env_name=env_name,
+                    name=env_name,
                     x_dim=local_parms.x_dim,
                     bounds=local_parms.bounds,
                     noise_std=local_parms.env_noise,

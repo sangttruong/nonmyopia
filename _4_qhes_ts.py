@@ -133,10 +133,6 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
         num_categories = prev_X.shape[2] if embedder is not None else 0
         previous_X = prev_X
         previous_y = prev_y
-        if self._model is None:
-            fantasized_model = self.model
-        else:
-            fantasized_model = self._model
 
         X_returned = []
         hidden_state_returned = []
@@ -244,7 +240,7 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
                 prev_X=pX, current_X=cX, previous_cost=acqf_cost
             )
         for i in range(self.n_actions):
-            cX = actions[..., i : i + 1, :]
+            cX = actions[..., i: i + 1, :]
             pX = X_returned[-1][None, ...].expand_as(cX)
             acqf_cost = acqf_cost + self.cost_function(
                 prev_X=pX, current_X=cX, previous_cost=acqf_cost

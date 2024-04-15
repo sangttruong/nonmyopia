@@ -54,24 +54,22 @@ do
             echo "Running experiment for $env and $algo"
 
             python _0_main.py --gpu_id ${gpu_id[$idx]} \
-                            --algo $algo \
-                            --env_name $env \
+                            --algos $algo \
+                            --env_names $env \
                             --seeds ${seeds[$idx]} \
-                            --n_iterations ${env_iterations[$env]} \
-                            --lookahead_steps ${algo_lookahead[$env,$algo]} \
-                            --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} &
+                            --algo_n_iterations ${env_iterations[$env]} \
+                            --algo_lookahead_steps ${algo_lookahead[$env,$algo]} \
                             # --test_only \
                             # --continue_once "results/exp_${algo}_${env}_${algo_lookahead[$env,$algo]}_0${idx}" &
 
             # if [ "$algo" == "HES" ]
             # then
             #     python _0_main.py --gpu_id ${gpu_id[$idx]} \
-            #                     --algo $algo \
-            #                     --env_name $env \
+            #                     --algos $algo \
+            #                     --env_names $env \
             #                     --seeds ${seeds[$idx]} \
-            #                     --n_iterations ${env_iterations[$env]} \
-            #                     --lookahead_steps 1 \
-            #                     --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} & 
+            #                     --algo_n_iterations ${env_iterations[$env]} \
+            #                     --algo_lookahead_steps 1 \
 
             # fi
         done
@@ -94,25 +92,23 @@ done
 #     echo "Running discrete experiment for $env and $algo"
 #     exp_id=$((exp_id+1))
 #     python _0_main.py        --gpu_id $gpu_id \
-#                          --algo $algo \
-#                          --env_name $env \
+#                          --algos $algo \
+#                          --env_names $env \
 #                          --seeds 0 \
-#                          --n_iterations ${env_iterations[$env]} \
-#                          --lookahead_steps ${algo_lookahead[$env,$algo]} \
-#                          --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} \
-#                          --discetized
+#                          --algo_n_iterations ${env_iterations[$env]} \
+#                          --algo_lookahead_steps ${algo_lookahead[$env,$algo]} \
+#                          --env_discretized
 
 #     if [ "$algo" == "HES" ]
 #     then
 #         exp_id=$((exp_id+1))
 #         python _0_main.py            --gpu_id $gpu_id \
-#                              --algo $algo \
-#                              --env_name $env \
+#                              --algos $algo \
+#                              --env_names $env \
 #                              --seeds 0 \
-#                              --n_iterations ${env_iterations[$env]} \
-#                              --lookahead_steps 1 \
-#                              --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} \
-#                              --discetized
+#                              --algo_n_iterations ${env_iterations[$env]} \
+#                              --algo_lookahead_steps 1 \
+#                              --env_discretized
 #     fi
 # done
 
@@ -124,39 +120,35 @@ done
 
 # python _0_main_dc.py 
 #                   --gpu_id 4 \
-#                   --algo HES \
-#                   --env_name SynGP \
+#                   --algos HES \
+#                   --env_names SynGP \
 #                   --seeds 0 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 15 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 15 \
 
 # python _0_main_dc.py 
 #                   --gpu_id 3 \
-#                   --algo HES \
-#                   --env_name SynGP \
+#                   --algos HES \
+#                   --env_names SynGP \
 #                   --seeds 0 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 1 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 1 \
 
 # python _0_main_dc.py 
 #                   --gpu_id 3 \
-#                   --algo qMSL \
-#                   --env_name SynGP \
+#                   --algos qMSL \
+#                   --env_names SynGP \
 #                   --seeds 0 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 3 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 3 \
 
 # python _0_main_dc.py 
 #                   --gpu_id 3 \
-#                   --algo qEI \
-#                   --env_name SynGP \
+#                   --algos qEI \
+#                   --env_names SynGP \
 #                   --seeds 0 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 0 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 0 \
 
 
 
@@ -166,75 +158,67 @@ done
 
 # # SynGP - HES - Non-myopic
 # python _0_main.py --gpu_id 9 \
-#                   --algo HES \
-#                   --env_name SynGP \
+#                   --algos HES \
+#                   --env_names SynGP \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 15 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 15 \
 
 # # SynGP - HES - Myopic
 # python _0_main.py --gpu_id 3 \
-#                   --algo HES \
-#                   --env_name SynGP \
+#                   --algos HES \
+#                   --env_names SynGP \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 1 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 1 \
 
 # # SynGP - qMSL - Non-myopic
 # python _0_main.py --gpu_id 4 \
-#                   --algo qMSL \
-#                   --env_name SynGP \
+#                   --algos qMSL \
+#                   --env_names SynGP \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 3 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 3 \
 
 # # SynGP - qSR - Myopic
 # python _0_main.py --gpu_id 5 \
-#                   --algo qSR \
-#                   --env_name SynGP \
+#                   --algos qSR \
+#                   --env_names SynGP \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 0 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 0 \
 
 # # SynGP - qEI - Myopic
 # python _0_main.py --gpu_id 7 \
-#                   --algo qEI \
-#                   --env_name SynGP \
+#                   --algos qEI \
+#                   --env_names SynGP \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 0 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 0 \
 
 # # SynGP - qPI - Myopic
 # python _0_main.py --gpu_id 8 \
-#                   --algo qPI \
-#                   --env_name SynGP \
+#                   --algos qPI \
+#                   --env_names SynGP \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 0 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 0 \
 
 # # SynGP - qUCB - Myopic
 # python _0_main.py --gpu_id 9 \
-#                   --algo qUCB \
-#                   --env_name SynGP \
+#                   --algos qUCB \
+#                   --env_names SynGP \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 0 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 0 \
 
 # # SynGP - qKG - Myopic
 # python _0_main.py --gpu_id 8 \
-#                   --algo qKG \
-#                   --env_name SynGP \
+#                   --algos qKG \
+#                   --env_names SynGP \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 18 \
-#                   --lookahead_steps 0 \
-#                   --bounds -1 1
+#                   --algo_n_iterations 18 \
+#                   --algo_lookahead_steps 0 \
 
 
 
@@ -245,75 +229,67 @@ done
 
 # # HolderTable - HES - Non-myopic
 python _0_main.py --gpu_id 0 \
-                  --algo HES \
-                  --env_name HolderTable \
+                  --algos HES \
+                  --env_names HolderTable \
                   --seeds 1\
-                  --n_iterations 30 \
-                  --lookahead_steps 15 \
-                  --bounds 1 10
+                  --algo_n_iterations 30 \
+                  --algo_lookahead_steps 15 \
 
 # # HolderTable - HES - Myopic
 # python _0_main.py --gpu_id 6 \
-#                   --algo HES \
-#                   --env_name HolderTable \
+#                   --algos HES \
+#                   --env_names HolderTable \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 21 \
-#                   --lookahead_steps 1 \
-#                   --bounds 1 10
+#                   --algo_n_iterations 21 \
+#                   --algo_lookahead_steps 1 \
 
 # # HolderTable - qMSL - Myopic
 # python _0_main.py --gpu_id 9 \
-#                   --algo qMSL \
-#                   --env_name HolderTable \
+#                   --algos qMSL \
+#                   --env_names HolderTable \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 21 \
-#                   --lookahead_steps 3 \
-#                   --bounds 1 10
+#                   --algo_n_iterations 21 \
+#                   --algo_lookahead_steps 3 \
 
 # # HolderTable - qSR - Myopic
 # python _0_main.py --gpu_id 0 \
-#                   --algo qSR \
-#                   --env_name HolderTable \
+#                   --algos qSR \
+#                   --env_names HolderTable \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 21 \
-#                   --lookahead_steps 0 \
-#                   --bounds 1 10
+#                   --algo_n_iterations 21 \
+#                   --algo_lookahead_steps 0 \
 
 # # HolderTable - qEI - Myopic
 # python _0_main.py --gpu_id 0 \
-#                   --algo qEI \
-#                   --env_name HolderTable \
+#                   --algos qEI \
+#                   --env_names HolderTable \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 21 \
-#                   --lookahead_steps 0 \
-#                   --bounds 1 10
+#                   --algo_n_iterations 21 \
+#                   --algo_lookahead_steps 0 \
 
 # # HolderTable - qPI - Myopic
 # python _0_main.py --gpu_id 7 \
-#                   --algo qPI \
-#                   --env_name HolderTable \
+#                   --algos qPI \
+#                   --env_names HolderTable \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 21 \
-#                   --lookahead_steps 0 \
-#                   --bounds 1 10
+#                   --algo_n_iterations 21 \
+#                   --algo_lookahead_steps 0 \
 
 # # HolderTable - qUCB - Myopic
 # python _0_main.py --gpu_id 7 \
-#                   --algo qUCB \
-#                   --env_name HolderTable \
+#                   --algos qUCB \
+#                   --env_names HolderTable \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 21 \
-#                   --lookahead_steps 0 \
-#                   --bounds 1 10
+#                   --algo_n_iterations 21 \
+#                   --algo_lookahead_steps 0 \
 
 # # HolderTable - qKG - Myopic
 # python _0_main.py --gpu_id 7 \
-#                   --algo qKG \
-#                   --env_name HolderTable \
+#                   --algos qKG \
+#                   --env_names HolderTable \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 21 \
-#                   --lookahead_steps 0 \
-#                   --bounds 1 10
+#                   --algo_n_iterations 21 \
+#                   --algo_lookahead_steps 0 \
 
 
 
@@ -327,75 +303,67 @@ python _0_main.py --gpu_id 0 \
 
 # # EggHolder - HES - Non-myopic
 # python _0_main.py --gpu_id 7 \
-#                   --algo HES \
-#                   --env_name EggHolder \
+#                   --algos HES \
+#                   --env_names EggHolder \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 16 \
-#                   --lookahead_steps 10 \
-#                   --bounds -512 512
+#                   --algo_n_iterations 16 \
+#                   --algo_lookahead_steps 10 \
 
 # # EggHolder - HES - Myopic
 # python _0_main.py --gpu_id 2 \
-#                   --algo HES \
-#                   --env_name EggHolder \
+#                   --algos HES \
+#                   --env_names EggHolder \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 16 \
-#                   --lookahead_steps 1 \
-#                   --bounds -512 512
+#                   --algo_n_iterations 16 \
+#                   --algo_lookahead_steps 1 \
 
 # # EggHolder - qMSL - Myopic
 # python _0_main.py --gpu_id 9 \
-#                   --algo qMSL \
-#                   --env_name EggHolder \
+#                   --algos qMSL \
+#                   --env_names EggHolder \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 16 \
-#                   --lookahead_steps 3 \
-#                   --bounds -512 512
+#                   --algo_n_iterations 16 \
+#                   --algo_lookahead_steps 3 \
 
 # # EggHolder - qSR - Myopic
 # python _0_main.py --gpu_id 4 \
-#                   --algo qSR \
-#                   --env_name EggHolder \
+#                   --algos qSR \
+#                   --env_names EggHolder \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 16 \
-#                   --lookahead_steps 0 \
-#                   --bounds -512 512
+#                   --algo_n_iterations 16 \
+#                   --algo_lookahead_steps 0 \
 
 # # EggHolder - qEI - Myopic
 # python _0_main.py --gpu_id 3 \
-#                   --algo qEI \
-#                   --env_name EggHolder \
+#                   --algos qEI \
+#                   --env_names EggHolder \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 16 \
-#                   --lookahead_steps 0 \
-#                   --bounds -512 512
+#                   --algo_n_iterations 16 \
+#                   --algo_lookahead_steps 0 \
 
 # # EggHolder - qPI - Myopic
 # python _0_main.py --gpu_id 7 \
-#                   --algo qPI \
-#                   --env_name EggHolder \
+#                   --algos qPI \
+#                   --env_names EggHolder \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 16 \
-#                   --lookahead_steps 0 \
-#                   --bounds -512 512
+#                   --algo_n_iterations 16 \
+#                   --algo_lookahead_steps 0 \
 
 # # EggHolder - qUCB - Myopic
 # python _0_main.py --gpu_id 3 \
-#                   --algo qUCB \
-#                   --env_name EggHolder \
+#                   --algos qUCB \
+#                   --env_names EggHolder \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 16 \
-#                   --lookahead_steps 0 \
-#                   --bounds -512 512
+#                   --algo_n_iterations 16 \
+#                   --algo_lookahead_steps 0 \
 
 # # EggHolder - qKG - Myopic
 # python _0_main.py --gpu_id 4 \
-#                   --algo qKG \
-#                   --env_name EggHolder \
+#                   --algos qKG \
+#                   --env_names EggHolder \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 16 \
-#                   --lookahead_steps 0 \
-#                   --bounds -512 512
+#                   --algo_n_iterations 16 \
+#                   --algo_lookahead_steps 0 \
 
 
 
@@ -407,72 +375,64 @@ python _0_main.py --gpu_id 0 \
 
 # # Alpine - HES - Non-myopic
 # python _0_main.py --gpu_id 3 \
-#                   --algo HES \
-#                   --env_name Alpine \
+#                   --algos HES \
+#                   --env_names Alpine \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 17 \
-#                   --lookahead_steps 11 \
-#                   --bounds 0 10
+#                   --algo_n_iterations 17 \
+#                   --algo_lookahead_steps 11 \
 
 # # Alpine - HES - Myopic
 # python _0_main.py --gpu_id 0 \
-#                   --algo HES \
-#                   --env_name Alpine \
+#                   --algos HES \
+#                   --env_names Alpine \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 17 \
-#                   --lookahead_steps 1 \
-#                   --bounds 0 10
+#                   --algo_n_iterations 17 \
+#                   --algo_lookahead_steps 1 \
 
 # # Alpine - qMSL - Myopic
 # python _0_main.py --gpu_id 9 \
-#                   --algo qMSL \
-#                   --env_name Alpine \
+#                   --algos qMSL \
+#                   --env_names Alpine \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 17 \
-#                   --lookahead_steps 3 \
-#                   --bounds 0 10
+#                   --algo_n_iterations 17 \
+#                   --algo_lookahead_steps 3 \
 
 # # Alpine - qSR - Myopic
 # python _0_main.py --gpu_id 3 \
-#                   --algo qSR \
-#                   --env_name Alpine \
+#                   --algos qSR \
+#                   --env_names Alpine \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 17 \
-#                   --lookahead_steps 0 \
-#                   --bounds 0 10
+#                   --algo_n_iterations 17 \
+#                   --algo_lookahead_steps 0 \
 
 # # Alpine - qEI - Myopic
 # python _0_main.py --gpu_id 4 \
-#                   --algo qEI \
-#                   --env_name Alpine \
+#                   --algos qEI \
+#                   --env_names Alpine \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 17 \
-#                   --lookahead_steps 0 \
-#                   --bounds 0 10
+#                   --algo_n_iterations 17 \
+#                   --algo_lookahead_steps 0 \
 
 # # Alpine - qPI - Myopic
 # python _0_main.py --gpu_id 3 \
-#                   --algo qPI \
-#                   --env_name Alpine \
+#                   --algos qPI \
+#                   --env_names Alpine \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 17 \
-#                   --lookahead_steps 0 \
-#                   --bounds 0 10
+#                   --algo_n_iterations 17 \
+#                   --algo_lookahead_steps 0 \
 
 # # Alpine - qUCB - Myopic
 # python _0_main.py --gpu_id 4 \
-#                   --algo qUCB \
-#                   --env_name Alpine \
+#                   --algos qUCB \
+#                   --env_names Alpine \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 17 \
-#                   --lookahead_steps 0 \
-#                   --bounds 0 10
+#                   --algo_n_iterations 17 \
+#                   --algo_lookahead_steps 0 \
 
 # # Alpine - qKG - Myopic
 # python _0_main.py --gpu_id 7 \
-#                   --algo qKG \
-#                   --env_name Alpine \
+#                   --algos qKG \
+#                   --env_names Alpine \
 #                   --seeds 1 2 3 4 5 6 7 8 9 10 \
-#                   --n_iterations 17 \
-#                   --lookahead_steps 0 \
-#                   --bounds 0 10
+#                   --algo_n_iterations 17 \
+#                   --algo_lookahead_steps 0 \

@@ -20,7 +20,7 @@ from botorch.models.transforms.outcome import Standardize
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
 from _2_actor import Actor
-from _5_evalplot import eval_and_plot_1D, eval_and_plot_2D, eval_func
+from _5_evalplot import eval_and_plot
 from _9_semifuncs import generate_random_X
 from _13_embedder import DiscreteEmbbeder
 
@@ -32,14 +32,6 @@ def run(parms, env) -> None:
         parms (Parameter): List of input parameters
         env: Environment
     """
-
-    if parms.x_dim == 1:
-        eval_and_plot = eval_and_plot_1D
-    elif parms.x_dim == 2:
-        eval_and_plot = eval_and_plot_2D
-    else:
-        print("Plotting is only done when x_dim is 1 or 2.")
-        eval_and_plot = eval_func
 
     # Finding maxima of env using gradient descent
     print("Computing optimal value...")
@@ -64,18 +56,21 @@ def run(parms, env) -> None:
 
         maxima = maxima.cpu().detach().requires_grad_(False)
         maxima = (
-            torch.sigmoid(maxima) * (bounds[..., 1] - bounds[..., 0]) + bounds[..., 0]
+            torch.sigmoid(maxima) *
+            (bounds[..., 1] - bounds[..., 0]) + bounds[..., 0]
         )
         optimal_value = env(maxima)
         print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
     else:
         # Finding maxima of env using grid search
         if not parms.env_discretized and parms.env_name == "SynGP":
-            categories = torch.linspace(parms.bounds[0, 0], parms.bounds[0, 1], 100)
+            categories = torch.linspace(
+                parms.bounds[0, 0], parms.bounds[0, 1], 100)
         else:
             categories = torch.arange(0, parms.num_categories)
 
-        categories = categories.to(device=parms.device, dtype=parms.torch_dtype)
+        categories = categories.to(
+            device=parms.device, dtype=parms.torch_dtype)
         X = [categories] * parms.x_dim
         X = torch.stack(torch.meshgrid(*X), dim=-1).reshape(-1, parms.x_dim)
         y = env(X)
@@ -205,6 +200,7 @@ def run(parms, env) -> None:
             optimal_value=optimal_value,
             iteration=parms.n_initial_points - 1,
             embedder=embedder,
+            n_space=parms.num_categories,
         )
         buffer["real_loss"][parms.n_initial_points - 1] = real_loss
 
@@ -242,6 +238,7 @@ def run(parms, env) -> None:
             optimal_value=optimal_value,
             iteration=parms.n_initial_points - 1,
             embedder=embedder,
+            n_space=parms.num_categories,
             actions=actions,
             X=X,
         )
@@ -299,6 +296,7 @@ def run(parms, env) -> None:
             optimal_value=optimal_value,
             iteration=i,
             embedder=embedder,
+            n_space=parms.num_categories,
             actions=actions,
         )
         print("Real loss:", buffer["real_loss"][i].item())

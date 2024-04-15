@@ -290,7 +290,7 @@ class TransformedCategorical(CategoricalOverlap):
         diff = x1[..., None, :] - x2[..., None, :, :]
         diff[torch.abs(diff) > 1e-5] = 1
         diff1 = torch.logical_not(diff).to(dtype=torch.float64)
-        
+
         def rbf(d, ard):
             if ard:
                 return torch.exp(

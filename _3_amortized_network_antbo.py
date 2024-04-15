@@ -23,6 +23,7 @@ class AmortizedNetworkAntBO(nn.Module):
         hidden_dim: int,
         n_actions: int,
         output_bounds: Tuple[float, float],
+        **kwargs
     ) -> None:
         r"""Initialize the network.
 
@@ -68,7 +69,8 @@ class AmortizedNetworkAntBO(nn.Module):
             nn.ELU(),
             nn.Dropout(p=self.p),
             nn.Linear(self.hidden_dim, self.output_dim * self.n_actions),
-            Project2Range(self.output_bounds[..., 0], self.output_bounds[..., 1]),
+            Project2Range(
+                self.output_bounds[..., 0], self.output_bounds[..., 1]),
         )
 
         self.postpro_X = nn.Sequential(
@@ -77,7 +79,8 @@ class AmortizedNetworkAntBO(nn.Module):
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ELU(),
             nn.Linear(self.hidden_dim, self.output_dim),
-            Project2Range(self.output_bounds[..., 0], self.output_bounds[..., 1]),
+            Project2Range(
+                self.output_bounds[..., 0], self.output_bounds[..., 1]),
         )
 
     def forward(self, x, prev_hid_state, return_actions):
@@ -92,12 +95,14 @@ class AmortizedNetworkAntBO(nn.Module):
             The output tensor and the hidden state.
         """
         postpro = self.postpro_A if return_actions else self.postpro_X
-        x_onehot = nn.functional.one_hot(x[..., :-1].long(), num_classes=nm_AAs).float()
+        x_onehot = nn.functional.one_hot(
+            x[..., :-1].long(), num_classes=nm_AAs).float()
         preprocess_X = self.prepro_X(x_onehot)
         # >> batch x seq_length x hidden_dim
 
         preprocess_y = self.prepo_y(x[..., -1:])
-        preprocess_y = preprocess_y[:, None, :].expand(-1, preprocess_X.shape[1], -1)
+        preprocess_y = preprocess_y[:, None,
+                                    :].expand(-1, preprocess_X.shape[1], -1)
         # >> batch x seq_length x hidden_dim
 
         preprocess_Xy = torch.cat([preprocess_X, preprocess_y], dim=-1)

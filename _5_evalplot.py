@@ -29,7 +29,8 @@ def eval_func(
             device=cfg.device,
             dtype=cfg.torch_dtype,
         )
-        A = buffer["x"][iteration].clone().repeat(cfg.n_restarts, cfg.n_actions, 1)
+        A = buffer["x"][iteration].clone().repeat(
+            cfg.n_restarts, cfg.n_actions, 1)
         A = A + torch.randn_like(A) * 0.01
         A.requires_grad = True
 
@@ -71,9 +72,11 @@ def eval_func(
         )
 
     else:
-        q = 1 + sum([cfg.n_samples**s for s in range(1, cfg.algo_lookahead_steps + 1)])
+        q = 1 + sum([cfg.n_samples**s for s in range(1,
+                    cfg.algo_lookahead_steps + 1)])
         if cfg.env_name == "AntBO":
-            choices = torch.tensor(list(range(20)), dtype=torch.long, device=cfg.device)
+            choices = torch.tensor(
+                list(range(20)), dtype=torch.long, device=cfg.device)
             choices = choices.reshape(-1, 1).expand(-1, cfg.x_dim)
 
             # Optimize acqf
@@ -114,7 +117,8 @@ def eval_func(
                 dtype=cfg.torch_dtype,
             )
             A[0] = (
-                buffer["x"][iteration].clone().repeat(cfg.n_restarts, cfg.n_actions, 1)
+                buffer["x"][iteration].clone().repeat(
+                    cfg.n_restarts, cfg.n_actions, 1)
             )
             A = A + torch.randn_like(A) * 0.01
             A.requires_grad = True
@@ -160,7 +164,8 @@ def eval_func(
             bayes_action = A[chosen_idx, 0]
 
             real_loss = optimal_value + loss_function(
-                A=bayes_action[None, ...], Y=func(bayes_action)[None, None, ...]
+                A=bayes_action[None, ...], Y=func(
+                    bayes_action)[None, None, ...]
             )
 
     return real_loss, bayes_action
@@ -235,14 +240,15 @@ def eval_and_plot_2D_with_posterior(
     next_x = next_x.cpu().detach()
 
     # Plotting ###############################################################
-    # fig, ax = plt.subplots(1, 1)
-    fig, ax = plt.subplots(1, 2)
+    fig, ax = plt.subplots(1, 2, figsize=(10, 4))
     if embedder is not None:
         bounds_plot_x = bounds_plot_y = [0, n_space - 1]
     else:
         bounds_plot_x, bounds_plot_y = cfg.bounds
-    ax[0].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_x, ylim=bounds_plot_y)
-    ax[1].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_x, ylim=bounds_plot_y)
+    ax[0].set(xlabel="$x_1$", ylabel="$x_2$",
+              xlim=bounds_plot_x, ylim=bounds_plot_y)
+    ax[1].set(xlabel="$x_1$", ylabel="$x_2$",
+              xlim=bounds_plot_x, ylim=bounds_plot_y)
 
     if cfg.algo == "HES":
         title = "$\mathcal{H}_{\ell, \mathcal{A}}$-Entropy Search " + cfg.task
@@ -261,7 +267,8 @@ def eval_and_plot_2D_with_posterior(
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
     Z = func(XY.reshape(2, -1).T).reshape(X.shape)
 
-    Z_post = wm.posterior(XY.to(cfg.device, cfg.torch_dtype).permute(1, 2, 0)).mean
+    Z_post = wm.posterior(
+        XY.to(cfg.device, cfg.torch_dtype).permute(1, 2, 0)).mean
     Z_post = Z_post.squeeze(-1).cpu().detach()
     # >> 100 x 100 x 1
 
@@ -289,18 +296,22 @@ def eval_and_plot_2D_with_posterior(
 
     # Plot data, optimal actions, next query #################################
     if embedder is not None:
-        ax[0].scatter(*embedder.decode(data_x[:iteration]).long().T, label="Data")
+        ax[0].scatter(
+            *embedder.decode(data_x[:iteration]).long().T, label="Data")
         ax[0].scatter(*embedder.decode(bayes_action).long().T, label="Action")
         ax[0].scatter(
             *embedder.decode(next_x.unsqueeze(0)).long().T, label="Next query"
         )
 
         # Draw grid
-        plt.vlines(np.arange(0, n_space), 0, n_space, linestyles="dashed", alpha=0.05)
-        plt.hlines(np.arange(0, n_space), 0, n_space, linestyles="dashed", alpha=0.05)
+        plt.vlines(np.arange(0, n_space), 0, n_space,
+                   linestyles="dashed", alpha=0.05)
+        plt.hlines(np.arange(0, n_space), 0, n_space,
+                   linestyles="dashed", alpha=0.05)
 
         # Splotlight cost
-        previous_x = embedder.decode(buffer["x"][iteration - 1].squeeze()).long()
+        previous_x = embedder.decode(
+            buffer["x"][iteration - 1].squeeze()).long()
         previous_x = previous_x.cpu().detach()
         splotlight = plt.Rectangle(
             (
@@ -331,8 +342,10 @@ def eval_and_plot_2D_with_posterior(
         ax[0].set_yticks(range(0, n_space, 2))
 
     else:
-        ax[0].scatter(data_x[:iteration, 0], data_x[:iteration, 1], label="Data")
-        ax[0].scatter(bayes_action[..., 0], bayes_action[..., 1], label="Action")
+        ax[0].scatter(data_x[:iteration, 0],
+                      data_x[:iteration, 1], label="Data")
+        ax[0].scatter(bayes_action[..., 0],
+                      bayes_action[..., 1], label="Action")
 
         if "actions" in kwargs:
             actions = kwargs["actions"]
@@ -344,7 +357,8 @@ def eval_and_plot_2D_with_posterior(
             )
         if "X" in kwargs:
             for X in kwargs["X"][::-1]:
-                ax[0].scatter(X[..., 0].reshape(-1, 1), X[..., 1].reshape(-1, 1))
+                ax[0].scatter(X[..., 0].reshape(-1, 1),
+                              X[..., 1].reshape(-1, 1))
 
         ax[0].scatter(next_x[..., 0], next_x[..., 1], label="Next query")
 
@@ -394,12 +408,13 @@ def eval_and_plot_2D_without_posterior(
     next_x = next_x.cpu().detach()
 
     # Plotting ###############################################################
-    fig, ax = plt.subplots(1, 1)
+    fig, ax = plt.subplots(1, 1, figsize=(5, 4))
     if embedder is not None:
         bounds_plot_x = bounds_plot_y = [0, n_space - 1]
     else:
         bounds_plot_x, bounds_plot_y = cfg.bounds
-    ax.set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_x, ylim=bounds_plot_y)
+    ax.set(xlabel="$x_1$", ylabel="$x_2$",
+           xlim=bounds_plot_x, ylim=bounds_plot_y)
     # ax[1].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot, ylim=bounds_plot)
     if cfg.algo == "HES":
         title = "$\mathcal{H}_{\ell, \mathcal{A}}$-Entropy Search " + cfg.task
@@ -448,14 +463,18 @@ def eval_and_plot_2D_without_posterior(
     if embedder is not None:
         ax.scatter(*embedder.decode(data_x[:iteration]).long().T, label="Data")
         ax.scatter(*embedder.decode(bayes_action).long().T, label="Action")
-        ax.scatter(*embedder.decode(next_x.unsqueeze(0)).long().T, label="Next query")
+        ax.scatter(*embedder.decode(next_x.unsqueeze(0)
+                                    ).long().T, label="Next query")
 
         # Draw grid
-        plt.vlines(np.arange(0, n_space), 0, n_space, linestyles="dashed", alpha=0.05)
-        plt.hlines(np.arange(0, n_space), 0, n_space, linestyles="dashed", alpha=0.05)
+        plt.vlines(np.arange(0, n_space), 0, n_space,
+                   linestyles="dashed", alpha=0.05)
+        plt.hlines(np.arange(0, n_space), 0, n_space,
+                   linestyles="dashed", alpha=0.05)
 
         # Splotlight cost
-        previous_x = embedder.decode(buffer["x"][iteration - 1].squeeze()).long()
+        previous_x = embedder.decode(
+            buffer["x"][iteration - 1].squeeze()).long()
         previous_x = previous_x.cpu().detach()
         splotlight = plt.Rectangle(
             (
@@ -517,15 +536,30 @@ def eval_and_plot_2D_without_posterior(
     return real_loss, bayes_action
 
 
-def eval_and_plot_1D(func, wm, cfg, acqf, next_x, actions, buffer, iteration):
+def eval_and_plot_1D(
+    func,
+    wm,
+    cfg,
+    acqf,
+    next_x,
+    buffer,
+    optimal_value,
+    iteration,
+    n_space=100,
+    embedder=None,
+    *args,
+    **kwargs,
+):
     r"""Evaluate and plot 1D function."""
-    real_loss, bayes_action = eval_func(cfg, acqf, func)
+    real_loss, bayes_action = eval_func(
+        cfg, acqf, func, buffer, optimal_value, iteration
+    )
     data_x = buffer["x"].cpu().detach().numpy()
     data_y = buffer["y"].cpu().detach().numpy()
     next_x = next_x.cpu().detach().numpy()
 
     # Plotting ###############################################################
-    fig, ax = plt.subplots(1, 1)
+    fig, ax = plt.subplots(1, 1, figsize=(5, 4))
     bounds_plot = cfg.bounds
     y_bounds = (-5, 5)
     ax.set(xlabel="$x$", ylabel="$y$", xlim=bounds_plot, ylim=y_bounds)
@@ -548,7 +582,8 @@ def eval_and_plot_1D(func, wm, cfg, acqf, next_x, actions, buffer, iteration):
     # Plot data, optimal actions, next query #################################
     ub = np.max(upper)
     lb = np.min(lower)
-    plt.vlines(data_x[iteration], lb, ub, color="black", label="current location")
+    plt.vlines(data_x[iteration], lb, ub,
+               color="black", label="current location")
     plt.vlines(
         data_x[iteration] - cfg.cost_func_hypers["radius"],
         lb,
@@ -582,14 +617,15 @@ def eval_and_plot_1D(func, wm, cfg, acqf, next_x, actions, buffer, iteration):
     return real_loss, bayes_action
 
 
-def eval_and_plot(config, wm, env, acqf, buffer, next_x, actions, iteration):
+def eval_and_plot(func, wm, cfg, *args, **kwargs):
     r"""Draw the posterior of the model."""
-    if config.x_dim == 1:
-        eval_and_plot_1D(env, wm, config, acqf, next_x, actions, buffer, iteration)
-    elif config.x_dim == 2:
-        eval_and_plot_2D(env, wm, config, acqf, next_x, actions, buffer, iteration)
+    if cfg.x_dim == 1:
+        return eval_and_plot_1D(func, wm, cfg, *args, **kwargs)
+    elif cfg.x_dim == 2:
+        return eval_and_plot_2D(func, wm, cfg, *args, **kwargs)
     else:
-        raise NotImplementedError
+        print("Plotting is only done when x_dim is 1 or 2.")
+        return eval_func
 
 
 def draw_metric(
@@ -613,8 +649,8 @@ def draw_metric(
         for j, algo in enumerate(algos):
             nip = num_initial_points[env_name]
             ns = num_steps[env_name]
-            mean = np.mean(metrics[j], axis=0)[nip - 1 : ns]
-            std = np.std(metrics[j], axis=0)[nip - 1 : ns]
+            mean = np.mean(metrics[j], axis=0)[nip - 1: ns]
+            std = np.std(metrics[j], axis=0)[nip - 1: ns]
             # min_ = np.min(metrics[j], axis=0)[nip-1:ns]
             # max_ = np.max(metrics[j], axis=0)[nip-1:ns]
             x = list(range(nip - 1, ns))

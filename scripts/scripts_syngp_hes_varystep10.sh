@@ -49,12 +49,11 @@ do
             echo "Running experiment for $env and $algo"
 
             python _0_main.py --gpu_id ${gpu_id[$idx]} \
-                            --algo $algo \
-                            --env_name $env \
+                            --algos $algo \
+                            --env_names $env \
                             --seeds ${seeds[$idx]} \
-                            --n_iterations ${env_iterations[$env]} \
-                            --lookahead_steps 5 \
-                            --bounds ${env_lower_bounds[$env]} ${env_upper_bounds[$env]} &
+                            --algo_n_iterations ${env_iterations[$env]} \
+                            --algo_lookahead_steps 10 \
         done
         idx=$((idx+1))
     done
