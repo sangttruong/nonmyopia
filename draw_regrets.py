@@ -5,39 +5,25 @@ import sys
 
 datasets = sys.argv[1:]
 
-algos = ["Non-myopic HES", 
-         "Myopic HES", 
-         "Non-myopic MST",
-         "SR",
-         "EI", 
-         "PI", 
-         "UCB", 
-         "KG"
+algos = [
+    "Non-myopic HES",
+    "Myopic HES",
+    "Non-myopic MST",
+    "SR",
+    "EI",
+    "PI",
+    "UCB",
+    "KG",
 ]
 
-algos_name = [
-    "HES", "HES", 
-    "qMSL", "qSR",
-    "qEI", "qPI", 
-    "qUCB", "qKG"
-]
+algos_name = ["HES", "HES", "qMSL", "qSR", "qEI", "qPI", "qUCB", "qKG"]
 
-seeds = [1,2,3,4,5,6,7,8,9,10]
+seeds = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 # Init num_initial_points and num_steps
-num_steps = {
-    "SynGP": 30,
-    "HolderTable": 30,
-    "EggHolder": 16,
-    "Alpine": 30
-}
+num_steps = {"SynGP": 30, "HolderTable": 30, "EggHolder": 16, "Alpine": 30}
 
-num_initial_points = {
-    "SynGP": 10,
-    "HolderTable": 10,
-    "EggHolder": 6,
-    "Alpine": 10
-}
+num_initial_points = {"SynGP": 10, "HolderTable": 10, "EggHolder": 6, "Alpine": 10}
 
 metric_files = {
     "SynGP": {
@@ -100,7 +86,6 @@ metric_files = {
             # 8: "exp_qEI_SynGP_0_06",
             # 9: "exp_qEI_SynGP_0_07",
             # 10: "exp_qEI_SynGP_0_08",
-            
             1: "exp_qEI_SynGP_0_09",
             2: "exp_qEI_SynGP_0_10",
             3: "exp_qEI_SynGP_0_11",
@@ -123,7 +108,6 @@ metric_files = {
             # 8: "exp_qPI_SynGP_0_06",
             # 9: "exp_qPI_SynGP_0_07",
             # 10: "exp_qPI_SynGP_0_08",
-            
             1: "exp_qPI_SynGP_0_09",
             2: "exp_qPI_SynGP_0_10",
             3: "exp_qPI_SynGP_0_11",
@@ -146,7 +130,6 @@ metric_files = {
             # 8: "exp_qUCB_SynGP_0_06",
             # 9: "exp_qUCB_SynGP_0_07",
             # 10: "exp_qUCB_SynGP_0_08",
-            
             1: "exp_qUCB_SynGP_0_09",
             2: "exp_qUCB_SynGP_0_10",
             3: "exp_qUCB_SynGP_0_11",
@@ -169,7 +152,6 @@ metric_files = {
             # 8: "exp_qKG_SynGP_0_06",
             # 9: "exp_qKG_SynGP_0_07",
             # 10: "exp_qKG_SynGP_0_08",
-            
             1: "exp_qKG_SynGP_0_09",
             2: "exp_qKG_SynGP_0_10",
             3: "exp_qKG_SynGP_0_11",
@@ -180,7 +162,7 @@ metric_files = {
             8: "exp_qKG_SynGP_0_16",
             9: "exp_qKG_SynGP_0_17",
             10: "exp_qKG_SynGP_0_18",
-        }
+        },
     },
     "HolderTable": {
         "Non-myopic HES": {
@@ -278,7 +260,7 @@ metric_files = {
             8: "exp_qKG_HolderTable_0_06",
             9: "exp_qKG_HolderTable_0_07",
             10: "exp_qKG_HolderTable_0_08",
-        }
+        },
     },
     "EggHolder": {
         "Non-myopic HES": {
@@ -376,8 +358,8 @@ metric_files = {
             8: "exp_028_06",
             9: "exp_028_07",
             10: "exp_028_08",
-        }
-    }, 
+        },
+    },
     "Alpine": {
         "Non-myopic HES": {
             7: "exp_HES_Alpine_15_49",
@@ -474,28 +456,35 @@ metric_files = {
             8: "exp_qKG_Alpine_0_06",
             9: "exp_qKG_Alpine_0_07",
             10: "exp_qKG_Alpine_0_08",
-        }
-    }
+        },
+    },
 }
-    
+
 dict_metrics = {}
 for dataset in datasets:
     list_metrics = []
     for i, algo in enumerate(algos):
         print(f"Dataset: {dataset}, Algo: {algo}")
-        
+
         algo_metrics = []
         for _, seed in enumerate(seeds):
             if seed not in metric_files[dataset][algo]:
                 continue
             file_name = f"results/{metric_files[dataset][algo][seed]}/metrics.pkl"
             metrics = pickle.load(open(file_name, "rb"))
-            
+
             algo_metrics.append(metrics[f"eval_metric_{algos_name[i]}_{seed}"])
-        
+
         algo_metrics = np.array(algo_metrics)
         list_metrics.append(algo_metrics)
-        
+
     dict_metrics[dataset] = list_metrics
 
-draw_metric("results", dict_metrics, datasets, algos, num_initial_points=num_initial_points, num_steps=num_steps)
+draw_metric(
+    "results",
+    dict_metrics,
+    datasets,
+    algos,
+    num_initial_points=num_initial_points,
+    num_steps=num_steps,
+)

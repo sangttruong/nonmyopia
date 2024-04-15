@@ -45,7 +45,7 @@ class Actor:
             parms (Parameters): A set of hyperparameters
         """
         self.parms = parms
-        if self.parms.ts:
+        if self.parms.algo_ts:
             self.acqf_class = qMultiStepHEntropySearchTS
         else:
             self.acqf_class = qMultiStepHEntropySearch
@@ -63,7 +63,7 @@ class Actor:
                     hidden_dim=self.parms.hidden_dim,
                     n_actions=self.parms.n_actions,
                     output_bounds=self.parms.bounds,
-                    discrete=parms.discretized,
+                    discrete=parms.env_discretized,
                     num_categories=self.parms.num_categories,
                 )
                 self.maps = self.maps.to(
@@ -71,8 +71,7 @@ class Actor:
                 )
                 print(
                     "Number of AmortizedNet params:",
-                    sum(p.numel()
-                        for p in self.maps.parameters() if p.requires_grad),
+                    sum(p.numel() for p in self.maps.parameters() if p.requires_grad),
                 )
 
                 self._parameters = list(self.maps.parameters())
@@ -81,7 +80,7 @@ class Actor:
                 self.maps = []
 
         # Initialize some actor attributes
-        self.lookahead_steps = self.parms.lookahead_steps
+        self.algo_lookahead_steps = self.parms.algo_lookahead_steps
         self.acqf_params = {}
 
     def reset_parameters(
@@ -99,33 +98,52 @@ class Actor:
         just initializes random X.
 
         Args:
-            prev_X (Tensor): Previous design points
+            prev_X (Tensor): Previous design points - Decoded in case of discrete
             prev_y (Tensor): Previous observations
         """
         print("Resetting actor parameters...")
         project2range = Project2Range(
-            self.parms.bounds[0], self.parms.bounds[1])
+            self.parms.bounds[..., 0], self.parms.bounds[..., 1]
+        )
 
         if self.parms.amortized:
-            optimizer = torch.optim.AdamW(
-                self._parameters, lr=self.parms.acq_opt_lr)
+            optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
 
-            # A_randomized = torch.rand([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 4, 64, 16, 1, 2],
-            #                            device=self.parms.device, dtype=self.parms.torch_dtype)
+            if embedder is not None:
+                encoded_prev_X = embedder.encode(prev_X)
+            else:
+                encoded_prev_X = prev_X
+
             A_randomized = torch.rand(
-                (1000, 2), device=self.parms.device, dtype=self.parms.torch_dtype)
-            ub = prev_X[0] + self.parms.cost_func_hypers['radius'] * \
-                (self.lookahead_steps+1)
-            lb = prev_X[0] - self.parms.cost_func_hypers['radius'] * \
-                (self.lookahead_steps+1)
+                (1000, 2), device=self.parms.device, dtype=self.parms.torch_dtype
+            )
+            ub = torch.clamp(
+                encoded_prev_X[0]
+                + self.parms.cost_func_hypers["radius"]
+                * (self.algo_lookahead_steps + 1),
+                max=torch.tensor(self.parms.bounds[..., 1]),
+            )
+            lb = torch.clamp(
+                encoded_prev_X[0]
+                - self.parms.cost_func_hypers["radius"]
+                * (self.algo_lookahead_steps + 1),
+                min=torch.tensor(self.parms.bounds[..., 0]),
+            )
             A_randomized = A_randomized * (ub - lb) + lb
 
             X_randomizeds = []
-            for i in range(self.lookahead_steps):
+            for i in range(self.algo_lookahead_steps):
                 X_randomized = torch.rand(
-                    (1000, 2), device=self.parms.device, dtype=self.parms.torch_dtype)
-                ub = prev_X[0] + self.parms.cost_func_hypers['radius'] * (i+1)
-                lb = prev_X[0] - self.parms.cost_func_hypers['radius'] * (i+1)
+                    (1000, 2), device=self.parms.device, dtype=self.parms.torch_dtype
+                )
+                ub = torch.clamp(
+                    encoded_prev_X[0] + self.parms.cost_func_hypers["radius"] * (i + 1),
+                    max=torch.tensor(self.parms.bounds[..., 1]),
+                )
+                lb = torch.clamp(
+                    encoded_prev_X[0] - self.parms.cost_func_hypers["radius"] * (i + 1),
+                    min=torch.tensor(self.parms.bounds[..., 0]),
+                )
 
                 X_randomized = X_randomized * (ub - lb) + lb
                 X_randomizeds.append(X_randomized)
@@ -141,27 +159,28 @@ class Actor:
                 )
 
                 loss = 0
-                for i in range(self.lookahead_steps):
+                for i in range(self.algo_lookahead_steps):
                     mean = return_dict["X"][i].mean(
-                        dim=tuple(range(return_dict["X"][i].dim() - 1)))
+                        dim=tuple(range(return_dict["X"][i].dim() - 1))
+                    )
                     std = return_dict["X"][i].std(
-                        dim=tuple(range(return_dict["X"][i].dim() - 1)))
+                        dim=tuple(range(return_dict["X"][i].dim() - 1))
+                    )
                     dist = torch.distributions.Normal(mean, std)
                     loss += -dist.log_prob(X_randomizeds[i]).mean()
 
                 mean = return_dict["actions"].mean(
-                    dim=tuple(range(return_dict["actions"].dim() - 1)))
+                    dim=tuple(range(return_dict["actions"].dim() - 1))
+                )
                 std = return_dict["actions"].std(
-                    dim=tuple(range(return_dict["actions"].dim() - 1)))
+                    dim=tuple(range(return_dict["actions"].dim() - 1))
+                )
                 dist = torch.distributions.Normal(mean, std)
                 loss += -dist.log_prob(A_randomized).mean()
 
-                print(f"Loss resetting: {loss.item():.5f}",
-                      end="\r", flush=True)
-                # loss.backward()
+                print(f"Loss resetting: {loss.item():.5f}", end="\r", flush=True)
 
-                grads = torch.autograd.grad(
-                    loss, self._parameters, allow_unused=True)
+                grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
                 for param, grad in zip(self._parameters, grads):
                     param.grad = grad
                 optimizer.step()
@@ -169,7 +188,7 @@ class Actor:
         else:
             self.maps = []
 
-            for s in range(self.lookahead_steps):
+            for s in range(self.algo_lookahead_steps):
                 x = torch.rand(
                     self.parms.n_samples**s * self.parms.n_restarts,
                     self.parms.x_dim,
@@ -180,7 +199,7 @@ class Actor:
                 self.maps.append(x)
 
             a = torch.rand(
-                self.parms.n_samples**self.lookahead_steps
+                self.parms.n_samples**self.algo_lookahead_steps
                 * self.parms.n_restarts
                 * self.parms.n_actions,
                 self.parms.x_dim,
@@ -216,22 +235,23 @@ class Actor:
             AcquisitionFunction: An aquisition function instance
         """
         if self.parms.algo == "HES":
-            if self.parms.ts:
-                nf_design_pts = [1] * self.lookahead_steps
+            if self.parms.algo_ts:
+                nf_design_pts = [1] * self.algo_lookahead_steps
             else:
-                if self.lookahead_steps == 1:
+                if self.algo_lookahead_steps == 1:
                     nf_design_pts = [64]
-                elif self.lookahead_steps == 2:
+                elif self.algo_lookahead_steps == 2:
                     nf_design_pts = [64, 8]  # [64, 64]
-                elif self.lookahead_steps == 3:
+                elif self.algo_lookahead_steps == 3:
                     nf_design_pts = [64, 4, 2]  # [64, 32, 8]
-                elif self.lookahead_steps >= 4:
+                elif self.algo_lookahead_steps >= 4:
                     nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
-                    nf_design_pts = nf_design_pts + \
-                        [1] * (self.lookahead_steps - 4)
+                    nf_design_pts = nf_design_pts + [1] * (
+                        self.algo_lookahead_steps - 4
+                    )
 
                 # nf_design_pts = [self.parms.n_samples]
-                # for s in range(1, self.lookahead_steps):
+                # for s in range(1, self.algo_lookahead_steps):
                 #     next_nf = nf_design_pts[s-1] // 4
                 #     if next_nf < 1:
                 #         next_nf = 1
@@ -239,7 +259,7 @@ class Actor:
 
             self.acqf = self.acqf_class(
                 model=WM,
-                lookahead_steps=self.lookahead_steps,
+                lookahead_steps=self.algo_lookahead_steps,
                 n_actions=self.parms.n_actions,
                 n_fantasy_at_design_pts=nf_design_pts,
                 n_fantasy_at_action_pts=self.parms.n_samples,
@@ -250,8 +270,7 @@ class Actor:
             )
 
         elif self.parms.algo == "qKG":
-            self.acqf = qKnowledgeGradient(
-                model=WM, num_fantasies=self.parms.n_samples)
+            self.acqf = qKnowledgeGradient(model=WM, num_fantasies=self.parms.n_samples)
 
         elif self.parms.algo == "qEI":
             sampler = SobolQMCNormalSampler(
@@ -281,13 +300,12 @@ class Actor:
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
-            self.acqf = qUpperConfidenceBound(
-                model=WM, beta=0.1, sampler=sampler)
+            self.acqf = qUpperConfidenceBound(model=WM, beta=0.1, sampler=sampler)
 
         elif self.parms.algo == "qMSL":
-            num_fantasies = [self.parms.n_samples] * self.lookahead_steps
+            num_fantasies = [self.parms.n_samples] * self.algo_lookahead_steps
             # num_fantasies = [self.parms.n_samples]
-            # for s in range(1, self.lookahead_steps):
+            # for s in range(1, self.algo_lookahead_steps):
             #     next_nf = num_fantasies[s-1] // 4
             #     if next_nf < 1:
             #         next_nf = 1
@@ -295,7 +313,7 @@ class Actor:
 
             self.acqf = qMultiStepLookahead(
                 model=WM,
-                batch_sizes=[1] * self.lookahead_steps,
+                batch_sizes=[1] * self.algo_lookahead_steps,
                 num_fantasies=num_fantasies,
             )
 
@@ -315,8 +333,7 @@ class Actor:
                 objective_cost_function=self.parms.objective_cost_function,
             )
 
-            self.objective_X = torch.cat(
-                [self.objective_X, objective_new_x], 0)
+            self.objective_X = torch.cat([self.objective_X, objective_new_x], 0)
             self.cost_X = torch.cat([self.cost_X, cost_new_X], 0)
 
             suggested_budget, lower_bound = get_suggested_budget(
@@ -324,7 +341,7 @@ class Actor:
                 refill_until_lower_bound_is_reached=self.parms.refill_until_lower_bound_is_reached,
                 budget_left=self.acqf_params["budget_left"],
                 model=WM,
-                n_lookahead_steps=self.lookahead_steps + 1,
+                n_lookahead_steps=self.algo_lookahead_steps + 1,
                 X=buffer["x"],
                 objective_X=self.objective_X,
                 cost_X=self.cost_X,
@@ -343,14 +360,14 @@ class Actor:
             )
             self.acqf_params["lower_bound"] = lower_bound
 
-            num_fantasies = [self.parms.n_samples] * self.lookahead_steps
+            num_fantasies = [self.parms.n_samples] * self.algo_lookahead_steps
             self.acqf = BudgetedMultiStepExpectedImprovement(
                 model=WM,
                 budget_plus_cumulative_cost=self.acqf_params[
                     "current_budget_plus_cumulative_cost"
                 ],
                 batch_size=1,
-                lookahead_batch_sizes=[1] * self.lookahead_steps,
+                lookahead_batch_sizes=[1] * self.algo_lookahead_steps,
                 num_fantasies=num_fantasies,
             )
 
@@ -366,13 +383,12 @@ class Actor:
             prev_hid_state (Tensor): Previous hidden state.
             iteration: The current iteration.
         """
-        if self.acqf is None:
-            data_x = self.uniform_random_sample_domain(self.parms.domain, 1)
-            return data_x[0].reshape(1, -1)
+        assert self.acqf is not None, "Acquisition function is not initialized."
 
-        prev_X = buffer["x"][iteration - 1: iteration].expand(
+        prev_X = buffer["x"][iteration - 1 : iteration].expand(
             self.parms.n_restarts, -1
         )
+
         if embedder is not None:
             # Discretize: Continuous -> Discrete
             prev_X = embedder.decode(prev_X)
@@ -380,10 +396,11 @@ class Actor:
                 prev_X, num_classes=self.parms.num_categories
             ).to(dtype=self.parms.torch_dtype)
             # >>> n_restarts x x_dim x n_categories
-        prev_y = buffer["y"][iteration - 1: iteration].expand(
+
+        prev_y = buffer["y"][iteration - 1 : iteration].expand(
             self.parms.n_restarts, -1
         )
-        prev_hid_state = buffer["h"][iteration - 1: iteration].expand(
+        prev_hid_state = buffer["h"][iteration - 1 : iteration].expand(
             self.parms.n_restarts, -1
         )
         # Optimize the acquisition function
@@ -391,7 +408,9 @@ class Actor:
             # Reset the actor parameters for diversity
             if iteration == self.parms.n_initial_points and initial:
                 self.reset_parameters(
-                    prev_X=prev_X, prev_y=prev_y, prev_hid_state=prev_hid_state,
+                    prev_X=prev_X,
+                    prev_y=prev_y,
+                    prev_hid_state=prev_hid_state,
                     embedder=embedder,
                 )
 
@@ -411,8 +430,7 @@ class Actor:
 
                 return return_X, return_dict["actions"].detach()
 
-            optimizer = torch.optim.AdamW(
-                self._parameters, lr=self.parms.acq_opt_lr)
+            optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
             lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=20, eta_min=1e-5
             )
@@ -441,12 +459,10 @@ class Actor:
 
                 losses.append(acqf_loss.item())
                 costs.append(acqf_cost.item())
-                loss = (return_dict["acqf_loss"] +
-                        return_dict["acqf_cost"]).mean()
+                loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
 
                 if best_loss.mean() - loss > 0.1:
-                    best_loss = return_dict["acqf_loss"] + \
-                        return_dict["acqf_cost"]
+                    best_loss = return_dict["acqf_loss"] + return_dict["acqf_cost"]
                     best_next_X = return_dict["X"]
                     best_actions = return_dict["actions"]
                     best_hidden_state = return_dict["hidden_state"]
@@ -455,16 +471,14 @@ class Actor:
                 else:
                     if iteration > self.parms.n_initial_points or ep >= 200:
                         early_stop += 1
-                grads = torch.autograd.grad(
-                    loss, self._parameters, allow_unused=True)
+                grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
                 for param, grad in zip(self._parameters, grads):
                     param.grad = grad
                 optimizer.step()
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
-                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}",
-                      end="\r", flush=True)
+                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}", end="\r", flush=True)
                 if early_stop > 50:
                     break
 
@@ -476,19 +490,12 @@ class Actor:
             # Get next X as X_0 at idx
             next_X = best_next_X[0][idx].reshape(1, -1)
 
-            if embedder is not None:
-                next_X = embedder.decode(next_X)
-                # next_X = torch.nn.functional.one_hot(
-                #     next_X, num_classes=self.parms.num_categories).to(dtype=self.parms.torch_dtype)
-                # next_X = embedder.encode(next_X)
-                # >>> 1 * x_dim
-
             # Get next hidden state of X_0 at idx
             hidden_state = best_hidden_state[0]
             # >>> n_restarts * hidden_dim
 
             if self.parms.amortized:
-                hidden_state = hidden_state[idx: idx + 1]
+                hidden_state = hidden_state[idx : idx + 1]
                 # >>> n_restarts * hidden_dim
                 self.maps.load_state_dict(best_map)
 
@@ -516,8 +523,10 @@ class Actor:
         else:
             # The total numbers of branches
             q = 1 + sum(
-                [self.parms.n_samples **
-                    s for s in range(1, self.lookahead_steps + 1)]
+                [
+                    self.parms.n_samples**s
+                    for s in range(1, self.algo_lookahead_steps + 1)
+                ]
             )
 
             if self.parms.env_name == "AntBO":

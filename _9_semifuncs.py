@@ -90,11 +90,11 @@ class AntBO(TestFunction):
         """
         energy, _ = self.fbox.Energy(x)
         energy = torch.tensor(energy, dtype=self.dtype).to(self.device)
-        
+
         # Negate engergy, because our settings is maximization
         if negate:
             energy = -energy
-            
+
         return energy
 
     def idx_to_seq(self, x):

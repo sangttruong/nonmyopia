@@ -21,7 +21,7 @@ class DiscreteEmbbeder:
         self.cat_range = torch.tensor(midpoints)
 
     def encode(self, sentence, *args, **kwargs):
-        """ Cat2Con
+        """Cat2Con
         Args:
             sentence (torch.Tensor): A tensor of shape `... x num_categories` one
                 hot vector

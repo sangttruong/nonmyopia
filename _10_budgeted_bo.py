@@ -99,8 +99,7 @@ class BudgetedExpectedImprovement(AnalyticAcquisitionFunction):
         cdf_u = standard_normal.cdf(u)
         ei = sigma_obj * (pdf_u + u * cdf_u)  # (b) x 1
         # (b) x 1
-        prob_feas = self._compute_prob_feas(
-            means=means[..., 1], sigmas=sigmas[..., 1])
+        prob_feas = self._compute_prob_feas(means=means[..., 1], sigmas=sigmas[..., 1])
         bc_ei = ei.mul(prob_feas)  # (b) x 1
         return bc_ei.squeeze(dim=-1)
 
@@ -268,10 +267,12 @@ class BudgetedMultiStepExpectedImprovement(qMultiStepLookahead):
             # If collapse_fantasy_base_samples is False, the batch_range is updated during
             # the forward call.
             samplers: List[MCSampler] = [
-                PosteriorMeanSampler(collapse_batch_dims=True)
-                if nf == 1
-                else SobolQMCNormalSampler(
-                    sample_shape=nf, resample=False, collapse_batch_dims=True
+                (
+                    PosteriorMeanSampler(collapse_batch_dims=True)
+                    if nf == 1
+                    else SobolQMCNormalSampler(
+                        sample_shape=nf, resample=False, collapse_batch_dims=True
+                    )
                 )
                 for nf in num_fantasies
             ]
@@ -433,8 +434,7 @@ def custom_warmstart_multistep(
         i += 1
 
     # Fantasize objective and cost values
-    sampler = IIDNormalSampler(
-        num_samples=1, resample=True, collapse_batch_dims=True)
+    sampler = IIDNormalSampler(num_samples=1, resample=True, collapse_batch_dims=True)
     posterior_new_x = model.posterior(new_x, observation_noise=True)
     fantasy_obs = sampler(posterior_new_x).squeeze(dim=0).detach()
     fantasy_cost = torch.exp(fantasy_obs[0, 1]).item()
@@ -468,8 +468,7 @@ def custom_warmstart_multistep(
     new_x, acq_value = optimize_acqf(
         acq_function=aux_acq_func,
         bounds=standard_bounds,
-        q=aux_acq_func.get_augmented_q_batch_size(
-            1) if n_lookahead_steps > 0 else 1,
+        q=aux_acq_func.get_augmented_q_batch_size(1) if n_lookahead_steps > 0 else 1,
         num_restarts=5 * input_dim,
         raw_samples=100 * input_dim,
         options={
@@ -632,8 +631,7 @@ def optimize_acqf_and_get_suggested_point(
     """Optimizes the acquisition function, and returns the candidate solution."""
     is_ms = isinstance(acq_func, qMultiStepLookahead)
     input_dim = bounds.shape[1]
-    q = acq_func.get_augmented_q_batch_size(
-        batch_size) if is_ms else batch_size
+    q = acq_func.get_augmented_q_batch_size(batch_size) if is_ms else batch_size
     raw_samples = 200 * input_dim * batch_size
     num_restarts = 10 * input_dim * batch_size
 
@@ -676,14 +674,12 @@ def optimize_acqf_and_get_suggested_point(
         algo_params["suggested_x_full_tree"] = candidates.clone()
         candidates = acq_func.extract_candidates(candidates)
 
-    acq_values_sorted, indices = torch.sort(
-        acq_values.squeeze(), descending=True)
+    acq_values_sorted, indices = torch.sort(acq_values.squeeze(), descending=True)
     print("Acquisition values:")
     print(acq_values_sorted)
     print("Candidates:")
     print(candidates[indices].squeeze())
     print(candidates.squeeze())
 
-    new_x = get_best_candidates(
-        batch_candidates=candidates, batch_values=acq_values)
+    new_x = get_best_candidates(batch_candidates=candidates, batch_values=acq_values)
     return new_x

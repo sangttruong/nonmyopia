@@ -32,13 +32,6 @@ def run(parms, env) -> None:
         parms (Parameter): List of input parameters
         env: Environment
     """
-    random.seed(parms.seed)
-    # torch.backends.cudnn.deterministic=True
-    # torch.backends.cudnn.benchmark = False
-    np.random.seed(parms.seed)
-    torch.manual_seed(parms.seed)
-    torch.cuda.manual_seed_all(parms.seed)
-    torch.cuda.manual_seed_all(parms.seed)
 
     if parms.x_dim == 1:
         eval_and_plot = eval_and_plot_1D
@@ -50,7 +43,7 @@ def run(parms, env) -> None:
 
     # Finding maxima of env using gradient descent
     print("Computing optimal value...")
-    if not parms.discretized and parms.env_name != "SynGP":
+    if not parms.env_discretized and parms.env_name != "SynGP":
         maxima = torch.tensor(
             (2, 2),
             device=parms.device,
@@ -58,28 +51,31 @@ def run(parms, env) -> None:
             requires_grad=True,
         )
         maxima_optimizer = torch.optim.Adam([maxima], lr=parms.acq_opt_lr)
+        bounds = torch.tensor(parms.bounds, device=parms.device)
         for i in tqdm(range(1000), desc="Finding maxima"):
             maxima_optimizer.zero_grad()
-            maxima_ = torch.sigmoid(
-                maxima) * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
-            maxima_value = - env(maxima_)
+            maxima_ = (
+                torch.sigmoid(maxima) * (bounds[..., 1] - bounds[..., 0])
+                + bounds[..., 0]
+            )
+            maxima_value = -env(maxima_)
             maxima_value.backward()
             maxima_optimizer.step()
 
         maxima = maxima.cpu().detach().requires_grad_(False)
-        maxima = torch.sigmoid(
-            maxima) * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
+        maxima = (
+            torch.sigmoid(maxima) * (bounds[..., 1] - bounds[..., 0]) + bounds[..., 0]
+        )
         optimal_value = env(maxima)
         print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
     else:
         # Finding maxima of env using grid search
-        if not parms.discretized and parms.env_name == "SynGP":
-            categories = torch.linspace(parms.bounds[0], parms.bounds[1], 100)
+        if not parms.env_discretized and parms.env_name == "SynGP":
+            categories = torch.linspace(parms.bounds[0, 0], parms.bounds[0, 1], 100)
         else:
             categories = torch.arange(0, parms.num_categories)
 
-        categories = categories.to(
-            device=parms.device, dtype=parms.torch_dtype)
+        categories = categories.to(device=parms.device, dtype=parms.torch_dtype)
         X = [categories] * parms.x_dim
         X = torch.stack(torch.meshgrid(*X), dim=-1).reshape(-1, parms.x_dim)
         y = env(X)
@@ -126,7 +122,7 @@ def run(parms, env) -> None:
     )
 
     actor = Actor(parms=parms)
-    buffer_size = parms.n_iterations
+    buffer_size = parms.algo_n_iterations
     fill_value = float("nan")
     continue_iter = 0
     buffer = TensorDict(
@@ -161,7 +157,7 @@ def run(parms, env) -> None:
         device=parms.device,
     )
 
-    if parms.discretized:
+    if parms.env_discretized:
         embedder = DiscreteEmbbeder(
             num_categories=parms.num_categories,
             bounds=parms.bounds,
@@ -171,8 +167,9 @@ def run(parms, env) -> None:
 
     if parms.continue_once and not parms.test_only:
         # Load buffers from previous iterations
-        buffer_old = torch.load(os.path.join(
-            parms.continue_once, "buffer.pt"), map_location=parms.device)
+        buffer_old = torch.load(
+            os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device
+        )
         for key in list(buffer_old.keys()):
             buffer[key] = buffer_old[key]
         for idx, x in enumerate(buffer_old["x"]):
@@ -184,8 +181,9 @@ def run(parms, env) -> None:
         print("Continue from iteration: {}".format(continue_iter))
 
     elif parms.continue_once and parms.test_only:
-        buffer = torch.load(os.path.join(
-            parms.continue_once, "buffer.pt"), map_location=parms.device)
+        buffer = torch.load(
+            os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device
+        )
         WM = SingleTaskGP(
             buffer["x"][: parms.n_initial_points],
             buffer["y"][: parms.n_initial_points],
@@ -203,9 +201,9 @@ def run(parms, env) -> None:
             cfg=parms,
             acqf=actor.acqf,
             buffer=buffer,
-            next_x=buffer["x"][parms.n_initial_points-1],
+            next_x=buffer["x"][parms.n_initial_points - 1],
             optimal_value=optimal_value,
-            iteration=parms.n_initial_points-1,
+            iteration=parms.n_initial_points - 1,
             embedder=embedder,
         )
         buffer["real_loss"][parms.n_initial_points - 1] = real_loss
@@ -227,7 +225,10 @@ def run(parms, env) -> None:
 
         ############
         X, actions = actor.query(
-            buffer=buffer, iteration=parms.n_initial_points, embedder=embedder, initial=True
+            buffer=buffer,
+            iteration=parms.n_initial_points,
+            embedder=embedder,
+            initial=True,
         )
         ############
 
@@ -237,19 +238,19 @@ def run(parms, env) -> None:
             cfg=parms,
             acqf=actor.acqf,
             buffer=buffer,
-            next_x=buffer["x"][parms.n_initial_points-1],
+            next_x=buffer["x"][parms.n_initial_points - 1],
             optimal_value=optimal_value,
-            iteration=parms.n_initial_points-1,
+            iteration=parms.n_initial_points - 1,
             embedder=embedder,
             actions=actions,
-            X=X
+            X=X,
         )
         buffer["real_loss"][parms.n_initial_points - 1] = real_loss
 
     # Run BO loop
     continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
 
-    for i in range(continue_iter, parms.n_iterations):
+    for i in range(continue_iter, parms.algo_n_iterations):
         iter_start_time = time.time()
 
         # Initialize model (which is the GP in this case)
@@ -262,11 +263,12 @@ def run(parms, env) -> None:
 
         mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
         fit_gpytorch_model(mll)
+
         # Adjust lookahead steps
-        if actor.lookahead_steps > 1 and (
-            parms.n_iterations - i < actor.lookahead_steps
+        if actor.algo_lookahead_steps > 1 and (
+            parms.algo_n_iterations - i < actor.algo_lookahead_steps
         ):
-            actor.lookahead_steps -= 1
+            actor.algo_lookahead_steps -= 1
         actor.construct_acqf(WM=WM, buffer=buffer[:i])
 
         if not parms.test_only:
@@ -297,7 +299,7 @@ def run(parms, env) -> None:
             optimal_value=optimal_value,
             iteration=i,
             embedder=embedder,
-            actions=actions
+            actions=actions,
         )
         print("Real loss:", buffer["real_loss"][i].item())
 

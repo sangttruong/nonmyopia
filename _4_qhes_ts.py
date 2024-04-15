@@ -71,7 +71,7 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
         super().__init__(model=model)
         self.model = model
         self._model = None
-        self.lookahead_steps = lookahead_steps
+        self.algo_lookahead_steps = lookahead_steps
         self.n_actions = n_actions
         self.cost_function = cost_function_class(**cost_func_hypers)
         self.loss_function = loss_function_class(**loss_func_hypers)
@@ -140,11 +140,11 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
 
         X_returned = []
         hidden_state_returned = []
-        for step in range(self.lookahead_steps):
+        for step in range(self.algo_lookahead_steps):
             # Draw new f ~ p(f|D)
             self.f = GPDraw(self.model, seed=0)
 
-            # condition on X[step], then sample, then condition on (x, y)
+            # condition on X[step], then sample, then condition on (x,prev_X y)
             if use_amortized_map:
                 X, hidden_state = maps(
                     x=previous_X,
@@ -185,7 +185,7 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
             hidden_state_returned.append(hidden_state)
 
             # Sample posterior
-            ys = self.f(X.squeeze(dim=list(range(X.dim()-3)))).unsqueeze(0)
+            ys = self.f(X.squeeze(dim=list(range(X.dim() - 3)))).unsqueeze(0)
 
             # Update previous_Xy
             if num_categories > 0:
@@ -209,7 +209,7 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
                 return_actions=True,
             )
         else:
-            actions = maps[self.lookahead_steps]
+            actions = maps[self.algo_lookahead_steps]
 
         if embedder is not None:
             actions = embedder.encode(actions)
@@ -219,8 +219,9 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
             x_dim,
         ]
         actions = actions.reshape(*action_shape)
-        action_yis = self.f(actions.squeeze(
-            dim=list(range(actions.dim()-3)))).unsqueeze(0)
+        action_yis = self.f(
+            actions.squeeze(dim=list(range(actions.dim() - 3)))
+        ).unsqueeze(0)
         # >> Tensor[*[n_samples]*i, n_restarts, n_actions, 1]
 
         action_yis = action_yis.squeeze(dim=-1)
@@ -234,19 +235,20 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
         if embedder is not None:
             first_prev_X = embedder.encode(first_prev_X)
         acqf_cost = self.cost_function(
-            prev_X=first_prev_X, current_X=X_returned[0], previous_cost=0)
-        for i in range(self.lookahead_steps - 1):
+            prev_X=first_prev_X, current_X=X_returned[0], previous_cost=0
+        )
+        for i in range(self.algo_lookahead_steps - 1):
             cX = X_returned[i + 1]
             pX = X_returned[i][None, ...].expand_as(cX)
-            acqf_cost = acqf_cost + \
-                self.cost_function(prev_X=pX, current_X=cX,
-                                   previous_cost=acqf_cost)
+            acqf_cost = acqf_cost + self.cost_function(
+                prev_X=pX, current_X=cX, previous_cost=acqf_cost
+            )
         for i in range(self.n_actions):
-            cX = actions[..., i: i + 1, :]
+            cX = actions[..., i : i + 1, :]
             pX = X_returned[-1][None, ...].expand_as(cX)
-            acqf_cost = acqf_cost + \
-                self.cost_function(prev_X=pX, current_X=cX,
-                                   previous_cost=acqf_cost)
+            acqf_cost = acqf_cost + self.cost_function(
+                prev_X=pX, current_X=cX, previous_cost=acqf_cost
+            )
         acqf_cost = acqf_cost.squeeze(dim=-1)
 
         # Reduce dimensions

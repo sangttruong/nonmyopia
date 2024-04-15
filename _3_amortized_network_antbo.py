@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 from _9_semifuncs import nm_AAs
 
+
 class AmortizedNetworkAntBO(nn.Module):
     r"""Amortized network."""
 
@@ -40,17 +41,14 @@ class AmortizedNetworkAntBO(nn.Module):
         self.output_bounds = output_bounds
         self.p = 0.2
         encoder_layer = nn.TransformerEncoderLayer(
-            d_model=self.hidden_dim, 
-            nhead=4, 
-            dropout=self.p, 
-            batch_first=True
+            d_model=self.hidden_dim, nhead=4, dropout=self.p, batch_first=True
         )
-        
+
         self.prepro_X = nn.Sequential(
             nn.Linear(nm_AAs, self.hidden_dim),
-            nn.TransformerEncoder(encoder_layer, num_layers=2)
+            nn.TransformerEncoder(encoder_layer, num_layers=2),
         )
-        
+
         self.prepo_y = nn.Sequential(
             nn.Linear(1, self.hidden_dim),
             nn.ELU(),
@@ -70,7 +68,7 @@ class AmortizedNetworkAntBO(nn.Module):
             nn.ELU(),
             nn.Dropout(p=self.p),
             nn.Linear(self.hidden_dim, self.output_dim * self.n_actions),
-            Project2Range(self.output_bounds[0], self.output_bounds[1]),
+            Project2Range(self.output_bounds[..., 0], self.output_bounds[..., 1]),
         )
 
         self.postpro_X = nn.Sequential(
@@ -79,7 +77,7 @@ class AmortizedNetworkAntBO(nn.Module):
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ELU(),
             nn.Linear(self.hidden_dim, self.output_dim),
-            Project2Range(self.output_bounds[0], self.output_bounds[1]),
+            Project2Range(self.output_bounds[..., 0], self.output_bounds[..., 1]),
         )
 
     def forward(self, x, prev_hid_state, return_actions):
@@ -97,23 +95,20 @@ class AmortizedNetworkAntBO(nn.Module):
         x_onehot = nn.functional.one_hot(x[..., :-1].long(), num_classes=nm_AAs).float()
         preprocess_X = self.prepro_X(x_onehot)
         # >> batch x seq_length x hidden_dim
-        
+
         preprocess_y = self.prepo_y(x[..., -1:])
         preprocess_y = preprocess_y[:, None, :].expand(-1, preprocess_X.shape[1], -1)
         # >> batch x seq_length x hidden_dim
-        
+
         preprocess_Xy = torch.cat([preprocess_X, preprocess_y], dim=-1)
         desire_shape = preprocess_Xy.shape
         preprocess_Xy = preprocess_Xy.reshape(-1, self.hidden_dim)
-        
-        hidden_state = self.rnn(
-            preprocess_Xy, 
-            prev_hid_state
-        )
+
+        hidden_state = self.rnn(preprocess_Xy, prev_hid_state)
         ready_Xy = hidden_state.reshape(*desire_shape)
-        
+
         preprocess_x = torch.cat([preprocess_x, hidden_state], dim=-1)
-        
+
         return postpro(preprocess_x), hidden_state
 
 
@@ -128,8 +123,8 @@ class Project2Range(nn.Module):
             max: The maximum value of the range
         """
         super().__init__()
-        self.min = min
-        self.max = max
+        self.min = torch.tensor(min)
+        self.max = torch.tensor(max)
         self.range = self.max - self.min
 
     def forward(self, x):

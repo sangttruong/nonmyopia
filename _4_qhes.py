@@ -69,7 +69,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         super().__init__(model=model)
         self.model = model
         self._model = None
-        self.lookahead_steps = lookahead_steps
+        self.algo_lookahead_steps = lookahead_steps
         self.n_actions = n_actions
         self.cost_function = cost_function_class(**cost_func_hypers)
         self.loss_function = loss_function_class(**loss_func_hypers)
@@ -138,7 +138,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
 
         X_returned = []
         hidden_state_returned = []
-        for step in range(self.lookahead_steps):
+        for step in range(self.algo_lookahead_steps):
             # condition on X[step], then sample, then condition on (x, y)
             if use_amortized_map:
                 X, hidden_state = maps(
@@ -213,7 +213,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
                 return_actions=True,
             )
         else:
-            actions = maps[self.lookahead_steps]
+            actions = maps[self.algo_lookahead_steps]
 
         if embedder is not None:
             actions = embedder.encode(actions)
@@ -237,19 +237,20 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         if embedder is not None:
             first_prev_X = embedder.encode(first_prev_X)
         acqf_cost = self.cost_function(
-            prev_X=first_prev_X, current_X=X_returned[0], previous_cost=0)
-        for i in range(self.lookahead_steps - 1):
+            prev_X=first_prev_X, current_X=X_returned[0], previous_cost=0
+        )
+        for i in range(self.algo_lookahead_steps - 1):
             cX = X_returned[i + 1]
             pX = X_returned[i][None, ...].expand_as(cX)
-            acqf_cost = acqf_cost + \
-                self.cost_function(prev_X=pX, current_X=cX,
-                                   previous_cost=acqf_cost)
+            acqf_cost = acqf_cost + self.cost_function(
+                prev_X=pX, current_X=cX, previous_cost=acqf_cost
+            )
         for i in range(self.n_actions):
-            cX = actions[..., i: i + 1, :]
+            cX = actions[..., i : i + 1, :]
             pX = X_returned[-1][None, ...].expand_as(cX)
-            acqf_cost = acqf_cost + \
-                self.cost_function(prev_X=pX, current_X=cX,
-                                   previous_cost=acqf_cost)
+            acqf_cost = acqf_cost + self.cost_function(
+                prev_X=pX, current_X=cX, previous_cost=acqf_cost
+            )
         acqf_cost = acqf_cost.squeeze(dim=-1)
 
         # Reduce dimensions
@@ -283,8 +284,7 @@ def set_sampler_and_n_fantasy(
     """
     if sampler is None:
         if n_fantasy is None:
-            raise ValueError(
-                "Must specify `n_fantasy` if no `sampler` is provided.")
+            raise ValueError("Must specify `n_fantasy` if no `sampler` is provided.")
         # base samples should be fixed for joint optimization
 
         if n_fantasy == 1:
@@ -347,8 +347,7 @@ class qLossFunctionTopK(nn.Module):
             # >>> n_fantasy_at_design_pts x batch_size x num_actions
             # ... x num_actions
 
-            A_distance_triu[A_distance_triu >
-                            self.dist_threshold] = self.dist_threshold
+            A_distance_triu[A_distance_triu > self.dist_threshold] = self.dist_threshold
             denominator = num_actions * (num_actions - 1) / 2.0
             dist_reward = A_distance_triu.sum((-1, -2)) / denominator
             # >>> n_fantasy_at_design_pts x batch_size
@@ -359,7 +358,7 @@ class qLossFunctionTopK(nn.Module):
         return qloss
 
 
-class qCostFunctionSpotlight(nn.Module):
+class qCostFunction(nn.Module):
     """Splotlight cost function."""
 
     def __init__(
@@ -369,7 +368,7 @@ class qCostFunctionSpotlight(nn.Module):
         max_noise: float = 1e-5,
         p_norm: float = 2.0,
         discount: float = 0.0,
-        discount_threshold: float = -1.0
+        discount_threshold: float = -1.0,
     ) -> None:
         r"""Spotlight cost function."""
         super().__init__()
@@ -380,7 +379,9 @@ class qCostFunctionSpotlight(nn.Module):
         self.discount = discount
         self.discount_threshold = discount_threshold
 
-    def forward(self, prev_X: Tensor, current_X: Tensor, previous_cost: Tensor = None) -> Tensor:
+    def forward(
+        self, prev_X: Tensor, current_X: Tensor, previous_cost: Tensor = None
+    ) -> Tensor:
         """Calculate splotlight cost.
 
         If distance between two points is smaller than radius,
@@ -396,37 +397,16 @@ class qCostFunctionSpotlight(nn.Module):
             Tensor: A tensor of ... x 1 cost values
         """
         diff = torch.cdist(current_X, prev_X, p=self.p_norm)
-        diff = torch.max(self.k * (diff - self.radius),
-                         torch.zeros_like(diff)) + torch.rand_like(diff) * self.max_noise
+        diff = (
+            torch.max(self.k * (diff - self.radius), torch.zeros_like(diff))
+            + torch.rand_like(diff) * self.max_noise
+        )
         if self.discount > 0.0:
-            diff = diff - self.discount * \
-                (previous_cost + diff > self.discount_threshold).float()
-        return diff
-
-
-class qCostFunctionL2(nn.Module):
-    """L2 cost function."""
-
-    def __init__(
-        self,
-        discount: float = 0.0,
-        discount_threshold: float = -1.0,
-        previous_loss: Optional[nn.Module] = None,
-    ) -> None:
-        r"""L2 cost function."""
-        super().__init__()
-
-    def forward(self, prev_X: Tensor, current_X: Tensor, previous_cost: Tensor = None) -> Tensor:
-        """Calculate L2 cost.
-
-        Args:
-            prev_X (Tensor): A tensor of ... x x_dim of previous X
-            current_X (Tensor): A tensor of ... x x_dim of current X
-
-        Returns:
-            Tensor: A tensor of ... x 1 cost values
-        """
-        diff = torch.cdist(current_X, prev_X, p=2.0)
+            diff = (
+                diff
+                - self.discount
+                * (previous_cost + diff > self.discount_threshold).float()
+            )
         return diff
 
 
@@ -444,7 +424,9 @@ class qCostFunctionEditDistance(nn.Module):
         super().__init__()
         self.register_buffer("radius", torch.as_tensor(radius))
 
-    def forward(self, prev_X: Tensor, current_X: Tensor, previous_cost: Tensor = None) -> Tensor:
+    def forward(
+        self, prev_X: Tensor, current_X: Tensor, previous_cost: Tensor = None
+    ) -> Tensor:
         """Calculate EditDistance cost.
 
         If number of edit points is radius,
@@ -470,7 +452,6 @@ class qCostFunctionEditDistance(nn.Module):
         diff = torch.abs(diff) * nb_idx.float()
         nb_idx2 = diff > 0
         diff = 1 - (1 - diff) * (1 - nb_idx2.float())
-        diff1 = torch.squeeze(
-            torch.sum(diff, dim=-1).to(dtype=torch.int64), dim=-1)
+        diff1 = torch.squeeze(torch.sum(diff, dim=-1).to(dtype=torch.int64), dim=-1)
 
         return diff1

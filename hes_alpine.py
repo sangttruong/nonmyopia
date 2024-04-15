@@ -2,4 +2,4 @@ import os
 import copy
 import torch
 
-fname = torch.load('results/')
+fname = torch.load("results/")

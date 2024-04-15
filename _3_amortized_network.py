@@ -91,7 +91,7 @@ class AmortizedNetwork(nn.Module):
         )
 
         self.project_output = Project2Range(
-            self.output_bounds[0], self.output_bounds[1]
+            self.output_bounds[..., 0], self.output_bounds[..., 1]
         )
 
     def forward(self, x, y, prev_hid_state, return_actions):
@@ -151,8 +151,8 @@ class Project2Range(nn.Module):
             max: The maximum value of the range
         """
         super().__init__()
-        self.min = min
-        self.max = max
+        self.min = torch.tensor(min)
+        self.max = torch.tensor(max)
         self.range = self.max - self.min
 
     def forward(self, x):

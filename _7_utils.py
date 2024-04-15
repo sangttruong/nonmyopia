@@ -1,4 +1,9 @@
+import torch
+import random
+import itertools
 import numpy as np
+from scipy.spatial.distance import cdist
+from scipy.linalg import solve_triangular
 
 
 def unif_random_sample_domain(domain, n=1):
@@ -8,9 +13,14 @@ def unif_random_sample_domain(domain, n=1):
     return list_of_list_per_sample
 
 
-from scipy.linalg import solve_triangular
-from scipy.spatial.distance import cdist
-import itertools
+def set_seed(seed):
+    random.seed(seed)
+    # torch.backends.cudnn.deterministic=True
+    # torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.cuda.manual_seed_all(seed)
 
 
 def kern_exp_quad_ard(xmat1, xmat2, ls, alpha):

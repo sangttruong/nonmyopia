@@ -14,16 +14,18 @@ from matplotlib import pyplot as plt
 from torch import Tensor
 
 
-cmap = [(0, '#2f9599'), (0.45, '#eeeeee'), (1, '#8800ff')]
-cmap = cm.colors.LinearSegmentedColormap.from_list('Custom', cmap, N=256)
+cmap = [(0, "#2f9599"), (0.45, "#eeeeee"), (1, "#8800ff")]
+cmap = cm.colors.LinearSegmentedColormap.from_list("Custom", cmap, N=256)
 
 
 class AlpineN1:
-    name = 'Alpine N. 1'
-    latex_formula = r'f(\mathbf x) = \sum_{i=1}^{d}|x_i sin(x_i)+0.1x_i|'
-    latex_formula_dimension = r'd \in \mathbb{N}_{+}^{*}'
-    latex_formula_input_domain = r'x_i \in [0, 10], \forall i \in \llbracket 1, d\rrbracket'
-    latex_formula_global_minimum = r'f(0, ..., 0)=0'
+    name = "Alpine N. 1"
+    latex_formula = r"f(\mathbf x) = \sum_{i=1}^{d}|x_i sin(x_i)+0.1x_i|"
+    latex_formula_dimension = r"d \in \mathbb{N}_{+}^{*}"
+    latex_formula_input_domain = (
+        r"x_i \in [0, 10], \forall i \in \llbracket 1, d\rrbracket"
+    )
+    latex_formula_global_minimum = r"f(0, ..., 0)=0"
     continuous = False
     convex = False
     separable = True
@@ -34,18 +36,21 @@ class AlpineN1:
 
     @classmethod
     def is_dim_compatible(cls, d):
-        assert (d is None) or (isinstance(d, int) and (not d < 0)), "The dimension d must be None or a positive integer"
-        return  (d is None) or (d  > 0)
+        assert (d is None) or (
+            isinstance(d, int) and (not d < 0)
+        ), "The dimension d must be None or a positive integer"
+        return (d is None) or (d > 0)
 
-    def __init__(self, dim, x_scale=1.0, y_scale=1.0, verbose=True):
+    def __init__(self, dim, x_scale=1.0, y_scale=1.0, noise_std=0.0, verbose=True):
         self.d = dim
         self.input_domain = np.array([[0, 10] for _ in range(dim)])
         self.x_scale = x_scale
         self.y_scale = y_scale
+        self.noise_std = noise_std
         self.bounds = self.get_bounds(original=True)
         self.bounds = torch.tensor([self.bounds] * dim).T
         if verbose:
-            print(f'AlpineN1: x_scale={self.x_scale}, y_scale={self.y_scale}')
+            print(f"AlpineN1: x_scale={self.x_scale}, y_scale={self.y_scale}")
 
     def get_param(self):
         return {}
@@ -70,7 +75,7 @@ class AlpineN1:
         # transform input to original scale
         X = X / self.x_scale
 
-        res = torch.sum(torch.abs(X * torch.sin(X) + 0.1*X), dim=-1)
+        res = torch.sum(torch.abs(X * torch.sin(X) + 0.1 * X), dim=-1)
         return res
 
     def call_tensor(self, x_list):
@@ -85,17 +90,16 @@ class AlpineN1:
         y = y * self.y_scale
 
         return y.to(x.device, self.dtype)
-    
+
     def to(self, dtype, device):
         self.dtype = dtype
         self.device = device
         return self
 
 
-
 def plot_alpine_2d(n_space=200, cmap=cmap, XYZ=None, ax=None, threshold=None):
     """Plot AlpineN1 function in 2d."""
-    alpine = AlpineN1(d=2, verbose=False)
+    alpine = AlpineN1(dim=2, verbose=False)
     X_domain, Y_domain = alpine.input_domain
     if XYZ is None:
         X, Y = np.linspace(*X_domain, n_space), np.linspace(*Y_domain, n_space)
@@ -108,14 +112,30 @@ def plot_alpine_2d(n_space=200, cmap=cmap, XYZ=None, ax=None, threshold=None):
     # add contours and contours lines
     # ax.contour(X, Y, Z, levels=30, linewidths=0.5, colors='#999')
     ax.contourf(X, Y, Z, levels=30, cmap=cmap, alpha=0.7)
-    ax.set_aspect(aspect='equal')
+    ax.set_aspect(aspect="equal")
 
     if threshold:
         if type(threshold) is list:
             assert len(threshold) == 2
-            ax.contour(X, Y, Z, levels=threshold, colors=['blue', 'red'], linewidths=3, linestyles='dashed')
+            ax.contour(
+                X,
+                Y,
+                Z,
+                levels=threshold,
+                colors=["blue", "red"],
+                linewidths=3,
+                linestyles="dashed",
+            )
         else:
-            ax.contour(X, Y, Z, levels=[threshold], colors='red', linewidths=3, linestyles='dashed')
+            ax.contour(
+                X,
+                Y,
+                Z,
+                levels=[threshold],
+                colors="red",
+                linewidths=3,
+                linestyles="dashed",
+            )
 
 
 # Select level set threshold
