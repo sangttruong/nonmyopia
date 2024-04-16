@@ -207,7 +207,7 @@ class EsmForCausalLM(EsmPreTrainedModel):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
-        **kwargs,
+        rewards: Optional[torch.FloatTensor] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -278,6 +278,9 @@ class EsmForCausalLM(EsmPreTrainedModel):
             # Enable model parallelism
             shift_labels = shift_labels.to(shift_logits.device)
             loss = loss_fct(shift_logits, shift_labels)
+
+        elif rewards is not None:
+            loss = (None, rewards)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
