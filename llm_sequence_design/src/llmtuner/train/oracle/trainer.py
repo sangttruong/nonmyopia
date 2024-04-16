@@ -84,7 +84,8 @@ class OracleTrainer(Trainer):
             if return_outputs:  # use the score on the last token except pad token for inference
                 scores.append(rewards[i, length-1])
             loss += torch.nn.functional.mse_loss(trunc_rewards,
-                                                 real_rewards, reduction='mean').mean()
+                                                 real_rewards[i].unsqueeze(0),
+                                                 reduction='mean').mean()
 
         loss = loss / batch_size
         if return_outputs:
