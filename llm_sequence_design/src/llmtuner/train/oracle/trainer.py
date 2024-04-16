@@ -58,7 +58,7 @@ class OracleTrainer(Trainer):
         # Compute rewards
         _, _, values = model(
             input_ids=inputs["input_ids"],
-            attenion_mask=inputs["attention_mask"],
+            attention_mask=inputs["attention_mask"],
             output_hidden_states=True,
             return_dict=True)
 
