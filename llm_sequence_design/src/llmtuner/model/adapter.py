@@ -42,6 +42,12 @@ def init_adapter(
 
     if finetuning_args.finetuning_type == "freeze" and is_trainable:
         logger.info("Fine-tuning method: Freeze")
+        if finetuning_args.stage == "oracle":
+            for name, param in model.named_parameters():
+                param.requires_grad_(False)
+            logger.info("Set all layers in base model to be frozen.")
+            return model
+
         num_layers = (
             getattr(model.config, "num_hidden_layers", None)
             or getattr(model.config, "num_layers", None)
@@ -59,9 +65,11 @@ def init_adapter(
                 )
 
             stride = num_layers // finetuning_args.num_layer_trainable
-            trainable_layer_ids = range(stride - 1, num_layers + stride - 1, stride)
+            trainable_layer_ids = range(
+                stride - 1, num_layers + stride - 1, stride)
         elif finetuning_args.num_layer_trainable > 0:  # fine-tuning the last n layers if num_layer_trainable > 0
-            trainable_layer_ids = range(num_layers - finetuning_args.num_layer_trainable, num_layers)
+            trainable_layer_ids = range(
+                num_layers - finetuning_args.num_layer_trainable, num_layers)
         else:  # fine-tuning the first n layers if num_layer_trainable < 0
             trainable_layer_ids = range(-finetuning_args.num_layer_trainable)
 
@@ -74,11 +82,13 @@ def init_adapter(
         for module_name in finetuning_args.name_module_trainable:
             if module_name not in freeze_modules:
                 raise ValueError(
-                    "Module {} is not found, please choose from {}".format(module_name, ", ".join(freeze_modules))
+                    "Module {} is not found, please choose from {}".format(
+                        module_name, ", ".join(freeze_modules))
                 )
 
             for idx in trainable_layer_ids:
-                trainable_layers.append(".{:d}.{}".format(idx, module_name if module_name != "all" else ""))
+                trainable_layers.append(".{:d}.{}".format(
+                    idx, module_name if module_name != "all" else ""))
 
         for name, param in model.named_parameters():
             if any(trainable_layer in name for trainable_layer in trainable_layers):
@@ -87,20 +97,25 @@ def init_adapter(
             else:
                 param.requires_grad_(False)
 
-        logger.info("Set trainable layers: {}".format(",".join(map(str, trainable_layer_ids))))
+        logger.info("Set trainable layers: {}".format(
+            ",".join(map(str, trainable_layer_ids))))
 
     if finetuning_args.finetuning_type == "lora":
-        logger.info("Fine-tuning method: {}".format("DoRA" if finetuning_args.use_dora else "LoRA"))
+        logger.info(
+            "Fine-tuning method: {}".format("DoRA" if finetuning_args.use_dora else "LoRA"))
         adapter_to_resume = None
 
         if model_args.adapter_name_or_path is not None:
             is_mergeable = True
-            if getattr(model, "quantization_method", None):  # merge lora in quantized model is unstable
-                assert len(model_args.adapter_name_or_path) == 1, "Quantized model only accepts a single adapter."
+            # merge lora in quantized model is unstable
+            if getattr(model, "quantization_method", None):
+                assert len(
+                    model_args.adapter_name_or_path) == 1, "Quantized model only accepts a single adapter."
                 is_mergeable = False
 
             if is_deepspeed_zero3_enabled():
-                assert len(model_args.adapter_name_or_path) == 1, "Cannot use multiple adapters in DeepSpeed ZeRO-3."
+                assert len(
+                    model_args.adapter_name_or_path) == 1, "Cannot use multiple adapters in DeepSpeed ZeRO-3."
                 is_mergeable = False
 
             if (is_trainable and not finetuning_args.create_new_adapter) or (not is_mergeable):
@@ -116,7 +131,8 @@ def init_adapter(
                 model = model.merge_and_unload()
 
             if len(adapter_to_merge) > 0:
-                logger.info("Merged {} adapter(s).".format(len(adapter_to_merge)))
+                logger.info("Merged {} adapter(s).".format(
+                    len(adapter_to_merge)))
 
             if adapter_to_resume is not None:  # resume lora training
                 model = PeftModel.from_pretrained(
@@ -130,14 +146,16 @@ def init_adapter(
                 target_modules = finetuning_args.lora_target
 
             if finetuning_args.use_llama_pro:
-                target_modules = find_expanded_modules(model, target_modules, finetuning_args.num_layer_trainable)
+                target_modules = find_expanded_modules(
+                    model, target_modules, finetuning_args.num_layer_trainable)
 
             if (
                 finetuning_args.use_dora
                 and getattr(model, "quantization_method", None) is not None
                 and getattr(model, "quantization_method", None) != QuantizationMethod.BITS_AND_BYTES
             ):
-                raise ValueError("DoRA is not compatible with PTQ-quantized models.")
+                raise ValueError(
+                    "DoRA is not compatible with PTQ-quantized models.")
 
             peft_kwargs = {
                 "r": finetuning_args.lora_rank,
@@ -156,7 +174,8 @@ def init_adapter(
                     "max_seq_length": model_args.model_max_length,
                     "use_gradient_checkpointing": "unsloth",
                 }
-                model = FastLanguageModel.get_peft_model(**peft_kwargs, **unsloth_peft_kwargs)
+                model = FastLanguageModel.get_peft_model(
+                    **peft_kwargs, **unsloth_peft_kwargs)
             else:
                 lora_config = LoraConfig(
                     task_type=TaskType.CAUSAL_LM,
@@ -171,6 +190,7 @@ def init_adapter(
                 param.data = param.data.to(torch.float32)
 
         if model_args.adapter_name_or_path is not None:
-            logger.info("Loaded adapter(s): {}".format(",".join(model_args.adapter_name_or_path)))
+            logger.info("Loaded adapter(s): {}".format(
+                ",".join(model_args.adapter_name_or_path)))
 
     return model

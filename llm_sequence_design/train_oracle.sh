@@ -8,7 +8,7 @@ python src/train_bash.py \
     --flash_attn True \
     --dataset proteinea/fluorescence \
     --preprocessing_num_workers 32 \
-    --num_train_epochs 10.0 \
+    --num_train_epochs 100.0 \
     --bf16 True \
     --tf32 False \
     --per_device_train_batch_size 1 \
