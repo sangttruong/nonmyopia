@@ -70,10 +70,10 @@ class AntBO(TestFunction):
     # this should be changed if we are tackling a mixed, or continuous problem, for e.g.
     problem_type = "categorical"
 
-    def __init__(self, n_categories, seq_len, bbox=None, normalise=True):
+    def __init__(self, n_categories, seq_len, bbox=None, normalise=True, device="cpu"):
         super(AntBO, self).__init__(normalise)
         self.dtype = torch.float32
-        self.device = "cpu"
+        self.device = device
         self.bbox = bbox
         self.n_vertices = n_categories
         self.config = self.n_vertices
@@ -152,7 +152,8 @@ def check_constraint_satisfaction(x):
 
 
 def check_constraint_satisfaction_batch(x):
-    constraints_satisfied = list(map(lambda seq: check_constraint_satisfaction(seq), x))
+    constraints_satisfied = list(
+        map(lambda seq: check_constraint_satisfaction(seq), x))
     return np.array(constraints_satisfied)
 
 
@@ -162,7 +163,8 @@ def generate_random_X(n, seq_length):
     # >> 11 x 20
 
     # Check for constraint violation
-    constraints_violated = np.logical_not(check_constraint_satisfaction_batch(X_next))
+    constraints_violated = np.logical_not(
+        check_constraint_satisfaction_batch(X_next))
 
     # Continue until all samples satisfy the constraints
     while np.sum(constraints_violated) != 0:

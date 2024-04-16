@@ -1,0 +1,25 @@
+python src/train_bash.py \
+    --stage oracle \
+    --do_train \
+    --template default \
+    --model_name_or_path facebook/esm2_t6_8M_UR50D \
+    --use_fast_tokenizer True \
+    --finetuning_type freeze \
+    --flash_attn True \
+    --dataset proteinea/fluorescence \
+    --preprocessing_num_workers 32 \
+    --num_train_epochs 10.0 \
+    --bf16 True \
+    --tf32 False \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 1 \
+    --learning_rate 5e-05 \
+    --lr_scheduler_type cosine \
+    --max_grad_norm 1.0 \
+    --logging_steps 1 \
+    --warmup_ratio 0.01 \
+    --save_steps 1000 \
+    --output_dir ckpts/oracle \
+    --save_total_limit 5 \
+    --report_to none \
+    --plot_loss True
