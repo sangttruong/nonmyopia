@@ -56,7 +56,7 @@ class OracleTrainer(Trainer):
         See: https://github.com/huggingface/transformers/blob/v4.30.2/src/transformers/trainer.py#L3509
         """
         # Compute rewards
-        _, loss_factors, values = model(
+        _, _, values = model(
             **inputs, output_hidden_states=True, return_dict=True)
 
         unwrapped_model: "PreTrainedModel" = self.accelerator.unwrap_model(
@@ -67,6 +67,7 @@ class OracleTrainer(Trainer):
         # Split the inputs and rewards into two parts, chosen and rejected
         batch_size = inputs["input_ids"].size(0)
         input_ids = inputs["input_ids"]
+        real_rewards = inputs["rewards"]
         rewards = values
         scores = []
 
@@ -83,7 +84,7 @@ class OracleTrainer(Trainer):
             if return_outputs:  # use the score on the last token except pad token for inference
                 scores.append(rewards[i, length-1])
             loss += torch.nn.functional.mse_loss(trunc_rewards,
-                                                 loss_factors[1], reduction='mean').mean()
+                                                 real_rewards, reduction='mean').mean()
 
         loss = loss / batch_size
         if return_outputs:
