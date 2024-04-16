@@ -57,7 +57,10 @@ class OracleTrainer(Trainer):
         """
         # Compute rewards
         _, _, values = model(
-            **inputs, output_hidden_states=True, return_dict=True)
+            input_ids=inputs["input_ids"],
+            attenion_mask=inputs["attention_mask"],
+            output_hidden_states=True,
+            return_dict=True)
 
         unwrapped_model: "PreTrainedModel" = self.accelerator.unwrap_model(
             self.model)
