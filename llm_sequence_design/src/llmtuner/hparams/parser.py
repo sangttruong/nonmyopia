@@ -12,6 +12,8 @@ from transformers.utils.versions import require_version
 
 from ..extras.logging import get_logger
 from ..extras.misc import check_dependencies, get_current_device
+from .bo_model_args import WMArguments, OracleArguments, PolicyArguments
+from .bo_finetuning_args import WMFinetuningArguments, PolicyFinetuningArguments
 from .data_args import DataArguments
 from .evaluation_args import EvaluationArguments
 from .finetuning_args import FinetuningArguments
@@ -25,12 +27,22 @@ logger = get_logger(__name__)
 check_dependencies()
 
 
-_TRAIN_ARGS = [ModelArguments, DataArguments, Seq2SeqTrainingArguments, FinetuningArguments, GeneratingArguments]
-_TRAIN_CLS = Tuple[ModelArguments, DataArguments, Seq2SeqTrainingArguments, FinetuningArguments, GeneratingArguments]
-_INFER_ARGS = [ModelArguments, DataArguments, FinetuningArguments, GeneratingArguments]
-_INFER_CLS = Tuple[ModelArguments, DataArguments, FinetuningArguments, GeneratingArguments]
-_EVAL_ARGS = [ModelArguments, DataArguments, EvaluationArguments, FinetuningArguments]
-_EVAL_CLS = Tuple[ModelArguments, DataArguments, EvaluationArguments, FinetuningArguments]
+_TRAIN_ARGS = [ModelArguments, DataArguments,
+               Seq2SeqTrainingArguments, FinetuningArguments, GeneratingArguments]
+_TRAIN_CLS = Tuple[ModelArguments, DataArguments,
+                   Seq2SeqTrainingArguments, FinetuningArguments, GeneratingArguments]
+_BO_ARGS = [WMArguments, OracleArguments, PolicyArguments,
+            DataArguments, Seq2SeqTrainingArguments, WMFinetuningArguments, PolicyFinetuningArguments, GeneratingArguments]
+_BO_CLS = Tuple[WMArguments, OracleArguments, PolicyArguments,
+                DataArguments, Seq2SeqTrainingArguments, WMFinetuningArguments, PolicyFinetuningArguments, GeneratingArguments]
+_INFER_ARGS = [ModelArguments, DataArguments,
+               FinetuningArguments, GeneratingArguments]
+_INFER_CLS = Tuple[ModelArguments, DataArguments,
+                   FinetuningArguments, GeneratingArguments]
+_EVAL_ARGS = [ModelArguments, DataArguments,
+              EvaluationArguments, FinetuningArguments]
+_EVAL_CLS = Tuple[ModelArguments, DataArguments,
+                  EvaluationArguments, FinetuningArguments]
 
 
 def _parse_args(parser: "HfArgumentParser", args: Optional[Dict[str, Any]] = None) -> Tuple[Any]:
@@ -47,8 +59,10 @@ def _parse_args(parser: "HfArgumentParser", args: Optional[Dict[str, Any]] = Non
 
     if unknown_args:
         print(parser.format_help())
-        print("Got unknown args, potentially deprecated arguments: {}".format(unknown_args))
-        raise ValueError("Some specified arguments are not used by the HfArgumentParser: {}".format(unknown_args))
+        print("Got unknown args, potentially deprecated arguments: {}".format(
+            unknown_args))
+        raise ValueError(
+            "Some specified arguments are not used by the HfArgumentParser: {}".format(unknown_args))
 
     return (*parsed_args,)
 
@@ -65,13 +79,16 @@ def _verify_model_args(model_args: "ModelArguments", finetuning_args: "Finetunin
 
     if model_args.quantization_bit is not None:
         if finetuning_args.finetuning_type != "lora":
-            raise ValueError("Quantization is only compatible with the LoRA method.")
+            raise ValueError(
+                "Quantization is only compatible with the LoRA method.")
 
         if model_args.adapter_name_or_path is not None and finetuning_args.create_new_adapter:
-            raise ValueError("Cannot create new adapter upon a quantized model.")
+            raise ValueError(
+                "Cannot create new adapter upon a quantized model.")
 
         if model_args.adapter_name_or_path is not None and len(model_args.adapter_name_or_path) != 1:
-            raise ValueError("Quantized model only accepts a single adapter. Merge them first.")
+            raise ValueError(
+                "Quantized model only accepts a single adapter. Merge them first.")
 
 
 def _check_extra_dependencies(
@@ -80,7 +97,8 @@ def _check_extra_dependencies(
     training_args: Optional["Seq2SeqTrainingArguments"] = None,
 ) -> None:
     if model_args.use_unsloth:
-        require_version("unsloth", "Please install unsloth: https://github.com/unslothai/unsloth")
+        require_version(
+            "unsloth", "Please install unsloth: https://github.com/unslothai/unsloth")
 
     if model_args.infer_backend == "vllm":
         require_version("vllm>=0.3.3", "To fix: pip install vllm>=0.3.3")
@@ -99,6 +117,11 @@ def _parse_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
     return _parse_args(parser, args)
 
 
+def _parse_bo_args(args: Optional[Dict[str, Any]] = None) -> _BO_CLS:
+    parser = HfArgumentParser(_BO_ARGS)
+    return _parse_args(parser, args)
+
+
 def _parse_infer_args(args: Optional[Dict[str, Any]] = None) -> _INFER_CLS:
     parser = HfArgumentParser(_INFER_ARGS)
     return _parse_args(parser, args)
@@ -109,8 +132,220 @@ def _parse_eval_args(args: Optional[Dict[str, Any]] = None) -> _EVAL_CLS:
     return _parse_args(parser, args)
 
 
+def get_bo_args(args: Optional[Dict[str, Any]] = None) -> _BO_CLS:
+    wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
+        wm_finetuning_args, policy_finetuning_args, generating_args = _parse_bo_args(
+            args)
+
+    # Setup logging
+    if training_args.should_log:
+        _set_transformers_logging()
+
+    # Check arguments
+    if policy_finetuning_args.policy_stage != "pt" and data_args.template is None:
+        raise ValueError("Please specify which `template` to use.")
+
+    if policy_finetuning_args.policy_stage != "sft" and training_args.predict_with_generate:
+        raise ValueError(
+            "`predict_with_generate` cannot be set as True except SFT.")
+
+    if policy_finetuning_args.policy_stage == "sft" and training_args.do_predict and not training_args.predict_with_generate:
+        raise ValueError(
+            "Please enable `predict_with_generate` to save model predictions.")
+
+    if policy_finetuning_args.policy_stage in ["rm", "ppo"] and training_args.load_best_model_at_end:
+        raise ValueError(
+            "RM and PPO stages do not support `load_best_model_at_end`.")
+
+    if policy_finetuning_args.policy_stage == "ppo" and not training_args.do_train:
+        raise ValueError(
+            "PPO training does not support evaluation, use the SFT stage to evaluate models.")
+
+    if policy_finetuning_args.policy_stage == "ppo" and policy_finetuning_args.policy_shift_attn:
+        raise ValueError("PPO training is incompatible with S^2-Attn.")
+
+    if (
+        policy_finetuning_args.policy_stage == "ppo"
+        and training_args.report_to
+        and training_args.report_to[0] not in ["wandb", "tensorboard"]
+    ):
+        raise ValueError("PPO only accepts wandb or tensorboard logger.")
+
+    if training_args.max_steps == -1 and data_args.streaming:
+        raise ValueError("Please specify `max_steps` in streaming mode.")
+
+    if training_args.do_train and training_args.predict_with_generate:
+        raise ValueError(
+            "`predict_with_generate` cannot be set as True while training.")
+
+    if training_args.do_train and policy_finetuning_args.policy_quantization_device_map == "auto":
+        raise ValueError(
+            "Cannot use device map for quantized models in training.")
+
+    if policy_finetuning_args.policy_use_dora and policy_finetuning_args.policy_use_unsloth:
+        raise ValueError("Unsloth does not support DoRA.")
+
+    if policy_finetuning_args.policy_pure_bf16:
+        if not is_torch_bf16_gpu_available():
+            raise ValueError("This device does not support `pure_bf16`.")
+
+        if training_args.fp16 or training_args.bf16:
+            raise ValueError(
+                "Turn off mixed precision training when using `pure_bf16`.")
+
+    if (
+        policy_finetuning_args.policy_use_galore
+        and policy_finetuning_args.policy_galore_layerwise
+        and training_args.parallel_mode.value == "distributed"
+    ):
+        raise ValueError(
+            "Distributed training does not support layer-wise GaLore.")
+
+    if policy_finetuning_args.policy_use_galore and training_args.deepspeed is not None:
+        raise ValueError("GaLore is incompatible with DeepSpeed.")
+
+    if policy_model_args.policy_infer_backend == "vllm":
+        raise ValueError(
+            "vLLM backend is only available for API, CLI and Web.")
+
+    if policy_model_args.policy_adapter_name_or_path is not None and policy_finetuning_args.policy_finetuning_type != "lora":
+        raise ValueError("Adapter is only valid for the LoRA method.")
+
+    if policy_model_args.policy_quantization_bit is not None:
+        if policy_finetuning_args.policy_finetuning_type != "lora":
+            raise ValueError(
+                "Quantization is only compatible with the LoRA method.")
+
+        if policy_model_args.policy_adapter_name_or_path is not None and policy_finetuning_args.policy_create_new_adapter:
+            raise ValueError(
+                "Cannot create new adapter upon a quantized model.")
+
+        if policy_model_args.policy_adapter_name_or_path is not None and len(policy_model_args.policy_adapter_name_or_path) != 1:
+            raise ValueError(
+                "Quantized model only accepts a single adapter. Merge them first.")
+
+    if policy_model_args.policy_use_unsloth:
+        require_version(
+            "unsloth", "Please install unsloth: https://github.com/unslothai/unsloth")
+
+    if policy_model_args.policy_infer_backend == "vllm":
+        require_version("vllm>=0.3.3", "To fix: pip install vllm>=0.3.3")
+
+    if policy_finetuning_args.policy_use_galore:
+        require_version("galore_torch", "To fix: pip install galore_torch")
+
+    if training_args is not None and training_args.predict_with_generate:
+        require_version("jieba", "To fix: pip install jieba")
+        require_version("nltk", "To fix: pip install nltk")
+        require_version("rouge_chinese", "To fix: pip install rouge-chinese")
+
+    if (
+        training_args.do_train
+        and policy_finetuning_args.policy_finetuning_type == "lora"
+        and policy_model_args.policy_resize_vocab
+        and policy_finetuning_args.policy_additional_target is None
+    ):
+        logger.warning(
+            "Add token embeddings to `additional_target` to make the added tokens trainable.")
+
+    if training_args.do_train and policy_model_args.policy_quantization_bit is not None and (not policy_model_args.policy_upcast_layernorm):
+        logger.warning(
+            "We recommend enable `upcast_layernorm` in quantized training.")
+
+    if training_args.do_train and (not training_args.fp16) and (not training_args.bf16):
+        logger.warning("We recommend enable mixed precision training.")
+
+    if training_args.do_train and policy_finetuning_args.policy_use_galore and not policy_finetuning_args.policy_pure_bf16:
+        logger.warning(
+            "Using GaLore with mixed precision training may significantly increases GPU memory usage.")
+
+    if (not training_args.do_train) and policy_model_args.policy_quantization_bit is not None:
+        logger.warning(
+            "Evaluating model in 4/8-bit mode may cause lower scores.")
+
+    if (not training_args.do_train) and policy_finetuning_args.policy_stage == "dpo" and policy_finetuning_args.policy_ref_model is None:
+        logger.warning(
+            "Specify `ref_model` for computing rewards at evaluation.")
+
+    # Post-process training arguments
+    if (
+        training_args.parallel_mode.value == "distributed"
+        and training_args.ddp_find_unused_parameters is None
+        and policy_finetuning_args.policy_finetuning_type == "lora"
+    ):
+        logger.warning(
+            "`ddp_find_unused_parameters` needs to be set as False for LoRA in DDP training.")
+        training_args.ddp_find_unused_parameters = False
+
+    if policy_finetuning_args.policy_stage in ["rm", "ppo"] and policy_finetuning_args.policy_finetuning_type in ["full", "freeze"]:
+        can_resume_from_checkpoint = False
+        if training_args.resume_from_checkpoint is not None:
+            logger.warning("Cannot resume from checkpoint in current stage.")
+            training_args.resume_from_checkpoint = None
+    else:
+        can_resume_from_checkpoint = True
+
+    if (
+        training_args.resume_from_checkpoint is None
+        and training_args.do_train
+        and os.path.isdir(training_args.output_dir)
+        and not training_args.overwrite_output_dir
+        and can_resume_from_checkpoint
+    ):
+        last_checkpoint = get_last_checkpoint(training_args.output_dir)
+        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
+            raise ValueError(
+                "Output directory already exists and is not empty. Please set `overwrite_output_dir`.")
+
+        if last_checkpoint is not None:
+            training_args.resume_from_checkpoint = last_checkpoint
+            logger.info(
+                "Resuming training from {}. Change `output_dir` or use `overwrite_output_dir` to avoid.".format(
+                    training_args.resume_from_checkpoint
+                )
+            )
+
+    if (
+        policy_finetuning_args.policy_stage in ["rm", "ppo"]
+        and policy_finetuning_args.policy_finetuning_type == "lora"
+        and training_args.resume_from_checkpoint is not None
+    ):
+        logger.warning(
+            "Add {} to `adapter_name_or_path` to resume training from checkpoint.".format(
+                training_args.resume_from_checkpoint
+            )
+        )
+
+    # Post-process model arguments
+    if training_args.bf16 or policy_finetuning_args.policy_pure_bf16:
+        policy_model_args.policy_compute_dtype = torch.bfloat16
+    elif training_args.fp16:
+        policy_model_args.policy_compute_dtype = torch.float16
+
+    policy_model_args.policy_device_map = {"": get_current_device()}
+    policy_model_args.policy_model_max_length = data_args.cutoff_len
+    data_args.packing = data_args.packing if data_args.packing is not None else policy_finetuning_args.policy_stage == "pt"
+
+    # Log on each process the small summary:
+    logger.info(
+        "Process rank: {}, device: {}, n_gpu: {}, distributed training: {}, compute dtype: {}".format(
+            training_args.local_rank,
+            training_args.device,
+            training_args.n_gpu,
+            training_args.parallel_mode.value == "distributed",
+            str(policy_model_args.policy_compute_dtype),
+        )
+    )
+
+    transformers.set_seed(training_args.seed)
+
+    return wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
+        wm_finetuning_args, policy_finetuning_args, generating_args
+
+
 def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
-    model_args, data_args, training_args, finetuning_args, generating_args = _parse_train_args(args)
+    model_args, data_args, training_args, finetuning_args, generating_args = _parse_train_args(
+        args)
 
     # Setup logging
     if training_args.should_log:
@@ -121,16 +356,20 @@ def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
         raise ValueError("Please specify which `template` to use.")
 
     if finetuning_args.stage != "sft" and training_args.predict_with_generate:
-        raise ValueError("`predict_with_generate` cannot be set as True except SFT.")
+        raise ValueError(
+            "`predict_with_generate` cannot be set as True except SFT.")
 
     if finetuning_args.stage == "sft" and training_args.do_predict and not training_args.predict_with_generate:
-        raise ValueError("Please enable `predict_with_generate` to save model predictions.")
+        raise ValueError(
+            "Please enable `predict_with_generate` to save model predictions.")
 
     if finetuning_args.stage in ["rm", "ppo"] and training_args.load_best_model_at_end:
-        raise ValueError("RM and PPO stages do not support `load_best_model_at_end`.")
+        raise ValueError(
+            "RM and PPO stages do not support `load_best_model_at_end`.")
 
     if finetuning_args.stage == "ppo" and not training_args.do_train:
-        raise ValueError("PPO training does not support evaluation, use the SFT stage to evaluate models.")
+        raise ValueError(
+            "PPO training does not support evaluation, use the SFT stage to evaluate models.")
 
     if finetuning_args.stage == "ppo" and model_args.shift_attn:
         raise ValueError("PPO training is incompatible with S^2-Attn.")
@@ -149,10 +388,12 @@ def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
         raise ValueError("Please specify `max_steps` in streaming mode.")
 
     if training_args.do_train and training_args.predict_with_generate:
-        raise ValueError("`predict_with_generate` cannot be set as True while training.")
+        raise ValueError(
+            "`predict_with_generate` cannot be set as True while training.")
 
     if training_args.do_train and model_args.quantization_device_map == "auto":
-        raise ValueError("Cannot use device map for quantized models in training.")
+        raise ValueError(
+            "Cannot use device map for quantized models in training.")
 
     if finetuning_args.use_dora and model_args.use_unsloth:
         raise ValueError("Unsloth does not support DoRA.")
@@ -162,20 +403,23 @@ def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
             raise ValueError("This device does not support `pure_bf16`.")
 
         if training_args.fp16 or training_args.bf16:
-            raise ValueError("Turn off mixed precision training when using `pure_bf16`.")
+            raise ValueError(
+                "Turn off mixed precision training when using `pure_bf16`.")
 
     if (
         finetuning_args.use_galore
         and finetuning_args.galore_layerwise
         and training_args.parallel_mode.value == "distributed"
     ):
-        raise ValueError("Distributed training does not support layer-wise GaLore.")
+        raise ValueError(
+            "Distributed training does not support layer-wise GaLore.")
 
     if finetuning_args.use_galore and training_args.deepspeed is not None:
         raise ValueError("GaLore is incompatible with DeepSpeed.")
 
     if model_args.infer_backend == "vllm":
-        raise ValueError("vLLM backend is only available for API, CLI and Web.")
+        raise ValueError(
+            "vLLM backend is only available for API, CLI and Web.")
 
     _verify_model_args(model_args, finetuning_args)
     _check_extra_dependencies(model_args, finetuning_args, training_args)
@@ -186,22 +430,27 @@ def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
         and model_args.resize_vocab
         and finetuning_args.additional_target is None
     ):
-        logger.warning("Add token embeddings to `additional_target` to make the added tokens trainable.")
+        logger.warning(
+            "Add token embeddings to `additional_target` to make the added tokens trainable.")
 
     if training_args.do_train and model_args.quantization_bit is not None and (not model_args.upcast_layernorm):
-        logger.warning("We recommend enable `upcast_layernorm` in quantized training.")
+        logger.warning(
+            "We recommend enable `upcast_layernorm` in quantized training.")
 
     if training_args.do_train and (not training_args.fp16) and (not training_args.bf16):
         logger.warning("We recommend enable mixed precision training.")
 
     if training_args.do_train and finetuning_args.use_galore and not finetuning_args.pure_bf16:
-        logger.warning("Using GaLore with mixed precision training may significantly increases GPU memory usage.")
+        logger.warning(
+            "Using GaLore with mixed precision training may significantly increases GPU memory usage.")
 
     if (not training_args.do_train) and model_args.quantization_bit is not None:
-        logger.warning("Evaluating model in 4/8-bit mode may cause lower scores.")
+        logger.warning(
+            "Evaluating model in 4/8-bit mode may cause lower scores.")
 
     if (not training_args.do_train) and finetuning_args.stage == "dpo" and finetuning_args.ref_model is None:
-        logger.warning("Specify `ref_model` for computing rewards at evaluation.")
+        logger.warning(
+            "Specify `ref_model` for computing rewards at evaluation.")
 
     # Post-process training arguments
     if (
@@ -209,7 +458,8 @@ def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
         and training_args.ddp_find_unused_parameters is None
         and finetuning_args.finetuning_type == "lora"
     ):
-        logger.warning("`ddp_find_unused_parameters` needs to be set as False for LoRA in DDP training.")
+        logger.warning(
+            "`ddp_find_unused_parameters` needs to be set as False for LoRA in DDP training.")
         training_args.ddp_find_unused_parameters = False
 
     if finetuning_args.stage in ["rm", "ppo"] and finetuning_args.finetuning_type in ["full", "freeze"]:
@@ -229,7 +479,8 @@ def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
     ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
-            raise ValueError("Output directory already exists and is not empty. Please set `overwrite_output_dir`.")
+            raise ValueError(
+                "Output directory already exists and is not empty. Please set `overwrite_output_dir`.")
 
         if last_checkpoint is not None:
             training_args.resume_from_checkpoint = last_checkpoint
@@ -277,7 +528,8 @@ def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:
 
 
 def get_infer_args(args: Optional[Dict[str, Any]] = None) -> _INFER_CLS:
-    model_args, data_args, finetuning_args, generating_args = _parse_infer_args(args)
+    model_args, data_args, finetuning_args, generating_args = _parse_infer_args(
+        args)
 
     _set_transformers_logging()
 
@@ -286,10 +538,12 @@ def get_infer_args(args: Optional[Dict[str, Any]] = None) -> _INFER_CLS:
 
     if model_args.infer_backend == "vllm":
         if finetuning_args.stage != "sft":
-            raise ValueError("vLLM engine only supports auto-regressive models.")
+            raise ValueError(
+                "vLLM engine only supports auto-regressive models.")
 
         if model_args.adapter_name_or_path is not None:
-            raise ValueError("vLLM engine does not support LoRA adapters. Merge them first.")
+            raise ValueError(
+                "vLLM engine does not support LoRA adapters. Merge them first.")
 
         if model_args.quantization_bit is not None:
             raise ValueError("vLLM engine does not support quantization.")
@@ -317,7 +571,8 @@ def get_eval_args(args: Optional[Dict[str, Any]] = None) -> _EVAL_CLS:
         raise ValueError("Please specify which `template` to use.")
 
     if model_args.infer_backend == "vllm":
-        raise ValueError("vLLM backend is only available for API, CLI and Web.")
+        raise ValueError(
+            "vLLM backend is only available for API, CLI and Web.")
 
     _verify_model_args(model_args, finetuning_args)
     _check_extra_dependencies(model_args, finetuning_args)
