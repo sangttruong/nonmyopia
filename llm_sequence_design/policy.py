@@ -23,7 +23,7 @@ from src.llmtuner.train.utils import create_custom_optimzer, create_custom_sched
 from src.llmtuner.train.ppo.utils import dump_layernorm, get_rewards_from_server, replace_model, restore_layernorm
 from src.llmtuner.hparams import ModelArguments
 
-from utils import POLICY_PROMPT
+from configs import POLICY_PROMPT
 
 if TYPE_CHECKING:
     from datasets import Dataset
@@ -38,16 +38,6 @@ logger = get_logger(__name__)
 
 class Policy:
     def __init__(self, model_args, finetuning_args):
-        model_args = ModelArguments(
-            model_name_or_path=model_args.policy_model_name_or_path,
-            adapter_name_or_path=model_args.policy_adapter_name_or_path,
-            use_fast_tokenizer=model_args.policy_use_fast_tokenizer,
-            flash_attn=model_args.policy_flash_attn,
-            quantization_bit=model_args.policy_quantization_bit,
-            quantization_type=model_args.policy_quantization_type,
-            quantization_device_map=model_args.policy_quantization_device_map,
-            use_unsloth=model_args.policy_use_unsloth
-        )
         self.tokenizer = load_tokenizer(model_args)
         self.__model__ = load_model(self.tokenizer,
                                     model_args,

@@ -1,6 +1,75 @@
-POLICY_PROMPT = '''Edit 1 amino acid in below protein sequence to create a new protein with higher fluorescence. The amino acid mus be in set {L, A, G, V, S, E, R, T, I, D, P, K, Q, N, F, Y, M, H, W, C, X, B, U, Z, O}. Please return only the modified protein sequence.
-Protein sequence: {protein}
-Modified protein sequence: '''
+import random
+import torch
+from tqdm import tqdm
+from functools import partial
+from torch.utils.data import DataLoader
+
+
+def get_dataset_embedding(dataset, model, tokenizer, data_args):
+    def tokenize_dataset(
+        examples,
+        tokenizer,
+        data_args
+    ):
+        # build inputs with format `<bos> X1 Y1 <eos> <bos> X2 Y2 <eos>`
+        # and labels with format `<ignore> ... <ignore> Y1 <eos> <ignore> ... <ignore> Y2 <eos>`
+        model_inputs = {
+            "input_ids": [],
+            "attention_mask": [],
+            "rewards": []
+        }
+
+        for i in range(len(examples["text"])):
+            input_ids = tokenizer.encode(
+                examples["text"][i], add_special_tokens=False,
+                # padding='max_length', truncation=True,
+                # max_length=data_args.cutoff_len
+            )
+            attention_mask = [1] * len(input_ids)
+            labels = examples["reward"][i]
+
+            model_inputs["input_ids"].append(input_ids)
+            model_inputs["attention_mask"].append(attention_mask)
+            model_inputs["rewards"].append(labels)
+
+        return model_inputs
+
+    preprocess_func = partial(
+        tokenize_dataset, tokenizer=tokenizer, data_args=data_args
+    )
+    kwargs = dict(
+        num_proc=data_args.preprocessing_num_workers,
+        load_from_cache_file=(not data_args.overwrite_cache),
+        desc="Running tokenizer on dataset",
+    )
+    column_names = list(next(iter(dataset)).keys())
+    tokenized_dataset = dataset.map(preprocess_func, batched=True,
+                                    remove_columns=column_names, **kwargs)
+
+    def infer_embedding(batch):
+        model_inputs = {
+            "inputs_embeds": [],
+            "rewards": []
+        }
+        for input_ids, attention_mask, reward in zip(batch['input_ids'], batch['attention_mask'], batch['rewards']):
+            embeds = model.pretrained_model.model(input_ids=torch.tensor([input_ids]),
+                                                  attention_mask=torch.tensor([attention_mask]))
+            model_inputs['inputs_embeds'].append(
+                embeds.last_hidden_state[0][-1].detach().cpu())
+            model_inputs['rewards'].append(reward)
+
+        return model_inputs
+
+    embeded_dataset = tokenized_dataset.map(infer_embedding, batched=True,
+                                            remove_columns=['input_ids', 'attention_mask'], **kwargs)
+
+    return embeded_dataset
+
+
+def random_sampling(dataset, num_samples, *args, **kwargs):
+    total_samples = len(dataset)
+    indices = random.sample(range(total_samples), num_samples)
+    return dataset.select(indices)
 
 
 def fix_oracle_model_args(model_args):

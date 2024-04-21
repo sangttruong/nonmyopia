@@ -16,6 +16,8 @@ from src.llmtuner.extras.misc import fix_valuehead_checkpoint
 from src.llmtuner.extras.ploting import plot_loss
 from src.llmtuner.train.oracle.metric import compute_rmse
 
+from utils import get_dataset_embedding
+
 if TYPE_CHECKING:
     from transformers.modeling_utils import PreTrainedModel
     from transformers.trainer import PredictionOutput
@@ -28,23 +30,13 @@ logger = get_logger(__name__)
 
 class WorldModel:
     def __init__(self, model_args, finetuning_args):
-        model_args = ModelArguments(
-            model_name_or_path=model_args.wm_model_name_or_path,
-            adapter_name_or_path=model_args.wm_adapter_name_or_path,
-            use_fast_tokenizer=model_args.wm_use_fast_tokenizer,
-            flash_attn=model_args.wm_flash_attn,
-            quantization_bit=model_args.wm_quantization_bit,
-            quantization_type=model_args.wm_quantization_type,
-            quantization_device_map=model_args.wm_quantization_device_map,
-            use_unsloth=model_args.wm_use_unsloth
-        )
         self.tokenizer = load_tokenizer(model_args)
-        self.__model__ = load_model(self.tokenizer,
-                                    model_args,
-                                    finetuning_args,
-                                    is_trainable=True,
-                                    add_valuehead=True
-                                    )
+        self.model = load_model(self.tokenizer,
+                                model_args,
+                                finetuning_args,
+                                is_trainable=True,
+                                add_valuehead=True
+                                )
         self.finetuning_args = finetuning_args
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
@@ -57,7 +49,49 @@ class WorldModel:
             "attention_mask": torch.one_likes(X_tokenized),
         }
 
-        return self.__model__(model_inputs, *args, **kwargs)
+        return self.model(model_inputs, *args, **kwargs)
+
+    def train_v2(
+        self,
+        dataset,
+        training_args,
+        data_args,
+        callbacks: Optional[List["TrainerCallback"]] = None,
+        *args, **kwargs
+    ):
+        dataset_emb = get_dataset_embedding(
+            dataset, self.model, self.tokenizer, data_args)
+
+        backward_batch_size = training_args.per_device_train_batch_size * \
+            training_args.gradient_accumulation_steps
+        dataset_loader = torch.utils.data.DataLoader(
+            dataset_emb, batch_size=backward_batch_size, shuffle=True)
+
+        linear_model = torch.nn.Linear(
+            in_features=self.model.pretrained_model.model.config.hidden_size, out_features=1)
+
+        optimizer = torch.optim.AdamW(
+            linear_model.parameters(), lr=training_args.learning_rate)
+
+        for epoch in range(int(training_args.num_train_epochs)):
+            for batch in dataset_loader:
+                X = torch.stack(batch['inputs_embeds']).float().T
+                y = batch['rewards'].reshape(-1, 1).float()
+                y_pred = linear_model(X)
+                loss = torch.nn.functional.mse_loss(y_pred, y)
+
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+
+            print(f"Epoch: {epoch}, Loss: {loss.item()}")
+
+        self.model.v_head.summary.load_state_dict(linear_model.state_dict())
+        self.model.save_pretrained(
+            training_args.output_dir, safe_serialization=training_args.save_safetensors)
+        if training_args.should_save:
+            fix_valuehead_checkpoint(
+                self.model, training_args.output_dir, training_args.save_safetensors)
 
     def train(
         self,
@@ -99,7 +133,7 @@ class WorldModel:
 
         # Initialize our Trainer
         trainer = WMTrainer(
-            model=self.__model__,
+            model=self.model,
             args=training_args,
             finetuning_args=self.finetuning_args,
             tokenizer=self.tokenizer,
@@ -114,7 +148,7 @@ class WorldModel:
         trainer.save_model()
         if training_args.should_save:
             fix_valuehead_checkpoint(
-                self.__model__, training_args.output_dir, training_args.save_safetensors)
+                self.model, training_args.output_dir, training_args.save_safetensors)
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()

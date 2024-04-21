@@ -230,11 +230,11 @@ class WMFinetuningArguments(WMFreezeArguments, WMLoraArguments, WMRLHFArguments,
             "help": "Whether or not to train model in purely bf16 precision (without AMP)."},
     )
     wm_stage: Literal["pt", "sft", "rm", "ppo", "dpo", "orpo", "oracle"] = field(
-        default="sft",
+        default="oracle",
         metadata={"help": "Which stage will be performed in training."},
     )
     wm_finetuning_type: Literal["lora", "freeze", "full"] = field(
-        default="lora",
+        default="freeze",
         metadata={"help": "Which fine-tuning method to use."},
     )
     wm_use_llama_pro: bool = field(

@@ -1,3 +1,6 @@
+import os
+import time
+import torch
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.llmtuner.hparams import get_bo_args
@@ -12,15 +15,17 @@ from src.llmtuner.data.utils import checksum, merge_dataset
 from oracle import Oracle
 from policy import Policy
 from world_model import WorldModel
-from acqfs import (
-    acqf_random,
-)
+from actor import Actor
 from configs import (
     initinal_samples,
     samples_per_iteration,
-    number_of_iterations
+    number_of_iterations,
+    TRAINING_DATA_BUFFER,
+    TESTING_DATA_BUFFER,
 )
 from utils import (
+    get_dataset_embedding,
+    random_sampling,
     fix_oracle_model_args,
     fix_policy_model_args,
     fix_wm_model_args,
@@ -48,8 +53,6 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     # policy = Policy(policy_model_args, policy_finetuning_args)
 
     # Initializing full dataset
-    policy_model_args.cache_dir = policy_model_args.policy_cache_dir
-    policy_model_args.hf_hub_token = policy_model_args.policy_hf_hub_token
     with training_args.main_process_first(desc="load training dataset"):
         all_datasets = []
         data_args.split = "train"
@@ -70,28 +73,36 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
     # Initializing training buffer
     # Randomly sample from training dataset
-    initial_dataset = acqf_random(
+    initial_dataset = random_sampling(
         training_dataset, num_samples=initinal_samples)
     buffer = {
         "dataset": initial_dataset,
         "eval_rmse": []
     }
-
-    # Warming up reward models
-    world_model.train(
-        dataset=buffer["dataset"],
-        training_args=training_args,
-        data_args=data_args,
-        callbacks=callbacks
-    )
+    actor = Actor(policy_model_args, policy_finetuning_args)
 
     # Startign BO loop
     for i in range(number_of_iterations):
-        pass
+        # Warming up reward models
+        world_model.train_v2(
+            dataset=buffer["dataset"],
+            training_args=training_args,
+            data_args=data_args,
+            callbacks=callbacks
+        )
 
-    # Final evaluation
+        breakpoint()
+        # if actor.algo_lookahead_steps > 1 and (
+        #     number_of_iterations - i < actor.algo_lookahead_steps
+        # ):
+        #     actor.algo_lookahead_steps -= 1
 
-    # Exporting the best model
+        # # Get the next action
+        # iter_start_time = time.time()
+
+        # Final evaluation
+
+        # Exporting the best model
 
 
 if __name__ == '__main__':
