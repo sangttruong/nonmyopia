@@ -16,6 +16,7 @@ from tqdm import tqdm
 from tensordict import TensorDict
 from botorch import fit_gpytorch_model
 from botorch.models import SingleTaskGP
+from botorch.models.transforms.input import Normalize
 from botorch.models.transforms.outcome import Standardize
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
@@ -175,6 +176,8 @@ def run(parms, env) -> None:
         WM = SingleTaskGP(
             buffer["x"][: parms.n_initial_points],
             buffer["y"][: parms.n_initial_points],
+            input_transform=Normalize(
+                d=parms.x_dim, bounds=torch.tensor(parms.bounds).T),
             outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
@@ -193,7 +196,6 @@ def run(parms, env) -> None:
             optimal_value=optimal_value,
             iteration=parms.n_initial_points - 1,
             embedder=embedder,
-            n_space=parms.num_categories,
         )
         buffer["real_loss"][parms.n_initial_points - 1] = real_loss
 
@@ -204,6 +206,8 @@ def run(parms, env) -> None:
         WM = SingleTaskGP(
             buffer["x"][: parms.n_initial_points],
             buffer["y"][: parms.n_initial_points],
+            input_transform=Normalize(
+                d=parms.x_dim, bounds=torch.tensor(parms.bounds).T),
             outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
@@ -231,7 +235,6 @@ def run(parms, env) -> None:
             optimal_value=optimal_value,
             iteration=parms.n_initial_points - 1,
             embedder=embedder,
-            n_space=parms.num_categories,
             actions=actions,
             X=X,
         )
@@ -247,6 +250,8 @@ def run(parms, env) -> None:
         WM = SingleTaskGP(
             buffer["x"][:i],
             buffer["y"][:i],
+            input_transform=Normalize(
+                d=parms.x_dim, bounds=torch.tensor(parms.bounds).T),
             outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
@@ -289,7 +294,6 @@ def run(parms, env) -> None:
             optimal_value=optimal_value,
             iteration=i,
             embedder=embedder,
-            n_space=parms.num_categories,
             actions=actions,
         )
         print("Real loss:", buffer["real_loss"][i].item())
