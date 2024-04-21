@@ -201,7 +201,7 @@ class Parameters:
 
         # Random select initial points
         self.bounds = np.array(self.bounds)
-        if self.bounds.ndim < self.x_dim:
+        if self.bounds.shape[0] < self.x_dim:
             self.bounds = np.tile(self.bounds, [self.x_dim, 1])
         self.n_initial_points = 3**self.x_dim + 1
 

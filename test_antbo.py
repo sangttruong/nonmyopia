@@ -1,4 +1,5 @@
 import re
+import torch
 import numpy as np
 from itertools import groupby
 from _9_semifuncs import AntBO
@@ -9,8 +10,9 @@ nm_AAs = 20
 bbox = {
     "tool": "Absolut",
     "antigen": "1ADQ_A",
-    "path": "/dfs/user/sttruong/Absolut/bin",  # Put path to Absolut (/ABS/PATH/TO/Absolut/)
-    "process": 8,  # Number of cores
+    # Put path to Absolut (/ABS/PATH/TO/Absolut/)
+    "path": "/Users/ducnguyen/Research/Absolut",
+    "process": 4,  # Number of cores
     "startTask": 0,  # start core id
 }
 device = "cpu"
@@ -76,7 +78,8 @@ def check_constraint_satisfaction(x):
 
 
 def check_constraint_satisfaction_batch(x):
-    constraints_satisfied = list(map(lambda seq: check_constraint_satisfaction(seq), x))
+    constraints_satisfied = list(
+        map(lambda seq: check_constraint_satisfaction(seq), x))
     return np.array(constraints_satisfied)
 
 
@@ -85,12 +88,14 @@ def check_constraint_satisfaction_batch(x):
 # ==============================================================================
 
 # Initialize random X
-X_next = np.random.randint(low=0, high=nm_AAs, size=(n_suggestions, seq_length))
+X_next = np.random.randint(
+    low=0, high=nm_AAs, size=(n_suggestions, seq_length))
 # >> 11 x 1
 # Vocab: 20
 
 # Check for constraint violation
-constraints_violated = np.logical_not(check_constraint_satisfaction_batch(X_next))
+constraints_violated = np.logical_not(
+    check_constraint_satisfaction_batch(X_next))
 
 # Continue until all samples satisfy the constraints
 while np.sum(constraints_violated) != 0:
@@ -100,7 +105,8 @@ while np.sum(constraints_violated) != 0:
     )
 
     # Check for constraint violation
-    constraints_violated = np.logical_not(check_constraint_satisfaction_batch(X_next))
+    constraints_violated = np.logical_not(
+        check_constraint_satisfaction_batch(X_next))
 
 
 f_ = AntBO(
@@ -111,5 +117,5 @@ f_ = AntBO(
     normalise=False,
 )
 
-y = f_(X_next)
+y = f_(torch.tensor(X_next, device=device))
 print("y =", y.item())

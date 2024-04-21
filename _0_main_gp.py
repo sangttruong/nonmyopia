@@ -1,0 +1,462 @@
+# This file is made for analyzing world models
+from _11_kernels import TransformedCategorical
+from _7_utils import set_seed
+from _0_main import make_env
+import matplotlib.pyplot as plt
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from gpytorch.constraints import Interval
+from botorch.models.transforms.outcome import Standardize
+from botorch.models.transforms.input import Normalize
+from botorch.models import SingleTaskGP
+from botorch import fit_gpytorch_model
+from argparse import ArgumentParser
+from pathlib import Path
+from tqdm import tqdm
+import numpy as np
+import torch
+import copy
+import pandas as pd
+
+
+class Parameters:
+    r"""Class to store all parameters for the experiment."""
+
+    def __init__(self, args):
+        r"""Initialize parameters."""
+        # general parameters
+        if torch.cuda.is_available():
+            self.device = f"cuda:{args.gpu_id}"
+        else:
+            self.device = "cpu"
+
+        print("Using device:", self.device)
+
+        self.gpu_id = args.gpu_id
+        self.torch_dtype = torch.float32
+        self.seed = args.seed
+
+        self.env_name = args.env_name
+        self.env_noise = args.env_noise
+        self.y_dim = 1
+        self.save_dir = f"gp_results/{args.env_name}"
+
+        if args.env_discretized:
+            self.env_discretized = True
+            self.num_categories = 20
+            self.save_dir += "_env_discretized"
+        else:
+            self.env_discretized = False
+            self.num_categories = None
+
+        self.kernel = None
+
+        if self.env_name == "Ackley":
+            self.x_dim = 2
+            self.bounds = [-32.768, 32.768]
+            self.radius = 4.75
+
+        elif self.env_name == "Alpine":
+            self.x_dim = 2
+            self.bounds = [0, 10]
+            self.radius = 0.75
+
+        elif self.env_name == "Beale":
+            self.x_dim = 2
+            self.bounds = [-4.5, 4.5]
+            self.radius = 0.65
+
+        elif self.env_name == "Branin":
+            self.x_dim = 2
+            self.bounds = [[-5, 10], [0, 15]]
+            self.radius = 1.2
+
+        elif self.env_name == "Cosine8":
+            self.x_dim = 8
+            self.bounds = [-1, 1]
+            self.radius = 0.3
+
+        elif self.env_name == "EggHolder":
+            self.x_dim = 2
+            self.bounds = [-512, 512]
+            self.radius = 75.0
+
+        elif self.env_name == "Griewank":
+            self.x_dim = 2
+            self.bounds = [-600, 600]
+            self.radius = 85.0
+
+        elif self.env_name == "Hartmann":
+            self.x_dim = 6
+            self.bounds = [0, 1]
+            self.radius = 0.15
+
+        elif self.env_name == "HolderTable":
+            self.x_dim = 2
+            self.bounds = [-10, 10]
+            self.radius = 1.5
+
+        elif self.env_name == "Levy":
+            self.x_dim = 2
+            self.bounds = [-10, 10]
+            self.radius = 1.5
+
+        elif self.env_name == "Powell":
+            self.x_dim = 4
+            self.bounds = [-4, 5]
+            self.radius = 0.9
+
+        elif self.env_name == "SixHumpCamel":
+            self.x_dim = 2
+            self.bounds = [[-3, 3], [-2, 2]]
+            self.radius = 0.4
+
+        elif self.env_name == "StyblinskiTang":
+            self.x_dim = 2
+            self.bounds = [-5, 5]
+            self.radius = 0.75
+
+        elif self.env_name == "SynGP":
+            self.x_dim = 2
+            self.bounds = [-1, 1]
+            self.radius = 0.15
+
+        elif self.env_name == "AntBO":
+            self.x_dim = 11
+            self.kernel = TransformedCategorical(
+                lengthscale_constraint=Interval(0.01, 0.5),
+                ard_num_dims=self.x_dim,
+            )
+
+        elif self.env_name == "Sequence":
+            self.x_dim = 8
+            self.radius = 1
+            self.kernel = TransformedCategorical()
+
+        else:
+            raise NotImplementedError
+
+        # Random select initial points
+        self.bounds = np.array(self.bounds)
+        if self.bounds.ndim < self.x_dim:
+            self.bounds = np.tile(self.bounds, [self.x_dim, 1])
+        self.n_initial_points = 3**self.x_dim + 1
+
+        ranges = np.linspace(self.bounds[..., 0], self.bounds[..., 1], 4).T
+        range_bounds = np.stack((ranges[:, :-1], ranges[:, 1:]), axis=-1)
+        cartesian_idxs = np.array(np.meshgrid(*([[0, 1, 2]] * self.x_dim))).T.reshape(
+            -1, self.x_dim
+        )
+        cartesian_rb = range_bounds[list(range(self.x_dim)), cartesian_idxs]
+
+        self.initial_points = np.concatenate(
+            (
+                np.random.uniform(
+                    low=cartesian_rb[..., 0],
+                    high=cartesian_rb[..., 1],
+                    size=[3**self.x_dim, self.x_dim],
+                ),
+                np.random.uniform(
+                    low=self.bounds[..., 0],
+                    high=self.bounds[..., 1],
+                    size=[1, self.x_dim],
+                ),
+            ),
+            axis=0,
+        )
+
+    def __str__(self):
+        r"""Return string representation of parameters."""
+        output = []
+        for k in self.__dict__.keys():
+            output.append(f"{k}: {self.__dict__[k]}")
+        return "\n".join(output)
+
+
+def eval(
+    func,
+    wm,
+    cfg,
+    eval_fns,
+    n_points=10000
+):
+    r"""Evaluate function."""
+
+    # Evaluate ###############################################################
+    if cfg.env_name == "AntBO":
+        data_x = np.random.randint(0, 10, (n_points, 11))
+    elif cfg.env_name == "Sequence":
+        data_x = np.random.randint(0, 10, (n_points, 8))
+    else:
+        data_x = np.random.uniform(
+            low=cfg.bounds[..., 0],
+            high=cfg.bounds[..., 1],
+            size=[n_points, local_parms.x_dim]
+        )
+        data_x = torch.tensor(data_x, dtype=torch.float32)
+
+    data_y = func(data_x).reshape(-1)
+    y_hat = wm.posterior(data_x).mean.detach()
+    y_hat = y_hat.reshape(-1)
+
+    # Evaluate functions #####################################################
+    eval_vals = []
+    for eval_fn in eval_fns:
+        val = eval_fn(data_y, y_hat).item()
+        eval_vals.append(val)
+
+    return eval_vals
+
+
+def plot(
+    func,
+    wm,
+    cfg,
+    data_x,
+    n_space=100,
+    embedder=None,
+):
+    r"""Evaluate and plot 2D function."""
+
+    # Plotting ###############################################################
+    fig, ax = plt.subplots(1, 2, figsize=(10, 4))
+    if embedder is not None:
+        bounds_plot_x = bounds_plot_y = [0, n_space - 1]
+    else:
+        bounds_plot_x, bounds_plot_y = cfg.bounds
+
+    ax[0].set(xlabel="$x_1$", ylabel="$x_2$",
+              xlim=bounds_plot_x, ylim=bounds_plot_y)
+    ax[1].set(xlabel="$x_1$", ylabel="$x_2$",
+              xlim=bounds_plot_x, ylim=bounds_plot_y)
+
+    ax[0].set_title(label=cfg.env_name)
+    ax[1].set_title(label="Posterior mean")
+
+    # Plot function in 2D ####################################################
+    X_domain, Y_domain = cfg.bounds
+    X, Y = np.linspace(*X_domain, n_space), np.linspace(*Y_domain, n_space)
+    X, Y = np.meshgrid(X, Y)
+    XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
+    Z = func(XY.reshape(2, -1).T).reshape(X.shape)
+
+    Z_post = wm.posterior(
+        XY.to(cfg.device, cfg.torch_dtype).permute(1, 2, 0)).mean
+    # >> 100 x 100 x 1
+    Z_post = Z_post.squeeze(-1).cpu().detach()
+
+    # Plot data
+    if embedder is not None:
+        X, Y = (
+            embedder.decode(XY.permute(1, 2, 0))
+            .permute(2, 0, 1)
+            .long()
+            .cpu()
+            .detach()
+            .numpy()
+        )
+
+    cs = ax[0].contourf(X, Y, Z, levels=30, cmap="bwr", alpha=0.7)
+    ax[0].set_aspect(aspect="equal")
+
+    cs1 = ax[1].contourf(X, Y, Z_post, levels=30, cmap="bwr", alpha=0.7)
+    ax[1].set_aspect(aspect="equal")
+
+    cbar = fig.colorbar(cs)
+    cbar.ax.set_ylabel("$f(x)$", rotation=270, labelpad=20)
+
+    cbar1 = fig.colorbar(cs1)
+    cbar1.ax.set_ylabel("$\hat{f}(x)$", rotation=270, labelpad=20)
+
+    if embedder is not None:
+        ax[0].scatter(*embedder.decode(data_x).long().T, label="Data")
+
+        # Draw grid
+        plt.vlines(np.arange(0, n_space), 0, n_space,
+                   linestyles="dashed", alpha=0.05)
+        plt.hlines(np.arange(0, n_space), 0, n_space,
+                   linestyles="dashed", alpha=0.05)
+
+        ax[0].set_xticks(range(0, n_space, 2))
+        ax[0].set_yticks(range(0, n_space, 2))
+
+    else:
+        ax[0].scatter(data_x[..., 0],
+                      data_x[..., 1], label="Data")
+
+    fig.legend()
+
+    plt.savefig(
+        f"{cfg.save_dir}/{cfg.env_name}_npoints{cfg.n_points}_seed{cfg.seed}.pdf")
+    plt.close()
+
+
+def main(local_parms):
+    env = make_env(
+        name=local_parms.env_name,
+        x_dim=local_parms.x_dim,
+        bounds=local_parms.bounds,
+        noise_std=local_parms.env_noise,
+    )
+    env = env.to(
+        dtype=local_parms.torch_dtype,
+        device=local_parms.device,
+    )
+
+    # Random select initial points
+    bounds = np.array(local_parms.bounds)
+    if bounds.shape[0] < local_parms.x_dim:
+        bounds = np.tile(bounds, [local_parms.x_dim, 1])
+    local_parms.bounds = bounds
+
+    n_partitions = int(local_parms.n_points ** (1 / local_parms.x_dim))
+    remaining_points = local_parms.n_points - n_partitions**local_parms.x_dim
+
+    ranges = np.linspace(bounds[..., 0], bounds[..., 1], n_partitions+1).T
+    range_bounds = np.stack((ranges[:, :-1], ranges[:, 1:]), axis=-1)
+    cartesian_idxs = np.array(np.meshgrid(*([list(range(n_partitions))] * local_parms.x_dim))).T.reshape(
+        -1, local_parms.x_dim
+    )
+    cartesian_rb = range_bounds[list(range(local_parms.x_dim)), cartesian_idxs]
+    train_X = np.concatenate(
+        (
+            np.random.uniform(
+                low=cartesian_rb[..., 0],
+                high=cartesian_rb[..., 1],
+                size=[n_partitions**local_parms.x_dim, local_parms.x_dim],
+            ),
+            np.random.uniform(
+                low=bounds[..., 0],
+                high=bounds[..., 1],
+                size=[remaining_points, local_parms.x_dim],
+            ),
+        ),
+        axis=0,
+    )
+
+    train_X = torch.tensor(
+        train_X, dtype=local_parms.torch_dtype, device=local_parms.device)
+    train_y = env(train_X).reshape(-1, 1)
+
+    WM = SingleTaskGP(
+        train_X=train_X,
+        train_Y=train_y,
+        input_transform=Normalize(
+            d=local_parms.x_dim, bounds=torch.tensor(bounds).T),
+        outcome_transform=Standardize(1),
+        covar_module=local_parms.kernel,
+    )
+
+    mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+    fit_gpytorch_model(mll)
+
+    def rmse_fn(y, yhat):
+        return torch.sqrt(
+            torch.nn.functional.mse_loss(y, yhat))
+
+    def rsquare_fn(y, yhat):
+        # Calculate residual sum of squares (RSS)
+        RSS_val = torch.sum((y - yhat) ** 2)
+
+        # Calculate total sum of squares (TSS)
+        TSS_val = torch.sum((y - y.mean()) ** 2)
+
+        # Calculate R^2
+        R2_val = 1 - (RSS_val / TSS_val)
+        return R2_val
+
+    eval_vals = eval(
+        func=env,
+        wm=WM,
+        cfg=local_parms,
+        eval_fns=[rmse_fn, rsquare_fn],
+    )
+
+    if local_parms.x_dim == 2:
+        plot(
+            func=env,
+            wm=WM,
+            cfg=local_parms,
+            data_x=train_X,
+        )
+
+    return eval_vals
+
+
+def plot_means_stds(
+    means,
+    stds,
+    save_file
+):
+    fig, ax = plt.subplots()
+    ax.plot(
+        list(means.keys()),
+        np.array(list(means.values()))[..., 0],
+        # label="Mean",
+    )
+    ax.fill_between(
+        list(means.keys()),
+        np.array(list(means.values()))[..., 0] -
+        np.array(list(stds.values()))[..., 0],
+        np.array(list(means.values()))[..., 0] +
+        np.array(list(stds.values()))[..., 0],
+        alpha=0.3,
+        # label="Std",
+    )
+    ax.set_xlabel("Number of points")
+    ax.set_ylabel("RMSE")
+    ax.legend()
+    plt.savefig(save_file)
+    plt.close()
+
+
+if __name__ == "__main__":
+    # Parse args
+    parser = ArgumentParser()
+    parser.add_argument("--seeds", nargs="+", type=int,
+                        default=[2, 3, 5, 7, 11])
+    parser.add_argument("--env_names", nargs="+", type=str, default=["SynGP"])
+    parser.add_argument("--env_noise", type=float, default=0.0)
+    parser.add_argument("--env_discretized", action="store_true")
+    parser.add_argument("--gpu_id", type=int, default=0)
+    args = parser.parse_args()
+
+    for e, env_name in enumerate(args.env_names):
+        print("Env name: ", env_name)
+        means = {}
+        stds = {}
+        for n_points in tqdm([1, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]):
+            list_vals = []
+            for i, seed in enumerate(args.seeds):
+                set_seed(seed)
+                local_args = copy.deepcopy(args)
+                local_args.seed = seed
+                local_args.env_name = env_name
+
+                local_parms = Parameters(local_args)
+                local_parms.n_points = n_points
+
+                init_dir_path = Path(local_parms.save_dir)
+                dir_path = Path(str(init_dir_path))
+                dir_path.mkdir(parents=True, exist_ok=True)
+
+                vals = main(local_parms)
+                list_vals.append(vals)
+
+            list_vals = np.array(list_vals)
+            means[n_points] = np.mean(list_vals, axis=0)
+            stds[n_points] = np.std(list_vals, axis=0)
+
+        # Save means and stds
+        save_path = f"{local_parms.save_dir}/{local_parms.env_name}.csv"
+        with open(save_path, "w") as f:
+            f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
+            for n_points in means.keys():
+                f.write(
+                    f"{n_points},{means[n_points][0]},{stds[n_points][0]},{means[n_points][1]},{stds[n_points][1]}\n")
+
+        print(f"Saved to {save_path}")
+
+        # Plot
+        plot_path = f"{local_parms.save_dir}/{local_parms.env_name}_rmse.pdf"
+        plot_means_stds(means, stds, plot_path)
+        print(f"Saved plot to {plot_path}")

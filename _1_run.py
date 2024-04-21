@@ -79,13 +79,6 @@ def run(parms, env) -> None:
         optimal_value = optimal_value.cpu().detach()
         print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
 
-    # Generate initial observations and initialize model
-    # data_x = torch.rand(
-    #     [parms.n_initial_points, parms.x_dim],
-    #     device=parms.device,
-    #     dtype=parms.torch_dtype,
-    # )
-
     # Min max scaling
     # data_x = data_x * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
     # >>> n_initial_points x dim
