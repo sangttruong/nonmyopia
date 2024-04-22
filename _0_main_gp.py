@@ -16,6 +16,9 @@ import numpy as np
 import torch
 import copy
 import pandas as pd
+from tueplots import bundles
+
+plt.rcParams.update(bundles.neurips2023())
 
 
 class Parameters:
@@ -177,22 +180,24 @@ def eval(
     wm,
     cfg,
     eval_fns,
+    data_x=None,
     n_points=10000
 ):
     r"""Evaluate function."""
 
     # Evaluate ###############################################################
-    if cfg.env_name == "AntBO":
-        data_x = np.random.randint(0, 10, (n_points, 11))
-    elif cfg.env_name == "Sequence":
-        data_x = np.random.randint(0, 10, (n_points, 8))
-    else:
-        data_x = np.random.uniform(
-            low=cfg.bounds[..., 0],
-            high=cfg.bounds[..., 1],
-            size=[n_points, local_parms.x_dim]
-        )
-        data_x = torch.tensor(data_x, dtype=torch.float32)
+    if data_x is None:
+        if cfg.env_name == "AntBO":
+            data_x = np.random.randint(0, 10, (n_points, 11))
+        elif cfg.env_name == "Sequence":
+            data_x = np.random.randint(0, 10, (n_points, 8))
+        else:
+            data_x = np.random.uniform(
+                low=cfg.bounds[..., 0],
+                high=cfg.bounds[..., 1],
+                size=[n_points, local_parms.x_dim]
+            )
+            data_x = torch.tensor(data_x, dtype=torch.float32)
 
     data_y = func(data_x).reshape(-1)
     y_hat = wm.posterior(data_x).mean.detach()
@@ -364,7 +369,15 @@ def main(local_parms):
         R2_val = 1 - (RSS_val / TSS_val)
         return R2_val
 
-    eval_vals = eval(
+    train_eval_vals = eval(
+        func=env,
+        wm=WM,
+        cfg=local_parms,
+        eval_fns=[rmse_fn, rsquare_fn],
+        data_x=train_X,
+    )
+
+    test_eval_vals = eval(
         func=env,
         wm=WM,
         cfg=local_parms,
@@ -379,31 +392,51 @@ def main(local_parms):
             data_x=train_X,
         )
 
-    return eval_vals
+    return train_eval_vals, test_eval_vals
 
 
 def plot_means_stds(
-    means,
-    stds,
+    data,
     save_file
 ):
     fig, ax = plt.subplots()
-    ax.plot(
-        list(means.keys()),
-        np.array(list(means.values()))[..., 0],
-        # label="Mean",
-    )
-    ax.fill_between(
-        list(means.keys()),
-        np.array(list(means.values()))[..., 0] -
-        np.array(list(stds.values()))[..., 0],
-        np.array(list(means.values()))[..., 0] +
-        np.array(list(stds.values()))[..., 0],
-        alpha=0.3,
-        # label="Std",
-    )
-    ax.set_xlabel("Number of points")
-    ax.set_ylabel("RMSE")
+    for env_name in data.keys():
+        train_means = data[env_name]["train_means"]
+        train_stds = data[env_name]["train_stds"]
+        test_means = data[env_name]["test_means"]
+        test_stds = data[env_name]["test_stds"]
+
+        ax.plot(
+            list(train_means.keys()),
+            np.array(list(train_means.values()))[..., 1],
+            label=f"{env_name} - training",
+        )
+        ax.fill_between(
+            list(train_means.keys()),
+            np.array(list(train_means.values()))[..., 1] -
+            np.array(list(train_stds.values()))[..., 1],
+            np.array(list(train_means.values()))[..., 1] +
+            np.array(list(train_stds.values()))[..., 1],
+            alpha=0.2,
+        )
+
+        ax.plot(
+            list(test_means.keys()),
+            np.array(list(test_means.values()))[..., 1],
+            label=f"{env_name} - testing",
+            linestyle="--",
+        )
+        ax.fill_between(
+            list(test_means.keys()),
+            np.array(list(test_means.values()))[..., 1] -
+            np.array(list(test_stds.values()))[..., 1],
+            np.array(list(test_means.values()))[..., 1] +
+            np.array(list(test_stds.values()))[..., 1],
+            alpha=0.1,
+        )
+
+    ax.set_xlabel("Number of samples")
+    ax.set_ylabel("$R^2$")
     ax.legend()
     plt.savefig(save_file)
     plt.close()
@@ -420,12 +453,16 @@ if __name__ == "__main__":
     parser.add_argument("--gpu_id", type=int, default=0)
     args = parser.parse_args()
 
+    eval_metrics = {}
     for e, env_name in enumerate(args.env_names):
         print("Env name: ", env_name)
-        means = {}
-        stds = {}
-        for n_points in tqdm([1, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]):
-            list_vals = []
+        train_means = {}
+        train_stds = {}
+        test_means = {}
+        test_stds = {}
+        for n_points in tqdm([1, 5, ]):
+            list_train_vals = []
+            list_test_vals = []
             for i, seed in enumerate(args.seeds):
                 set_seed(seed)
                 local_args = copy.deepcopy(args)
@@ -439,24 +476,47 @@ if __name__ == "__main__":
                 dir_path = Path(str(init_dir_path))
                 dir_path.mkdir(parents=True, exist_ok=True)
 
-                vals = main(local_parms)
-                list_vals.append(vals)
+                train_vals, text_vals = main(local_parms)
+                list_train_vals.append(train_vals)
+                list_test_vals.append(text_vals)
 
-            list_vals = np.array(list_vals)
-            means[n_points] = np.mean(list_vals, axis=0)
-            stds[n_points] = np.std(list_vals, axis=0)
+            list_train_vals = np.array(list_train_vals)
+            list_test_vals = np.array(list_test_vals)
+            train_means[n_points] = np.mean(list_train_vals, axis=0)
+            train_stds[n_points] = np.std(list_train_vals, axis=0)
+            test_means[n_points] = np.mean(list_test_vals, axis=0)
+            test_stds[n_points] = np.std(list_test_vals, axis=0)
 
         # Save means and stds
-        save_path = f"{local_parms.save_dir}/{local_parms.env_name}.csv"
+        save_path = f"{local_parms.save_dir}/{local_parms.env_name}_train.csv"
         with open(save_path, "w") as f:
             f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
-            for n_points in means.keys():
+            for n_points in train_means.keys():
                 f.write(
-                    f"{n_points},{means[n_points][0]},{stds[n_points][0]},{means[n_points][1]},{stds[n_points][1]}\n")
+                    f"{n_points},{train_means[n_points][0]},{train_stds[n_points][0]},{train_means[n_points][1]},{train_stds[n_points][1]}\n")
+
+        save_path = f"{local_parms.save_dir}/{local_parms.env_name}_test.csv"
+        with open(save_path, "w") as f:
+            f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
+            for n_points in test_means.keys():
+                f.write(
+                    f"{n_points},{test_means[n_points][0]},{test_stds[n_points][0]},{test_means[n_points][1]},{test_stds[n_points][1]}\n")
 
         print(f"Saved to {save_path}")
 
+        eval_metrics[env_name] = {
+            "train_means": train_means,
+            "train_stds": train_stds,
+            "test_means": test_means,
+            "test_stds": test_stds,
+        }
+
         # Plot
-        plot_path = f"{local_parms.save_dir}/{local_parms.env_name}_rmse.pdf"
-        plot_means_stds(means, stds, plot_path)
-        print(f"Saved plot to {plot_path}")
+        plot_path = f"{local_parms.save_dir}/{local_parms.env_name}_r2.pdf"
+        plot_means_stds({env_name: eval_metrics[env_name]}, plot_path)
+        print(f"Saved env plot to {plot_path}")
+
+    # Plot
+    plot_path = f"gp_results/{'+'.join(args.env_names)}_r2.pdf"
+    plot_means_stds(eval_metrics, plot_path)
+    print(f"Saved plot to {plot_path}")
