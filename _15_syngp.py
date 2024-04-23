@@ -8,6 +8,7 @@ class SynGP:
 
     def __init__(self, dim, seed=8, noise_std=0.0):
         self.bounds = torch.tensor([[-1, 1]] * dim).T
+        self.dim = dim
         self.seed = seed
         self.noise_std = noise_std
         self.n_obs = 10
@@ -15,6 +16,8 @@ class SynGP:
         # self.hypers = {"ls": 0.25, "alpha": 1.0, "sigma": 1e-2, "n_dimx": dim}
         self.domain_samples = None
         self.prior_samples = None
+        self.dtype = torch.float64
+        self.device = torch.device("cpu")
 
     def initialize(self):
         """Initialize synthetic function."""
@@ -109,4 +112,5 @@ class SynGP:
 
     def to(self, dtype, device):
         self.dtype = dtype
+        self.device = device
         return self

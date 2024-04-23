@@ -42,13 +42,14 @@ class AlpineN1:
         return (d is None) or (d > 0)
 
     def __init__(self, dim, x_scale=1.0, y_scale=1.0, noise_std=0.0, verbose=True):
-        self.d = dim
+        self.dim = dim
         self.input_domain = np.array([[0, 10] for _ in range(dim)])
         self.x_scale = x_scale
         self.y_scale = y_scale
         self.noise_std = noise_std
         self.bounds = self.get_bounds(original=True)
         self.bounds = torch.tensor([self.bounds] * dim).T
+        self.dtype = torch.float64
         if verbose:
             print(f"AlpineN1: x_scale={self.x_scale}, y_scale={self.y_scale}")
 
@@ -79,7 +80,7 @@ class AlpineN1:
         return res
 
     def call_tensor(self, x_list):
-        assert x_list.shape[-1] == self.d
+        assert x_list.shape[-1] == self.dim
         y_tensor = self.call_single(x_list)
         return y_tensor
 

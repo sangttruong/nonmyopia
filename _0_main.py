@@ -40,6 +40,7 @@ from _11_kernels import TransformedCategorical
 from _12_alpine import AlpineN1
 from _14_sequence_design_func import SequenceDesignFunction
 from _15_syngp import SynGP
+from _16_env_wrapper import EnvWrapper
 
 
 class Parameters:
@@ -330,7 +331,7 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
         f_.bounds[0, :] = torch.tensor(bounds[..., 0], device=f_.bounds.device)
         f_.bounds[1, :] = torch.tensor(bounds[..., 1], device=f_.bounds.device)
 
-    return f_
+    return EnvWrapper(f_)
 
 
 def make_save_dir(config):

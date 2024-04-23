@@ -15,6 +15,7 @@ from tqdm import tqdm
 import numpy as np
 import torch
 import copy
+import os
 import pandas as pd
 from tueplots import bundles
 
@@ -41,7 +42,7 @@ class Parameters:
         self.env_name = args.env_name
         self.env_noise = args.env_noise
         self.y_dim = 1
-        self.save_dir = f"gp_results/{args.env_name}"
+        self.save_dir = f"gp_results/{args.env_name}_noise{args.env_noise}"
 
         if args.env_discretized:
             self.env_discretized = True
@@ -295,18 +296,7 @@ def plot(
     plt.close()
 
 
-def main(local_parms):
-    env = make_env(
-        name=local_parms.env_name,
-        x_dim=local_parms.x_dim,
-        bounds=local_parms.bounds,
-        noise_std=local_parms.env_noise,
-    )
-    env = env.to(
-        dtype=local_parms.torch_dtype,
-        device=local_parms.device,
-    )
-
+def main(env, local_parms):
     # Random select initial points
     bounds = np.array(local_parms.bounds)
     if bounds.shape[0] < local_parms.x_dim:
@@ -456,53 +446,80 @@ if __name__ == "__main__":
     eval_metrics = {}
     for e, env_name in enumerate(args.env_names):
         print("Env name: ", env_name)
+        args.seed = None
+        args.env_name = env_name
+        local_parms = Parameters(args)
+
+        env = make_env(
+            name=local_parms.env_name,
+            x_dim=local_parms.x_dim,
+            bounds=local_parms.bounds,
+            noise_std=local_parms.env_noise,
+        )
+        env = env.to(
+            dtype=local_parms.torch_dtype,
+            device=local_parms.device,
+        )
+
         train_means = {}
         train_stds = {}
         test_means = {}
         test_stds = {}
-        for n_points in tqdm([1, 5, ]):
-            list_train_vals = []
-            list_test_vals = []
-            for i, seed in enumerate(args.seeds):
-                set_seed(seed)
-                local_args = copy.deepcopy(args)
-                local_args.seed = seed
-                local_args.env_name = env_name
 
-                local_parms = Parameters(local_args)
-                local_parms.n_points = n_points
+        if os.path.exists(f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_train.csv") and os.path.exists(f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_test.csv"):
+            train_df = pd.read_csv(
+                f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_train.csv")
+            train_means = {p: [x, y] for p, x, y in zip(
+                train_df["n_points"].values, train_df["rmse_mean"].values, train_df["rsquare_mean"].values)}
+            train_stds = {p: [x, y] for p, x, y in zip(
+                train_df["n_points"].values, train_df["rmse_std"].values, train_df["rsquare_std"].values)}
 
-                init_dir_path = Path(local_parms.save_dir)
-                dir_path = Path(str(init_dir_path))
-                dir_path.mkdir(parents=True, exist_ok=True)
+            test_df = pd.read_csv(
+                f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_test.csv")
+            test_means = {p: [x, y] for p, x, y in zip(
+                test_df["n_points"].values, test_df["rmse_mean"].values, test_df["rsquare_mean"].values)}
+            test_stds = {p: [x, y] for p, x, y in zip(
+                test_df["n_points"].values, test_df["rmse_std"].values, test_df["rsquare_std"].values)}
+        else:
+            for n_points in tqdm([1, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]):
+                list_train_vals = []
+                list_test_vals = []
+                for i, seed in enumerate(args.seeds):
+                    set_seed(seed)
+                    local_parms.seed = seed
+                    local_parms.n_points = n_points
 
-                train_vals, text_vals = main(local_parms)
-                list_train_vals.append(train_vals)
-                list_test_vals.append(text_vals)
+                    init_dir_path = Path(local_parms.save_dir)
+                    dir_path = Path(str(init_dir_path))
+                    dir_path.mkdir(parents=True, exist_ok=True)
 
-            list_train_vals = np.array(list_train_vals)
-            list_test_vals = np.array(list_test_vals)
-            train_means[n_points] = np.mean(list_train_vals, axis=0)
-            train_stds[n_points] = np.std(list_train_vals, axis=0)
-            test_means[n_points] = np.mean(list_test_vals, axis=0)
-            test_stds[n_points] = np.std(list_test_vals, axis=0)
+                    train_vals, text_vals = main(env, local_parms)
+                    list_train_vals.append(train_vals)
+                    list_test_vals.append(text_vals)
 
-        # Save means and stds
-        save_path = f"{local_parms.save_dir}/{local_parms.env_name}_train.csv"
-        with open(save_path, "w") as f:
-            f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
-            for n_points in train_means.keys():
-                f.write(
-                    f"{n_points},{train_means[n_points][0]},{train_stds[n_points][0]},{train_means[n_points][1]},{train_stds[n_points][1]}\n")
+                list_train_vals = np.array(list_train_vals)
+                list_test_vals = np.array(list_test_vals)
+                train_means[n_points] = np.mean(list_train_vals, axis=0)
+                train_stds[n_points] = np.std(list_train_vals, axis=0)
+                test_means[n_points] = np.mean(list_test_vals, axis=0)
+                test_stds[n_points] = np.std(list_test_vals, axis=0)
 
-        save_path = f"{local_parms.save_dir}/{local_parms.env_name}_test.csv"
-        with open(save_path, "w") as f:
-            f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
-            for n_points in test_means.keys():
-                f.write(
-                    f"{n_points},{test_means[n_points][0]},{test_stds[n_points][0]},{test_means[n_points][1]},{test_stds[n_points][1]}\n")
+            # Save means and stds
+            save_path = f"{local_parms.save_dir}/{local_parms.env_name}_train.csv"
+            with open(save_path, "w") as f:
+                f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
+                for n_points in train_means.keys():
+                    f.write(
+                        f"{n_points},{train_means[n_points][0]},{train_stds[n_points][0]},{train_means[n_points][1]},{train_stds[n_points][1]}\n")
 
-        print(f"Saved to {save_path}")
+            save_path = f"{local_parms.save_dir}/{local_parms.env_name}_test.csv"
+            with open(save_path, "w") as f:
+                f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
+                for n_points in test_means.keys():
+                    f.write(
+                        f"{n_points},{test_means[n_points][0]},{test_stds[n_points][0]},{test_means[n_points][1]},{test_stds[n_points][1]}\n")
+
+            print(f"Saved to {save_path}")
 
         eval_metrics[env_name] = {
             "train_means": train_means,
@@ -512,11 +529,12 @@ if __name__ == "__main__":
         }
 
         # Plot
-        plot_path = f"{local_parms.save_dir}/{local_parms.env_name}_r2.pdf"
+        plot_path = f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_r2.pdf"
         plot_means_stds({env_name: eval_metrics[env_name]}, plot_path)
         print(f"Saved env plot to {plot_path}")
 
     # Plot
-    plot_path = f"gp_results/{'+'.join(args.env_names)}_r2.pdf"
-    plot_means_stds(eval_metrics, plot_path)
-    print(f"Saved plot to {plot_path}")
+    if len(args.env_names) > 1:
+        plot_path = f"gp_results/{'+'.join(args.env_names)}_noise{args.env_noise}_r2.pdf"
+        plot_means_stds(eval_metrics, plot_path)
+        print(f"Saved plot to {plot_path}")
