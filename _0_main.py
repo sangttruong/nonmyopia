@@ -197,6 +197,11 @@ class Parameters:
             self.radius = 1
             self.kernel = TransformedCategorical()
 
+        elif self.env_name == "logcos":
+            self.x_dim = 2
+            self.radius = 0.4
+            self.bounds = [[1, 8], [0, 3]]
+
         else:
             raise NotImplementedError
 
@@ -302,6 +307,9 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
         f_ = StyblinskiTang(dim=x_dim, negate=True, noise_std=noise_std)
     elif name == "SynGP":
         f_ = SynGP(dim=x_dim, noise_std=noise_std)
+    elif name == "logcos":
+        from _17_logcos import LogCos
+        f_ = LogCos(dim=x_dim, noise_std=noise_std)
     elif name == "AntBO":
         assert x_dim == 11, "AntBO only runs on 11-dim X"
         bbox = {

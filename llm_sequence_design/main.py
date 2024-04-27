@@ -13,7 +13,6 @@ from src.llmtuner.data.parser import get_dataset_list
 from src.llmtuner.data.utils import checksum, merge_dataset
 
 from oracle import Oracle
-from policy import Policy
 from world_model import WorldModel
 from actor import Actor
 from configs import (
@@ -36,7 +35,7 @@ from utils import (
 
 def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["TrainerCallback"]] = None):
     wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
-        wm_finetuning_args, policy_finetuning_args, generating_args = get_bo_args(
+        wm_finetuning_args, policy_finetuning_args, generating_args, bo_args = get_bo_args(
             args)
     callbacks = [LogCallback()] if callbacks is None else callbacks
 
@@ -50,7 +49,6 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     # Initializing models
     # oracle = Oracle(oracle_model_args, wm_finetuning_args)
     world_model = WorldModel(wm_model_args, wm_finetuning_args)
-    # policy = Policy(policy_model_args, policy_finetuning_args)
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):
@@ -79,7 +77,8 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         "dataset": initial_dataset,
         "eval_rmse": []
     }
-    actor = Actor(policy_model_args, policy_finetuning_args)
+    actor = Actor(bo_args, policy_model_args,
+                  policy_finetuning_args, training_args, generating_args)
 
     # Startign BO loop
     for i in range(number_of_iterations):
@@ -91,14 +90,18 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
             callbacks=callbacks
         )
 
-        breakpoint()
-        # if actor.algo_lookahead_steps > 1 and (
-        #     number_of_iterations - i < actor.algo_lookahead_steps
-        # ):
-        #     actor.algo_lookahead_steps -= 1
+        # Adjusting the lookahead steps
+        if actor.algo_lookahead_steps > 1 and (
+            number_of_iterations - i < actor.algo_lookahead_steps
+        ):
+            actor.algo_lookahead_steps -= 1
 
-        # # Get the next action
-        # iter_start_time = time.time()
+        # Get the next action
+        iter_start_time = time.time()
+        next_x = actor.query(buffer["dataset"], world_model)
+
+        iter_end_time = time.time()
+        print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
 
         # Final evaluation
 

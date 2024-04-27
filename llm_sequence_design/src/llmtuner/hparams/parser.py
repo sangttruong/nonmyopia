@@ -12,6 +12,7 @@ from transformers.utils.versions import require_version
 
 from ..extras.logging import get_logger
 from ..extras.misc import check_dependencies, get_current_device
+from .bo_algo_args import BOArguments
 from .bo_model_args import WMArguments, OracleArguments, PolicyArguments
 from .bo_finetuning_args import WMFinetuningArguments, PolicyFinetuningArguments
 from .data_args import DataArguments
@@ -32,9 +33,9 @@ _TRAIN_ARGS = [ModelArguments, DataArguments,
 _TRAIN_CLS = Tuple[ModelArguments, DataArguments,
                    Seq2SeqTrainingArguments, FinetuningArguments, GeneratingArguments]
 _BO_ARGS = [WMArguments, OracleArguments, PolicyArguments,
-            DataArguments, Seq2SeqTrainingArguments, WMFinetuningArguments, PolicyFinetuningArguments, GeneratingArguments]
+            DataArguments, Seq2SeqTrainingArguments, WMFinetuningArguments, PolicyFinetuningArguments, GeneratingArguments, BOArguments]
 _BO_CLS = Tuple[WMArguments, OracleArguments, PolicyArguments,
-                DataArguments, Seq2SeqTrainingArguments, WMFinetuningArguments, PolicyFinetuningArguments, GeneratingArguments]
+                DataArguments, Seq2SeqTrainingArguments, WMFinetuningArguments, PolicyFinetuningArguments, GeneratingArguments, BOArguments]
 _INFER_ARGS = [ModelArguments, DataArguments,
                FinetuningArguments, GeneratingArguments]
 _INFER_CLS = Tuple[ModelArguments, DataArguments,
@@ -134,7 +135,7 @@ def _parse_eval_args(args: Optional[Dict[str, Any]] = None) -> _EVAL_CLS:
 
 def get_bo_args(args: Optional[Dict[str, Any]] = None) -> _BO_CLS:
     wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
-        wm_finetuning_args, policy_finetuning_args, generating_args = _parse_bo_args(
+        wm_finetuning_args, policy_finetuning_args, generating_args, bo_args = _parse_bo_args(
             args)
 
     # Setup logging
@@ -340,7 +341,7 @@ def get_bo_args(args: Optional[Dict[str, Any]] = None) -> _BO_CLS:
     transformers.set_seed(training_args.seed)
 
     return wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
-        wm_finetuning_args, policy_finetuning_args, generating_args
+        wm_finetuning_args, policy_finetuning_args, generating_args, bo_args
 
 
 def get_train_args(args: Optional[Dict[str, Any]] = None) -> _TRAIN_CLS:

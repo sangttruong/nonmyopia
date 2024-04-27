@@ -124,6 +124,11 @@ class Parameters:
             self.bounds = [-1, 1]
             self.radius = 0.15
 
+        elif self.env_name == "logcos":
+            self.x_dim = 2
+            self.radius = 0.4
+            self.bounds = [[1, 8], [0, 3]]
+
         elif self.env_name == "AntBO":
             self.x_dim = 11
             self.kernel = TransformedCategorical(

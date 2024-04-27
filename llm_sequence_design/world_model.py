@@ -1,5 +1,6 @@
-import json
 import os
+import copy
+import json
 from functools import partial
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, Union, Any
 
@@ -57,7 +58,7 @@ class WorldModel:
         training_args,
         data_args,
         callbacks: Optional[List["TrainerCallback"]] = None,
-        *args, **kwargs
+        **kwargs
     ):
         dataset_emb = get_dataset_embedding(
             dataset, self.model, self.tokenizer, data_args)
@@ -99,7 +100,7 @@ class WorldModel:
         training_args,
         data_args,
         callbacks: Optional[List["TrainerCallback"]] = None,
-        *args, **kwargs
+        **kwargs
     ):
         # Dataset has loaded to correct column names
         # Now we can preprocess the dataset
@@ -129,12 +130,15 @@ class WorldModel:
                 exit(0)
 
         # Update arguments
-        training_args.remove_unused_columns = False  # important for pairwise dataset
+        wm_training_args = copy.deepcopy(training_args)
+        wm_training_args.output_dir = os.path.join(
+            training_args.output_dir, "world_model")
+        wm_training_args.remove_unused_columns = False  # important for pairwise dataset
 
         # Initialize our Trainer
         trainer = WMTrainer(
             model=self.model,
-            args=training_args,
+            args=wm_training_args,
             finetuning_args=self.finetuning_args,
             tokenizer=self.tokenizer,
             callbacks=callbacks + [FixValueHeadModelCallback()],
@@ -144,16 +148,16 @@ class WorldModel:
 
         # Training
         train_result = trainer.train(
-            resume_from_checkpoint=training_args.resume_from_checkpoint)
+            resume_from_checkpoint=wm_training_args.resume_from_checkpoint)
         trainer.save_model()
-        if training_args.should_save:
+        if wm_training_args.should_save:
             fix_valuehead_checkpoint(
-                self.model, training_args.output_dir, training_args.save_safetensors)
+                self.model, wm_training_args.output_dir, wm_training_args.save_safetensors)
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
         if trainer.is_world_process_zero() and self.finetuning_args.plot_loss:
-            plot_loss(training_args.output_dir, keys=[
+            plot_loss(wm_training_args.output_dir, keys=[
                 "loss", "eval_loss", "eval_rmse"])
 
 

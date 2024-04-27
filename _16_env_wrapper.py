@@ -8,6 +8,7 @@ class EnvWrapper:
         self.env = env
         self.bounds = env.bounds
         self.range_y = [self.optimize_min(), self.optimize_max()]
+        print("Env range: ", self.range_y)
 
     def optimize_min(self):
         def _min_fn_():
@@ -50,14 +51,14 @@ class EnvWrapper:
 
 
 if __name__ == '__main__':
-    from botorch.test_functions.synthetic import Ackley
     from _15_syngp import SynGP
     from _12_alpine import AlpineN1
-    # env = AlpineN1(dim=2)
-    env = SynGP(dim=2)
+    from _17_logcos import LogCos
+    env = AlpineN1(dim=2)
+    # env = SynGP(dim=2)
+    # env = LogCos(dim=2)
     env.bounds[0, :] = torch.tensor(
-        [-1, -1], device=env.bounds.device)
+        [1, 0], device=env.bounds.device)
     env.bounds[1, :] = torch.tensor(
-        [1, 1], device=env.bounds.device)
+        [8, 3], device=env.bounds.device)
     env = EnvWrapper(env)
-    print(env.range_y)

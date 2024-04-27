@@ -39,12 +39,12 @@ logger = get_logger(__name__)
 class Policy:
     def __init__(self, model_args, finetuning_args):
         self.tokenizer = load_tokenizer(model_args)
-        self.__model__ = load_model(self.tokenizer,
-                                    model_args,
-                                    finetuning_args,
-                                    is_trainable=True,
-                                    add_valuehead=False
-                                    )
+        self.model = load_model(self.tokenizer,
+                                model_args,
+                                finetuning_args,
+                                is_trainable=True,
+                                add_valuehead=False
+                                )
 
         self.__prompt__ = POLICY_PROMPT
 
@@ -63,7 +63,7 @@ class Policy:
                 "attention_mask": [torch.one_likes(x) for x in input_ids],
             }
 
-            generations = self.__model__.generate(
+            generations = self.model.generate(
                 model_inputs, *args, **kwargs)
             generations_valid = self.__verify_output__(X, generations)
             input_ids = []
