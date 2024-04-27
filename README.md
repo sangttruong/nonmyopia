@@ -57,3 +57,36 @@ options:
   --env_discretized
   --gpu_id GPU_ID
 ```
+
+## Running the real-world experiments
+1. Train the oracle model
+```bash
+accelerate launch --main_process_port 29505 src/train_bash.py \
+    --stage oracle \
+    --do_train \
+    --template default \
+    --model_name_or_path facebook/esm2_t36_3B_UR50D \
+    --use_fast_tokenizer True \
+    --finetuning_type freeze \
+    --flash_attn False \
+    --dataset proteinea/fluorescence \
+    --preprocessing_num_workers 32 \
+    --num_train_epochs 10.0 \
+    --bf16 False \
+    --tf32 False \
+    --per_device_train_batch_size 4 \
+    --gradient_accumulation_steps 8 \
+    --learning_rate 5e-05 \
+    --lr_scheduler_type cosine \
+    --max_grad_norm 1.0 \
+    --logging_steps 1 \
+    --warmup_ratio 0.01 \
+    --save_steps 1000 \
+    --output_dir ckpts/oracle2_test \
+    --save_total_limit 5 \
+    --report_to none \
+    --plot_loss True
+```
+2. Running the experiments
+```bash
+```
