@@ -79,6 +79,6 @@ class Actor:
                 fix_valuehead_checkpoint(
                     self.policy.model, self.training_args.output_dir, self.training_args.save_safetensors)
             ppo_trainer.save_state()  # must be called after save_model to have a folder
-            if ppo_trainer.is_world_process_zero() and self.finetuning_args.plot_loss:
+            if ppo_trainer.is_world_process_zero() and self.policy_finetuning_args.plot_loss:
                 plot_loss(self.training_args.output_dir,
                           keys=["loss", "reward"])

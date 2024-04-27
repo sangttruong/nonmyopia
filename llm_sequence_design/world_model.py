@@ -60,6 +60,10 @@ class WorldModel:
         callbacks: Optional[List["TrainerCallback"]] = None,
         **kwargs
     ):
+        wm_training_args = copy.deepcopy(training_args)
+        wm_training_args.output_dir = os.path.join(
+            training_args.output_dir, "world_model")
+
         dataset_emb = get_dataset_embedding(
             dataset, self.model, self.tokenizer, data_args)
 
@@ -72,9 +76,9 @@ class WorldModel:
             in_features=self.model.pretrained_model.model.config.hidden_size, out_features=1)
 
         optimizer = torch.optim.AdamW(
-            linear_model.parameters(), lr=training_args.learning_rate)
+            linear_model.parameters(), lr=wm_training_args.learning_rate)
 
-        for epoch in range(int(training_args.num_train_epochs)):
+        for epoch in range(int(wm_training_args.num_train_epochs)):
             for batch in dataset_loader:
                 X = torch.stack(batch['inputs_embeds']).float().T
                 y = batch['rewards'].reshape(-1, 1).float()
@@ -89,10 +93,10 @@ class WorldModel:
 
         self.model.v_head.summary.load_state_dict(linear_model.state_dict())
         self.model.save_pretrained(
-            training_args.output_dir, safe_serialization=training_args.save_safetensors)
+            wm_training_args.output_dir, safe_serialization=wm_training_args.save_safetensors)
         if training_args.should_save:
             fix_valuehead_checkpoint(
-                self.model, training_args.output_dir, training_args.save_safetensors)
+                self.model, wm_training_args.output_dir, wm_training_args.save_safetensors)
 
     def train(
         self,

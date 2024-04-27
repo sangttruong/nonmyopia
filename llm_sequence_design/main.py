@@ -18,7 +18,6 @@ from actor import Actor
 from configs import (
     initinal_samples,
     samples_per_iteration,
-    number_of_iterations,
     TRAINING_DATA_BUFFER,
     TESTING_DATA_BUFFER,
 )
@@ -81,7 +80,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
                   policy_finetuning_args, training_args, generating_args)
 
     # Startign BO loop
-    for i in range(number_of_iterations):
+    for i in range(bo_args.algo_n_iterations):
         # Warming up reward models
         world_model.train_v2(
             dataset=buffer["dataset"],
@@ -92,7 +91,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
         # Adjusting the lookahead steps
         if actor.algo_lookahead_steps > 1 and (
-            number_of_iterations - i < actor.algo_lookahead_steps
+            bo_args.algo_n_iterations - i < actor.algo_lookahead_steps
         ):
             actor.algo_lookahead_steps -= 1
 
