@@ -8,15 +8,15 @@ class BOArguments:
     Arguments pertaining to the BO hyperparameters.
     """
 
-    algos: List[str] = field(
-        default=["HES"],
+    algo: str = field(
+        default="HES",
         metadata={
             "help": "The list of algorithms to use for BO. \
                     Choices: ['HES', 'qKG', 'qEI', 'qPI', 'qSR', 'qUCB', 'qMSL', 'qNIPV']"
         },
     )
 
-    algo_ts: bool = field(
+    algo_ts: Optional[bool] = field(
         default=True,
         metadata={
             "help": "Whether to use Thompson sampling for BO."
@@ -37,35 +37,35 @@ class BOArguments:
         },
     )
 
-    cost_spotlight_k: int = field(
+    cost_spotlight_k: Optional[int] = field(
         default=100,
         metadata={
             "help": "The k factor to use for spotlighting the cost."
         },
     )
 
-    cost_p_norm: float = field(
+    cost_p_norm: Optional[float] = field(
         default=2.0,
         metadata={
             "help": "The p-norm to use for the cost."
         },
     )
 
-    cost_max_noise: float = field(
+    cost_max_noise: Optional[float] = field(
         default=1e-5,
         metadata={
             "help": "The maximum noise to use for the cost."
         },
     )
 
-    cost_discount: float = field(
+    cost_discount: Optional[float] = field(
         default=0.0,
         metadata={
             "help": "The discount factor to use for the cost."
         },
     )
 
-    cost_discount_threshold: float = field(
+    cost_discount_threshold: Optional[float] = field(
         default=-1,
         metadata={
             "help": "The discount threshold to use for the cost."

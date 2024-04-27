@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, List, Optional
 from src.llmtuner.extras.callbacks import FixValueHeadModelCallback
 from src.llmtuner.extras.misc import fix_valuehead_checkpoint
 from src.llmtuner.extras.ploting import plot_loss
-from src.llmtuner.train.ppo.utils import create_ref_model
+from src.llmtuner.train.utils import create_ref_model
 from acqfs import (
     acqf_hes,
 )
@@ -28,7 +28,7 @@ class Actor:
 
         self.algo_lookahead_steps = bo_args.algo_lookahead_steps
 
-        if self.bo_args.acqf == "HES":
+        if self.bo_args.algo == "HES":
             self.acqf = acqf_hes
         else:
             raise NotImplementedError
