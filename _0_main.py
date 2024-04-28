@@ -57,25 +57,15 @@ class Parameters:
         print("Using device:", self.device)
 
         self.gpu_id = args.gpu_id
-        self.torch_dtype = torch.float32
-        self.continue_once = args.continue_once
+        self.torch_dtype = torch.double
+        self.cont = args.cont
         self.test_only = args.test_only
         self.seed = args.seed
 
         if not self.test_only:
             self.save_dir = (
-                f"./results/exp_{args.algo}_{args.env_name}_{args.algo_lookahead_steps}"
+                f"./results/{args.env_name}_{args.env_noise}/{args.algo}_ls{args.algo_lookahead_steps}_seed{args.seed}"
             )
-        else:
-            self.save_dir = self.continue_once
-            with open(
-                os.path.join(self.save_dir, "parameters.json"), "r", encoding="utf-8"
-            ) as file_handle:
-                text = file_handle.read()
-                lines = text.split("\n")
-                for line in lines:
-                    if "seed" in line:
-                        self.seed = int(line.split(": ")[1])
 
         self.algo = args.algo
         self.algo_ts = args.algo_ts
@@ -349,18 +339,21 @@ def make_save_dir(config):
     r"""Create save directory without overwriting directories."""
     if config.test_only:
         return
-
     init_dir_path = Path(config.save_dir)
     dir_path = Path(str(init_dir_path))
 
-    for i in range(100):
-        try:
-            dir_path.mkdir(parents=True, exist_ok=False)
-            break
-        except FileExistsError:
-            dir_path = Path(str(init_dir_path) + "_" + str(i).zfill(2))
-
-    config.save_dir = str(dir_path)
+    if not config.cont and not os.path.exists(config.save_dir):
+        dir_path.mkdir(parents=True, exist_ok=False)
+    elif not config.cont and os.path.exists(config.save_dir):
+        for i in range(100):
+            try:
+                dir_path.mkdir(parents=True, exist_ok=False)
+                break
+            except FileExistsError:
+                dir_path = Path(str(init_dir_path) + "_" + str(i).zfill(2))
+        config.save_dir = str(dir_path)
+    elif config.cont and not os.path.exists(config.save_dir):
+        raise FileNotFoundError(f"save_dir: {config.save_dir} does not exist")
     print(f"Created save_dir: {config.save_dir}")
 
     # Save config to save_dir as parameters.json
@@ -389,7 +382,7 @@ if __name__ == "__main__":
     parser.add_argument("--cost_discount", type=float, default=0.0)
     parser.add_argument("--cost_discount_threshold", type=float, default=-1)
     parser.add_argument("--gpu_id", nargs="+", type=int, default=[0])
-    parser.add_argument("--continue_once", type=str, default="")
+    parser.add_argument("--cont", action="store_true")
     parser.add_argument("--test_only", action="store_true")
     args = parser.parse_args()
 

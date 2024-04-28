@@ -134,10 +134,10 @@ def run(parms, env) -> None:
     else:
         embedder = None
 
-    if parms.continue_once and not parms.test_only:
+    if parms.cont and not parms.test_only:
         # Load buffers from previous iterations
         buffer_old = torch.load(
-            os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device
+            os.path.join(parms.save_dir, "buffer.pt"), map_location=parms.device
         )
         for key in list(buffer_old.keys()):
             buffer[key] = buffer_old[key]
@@ -149,9 +149,9 @@ def run(parms, env) -> None:
         torch.cuda.empty_cache()
         print("Continue from iteration: {}".format(continue_iter))
 
-    elif parms.continue_once and parms.test_only:
+    elif parms.cont and parms.test_only:
         buffer = torch.load(
-            os.path.join(parms.continue_once, "buffer.pt"), map_location=parms.device
+            os.path.join(parms.save_dir, "buffer.pt"), map_location=parms.device
         )
         WM = SingleTaskGP(
             buffer["x"][: parms.n_initial_points],
