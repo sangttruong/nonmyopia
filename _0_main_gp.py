@@ -56,8 +56,8 @@ class Parameters:
 
         if self.env_name == "Ackley":
             self.x_dim = 2
-            self.bounds = [-32.768, 32.768]
-            self.radius = 4.75
+            self.bounds = [-2, 2]
+            self.radius = 0.3
 
         elif self.env_name == "Alpine":
             self.x_dim = 2
@@ -81,8 +81,8 @@ class Parameters:
 
         elif self.env_name == "EggHolder":
             self.x_dim = 2
-            self.bounds = [-512, 512]
-            self.radius = 75.0
+            self.bounds = [-100, 100]
+            self.radius = 15.0
 
         elif self.env_name == "Griewank":
             self.x_dim = 2
@@ -96,8 +96,8 @@ class Parameters:
 
         elif self.env_name == "HolderTable":
             self.x_dim = 2
-            self.bounds = [-10, 10]
-            self.radius = 1.5
+            self.bounds = [-2.5, 2.5]
+            self.radius = 0.4
 
         elif self.env_name == "Levy":
             self.x_dim = 2
@@ -146,32 +146,8 @@ class Parameters:
 
         # Random select initial points
         self.bounds = np.array(self.bounds)
-        if self.bounds.ndim < self.x_dim:
+        if self.bounds.ndim < 2 or self.bounds.shape[0] < self.x_dim:
             self.bounds = np.tile(self.bounds, [self.x_dim, 1])
-        self.n_initial_points = 3**self.x_dim + 1
-
-        ranges = np.linspace(self.bounds[..., 0], self.bounds[..., 1], 4).T
-        range_bounds = np.stack((ranges[:, :-1], ranges[:, 1:]), axis=-1)
-        cartesian_idxs = np.array(np.meshgrid(*([[0, 1, 2]] * self.x_dim))).T.reshape(
-            -1, self.x_dim
-        )
-        cartesian_rb = range_bounds[list(range(self.x_dim)), cartesian_idxs]
-
-        self.initial_points = np.concatenate(
-            (
-                np.random.uniform(
-                    low=cartesian_rb[..., 0],
-                    high=cartesian_rb[..., 1],
-                    size=[3**self.x_dim, self.x_dim],
-                ),
-                np.random.uniform(
-                    low=self.bounds[..., 0],
-                    high=self.bounds[..., 1],
-                    size=[1, self.x_dim],
-                ),
-            ),
-            axis=0,
-        )
 
     def __str__(self):
         r"""Return string representation of parameters."""

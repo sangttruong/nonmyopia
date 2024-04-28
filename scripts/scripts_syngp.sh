@@ -2,33 +2,87 @@
 
 # Declear the intended GPU id
 gpu_id=(0 1 2 3 4 5 6 7 8 9)
+
 # Declare an array contraining all the seeds
 seeds=(1 2 3 4 5 6 7 8 9 10)
+
 # Declear an array containing all the algorithms
 algos=(qMSL qSR qEI qPI qUCB qKG)
+
 # Declare an array containing all environments
 envs=(SynGP)
-# Declare a hash map containing all the bounds for each environment
-declare -A env_lower_bounds
-declare -A env_upper_bounds
-env_lower_bounds=(["SynGP"]=-1 ["HolderTable"]=1 ["EggHolder"]=-512 ["Alpine"]=0)
-env_upper_bounds=(["SynGP"]=1 ["HolderTable"]=10 ["EggHolder"]=512 ["Alpine"]=10)
+
 # Declare a hash map containing all the iterations for each environment
 declare -A env_iterations
-env_iterations=(["SynGP"]=30 ["HolderTable"]=30 ["EggHolder"]=16 ["Alpine"]=30)
+env_iterations=( \
+        ["Ackley"]=120 \
+        ["Alpine"]=150 \
+        ["Beale"]=75 \
+        ["Branin"]=20 \
+        ["Cosine8"]=200 \
+        ["EggHolder"]=150 \
+        ["Griewank"]=20 \
+        ["Hartmann"]=500 \
+        ["HolderTable"]=100 \
+        ["Levy"]=90 \
+        ["Powell"]=150 \
+        ["SixHumpCamel"]=50 \
+        ["StyblinskiTang"]=50 \
+        ["SynGP"]=75 \
+)
+
+# Declare a hash map containing all the iterations for each environment
+declare -A env_initial_points
+env_initial_points=( \
+        ["Ackley"]=20 \
+        ["Alpine"]=50 \
+        ["Beale"]=40 \
+        ["Branin"]=10 \
+        ["Cosine8"]=50 \
+        ["EggHolder"]=35 \
+        ["Griewank"]=8 \
+        ["Hartmann"]=100 \
+        ["HolderTable"]=20 \
+        ["Levy"]=40 \
+        ["Powell"]=35 \
+        ["SixHumpCamel"]=20 \
+        ["StyblinskiTang"]=30 \
+        ["SynGP"]=25 \
+)
+
 # Declare a hash map containing all the lookahead steps for each algorithm in each environment
 declare -A algo_lookahead
 algo_lookahead=( \
-        ["SynGP,HES"]=15 ["SynGP,qMSL"]=3 ["SynGP,qSR"]=0 ["SynGP,qEI"]=0 \
-        ["SynGP,qPI"]=0 ["SynGP,qUCB"]=0 ["SynGP,qKG"]=0 \
-        ["HolderTable,HES"]=15 ["HolderTable,qMSL"]=3 ["HolderTable,qSR"]=0 ["HolderTable,qEI"]=0 \
-        ["HolderTable,qPI"]=0 ["HolderTable,qUCB"]=0 ["HolderTable,qKG"]=0 \
-        ["EggHolder,HES"]=10 ["EggHolder,qMSL"]=3 ["EggHolder,qSR"]=0 ["EggHolder,qEI"]=0 \
-        ["EggHolder,qPI"]=0 ["EggHolder,qUCB"]=0 ["EggHolder,qKG"]=0 \
-        ["Alpine,HES"]=15 ["Alpine,qMSL"]=3 ["Alpine,qSR"]=0 ["Alpine,qEI"]=0 \
+        ["Ackley,HES"]=20 ["Ackley,qMSL"]=3 ["Ackley,qSR"]=0 ["Ackley,qEI"]=0 \
+        ["Ackley,qPI"]=0 ["Ackley,qUCB"]=0 ["Ackley,qKG"]=0 \
+        ["Alpine,HES"]=20 ["Alpine,qMSL"]=3 ["Alpine,qSR"]=0 ["Alpine,qEI"]=0 \
         ["Alpine,qPI"]=0 ["Alpine,qUCB"]=0 ["Alpine,qKG"]=0 \
+        ["Beale,HES"]=20 ["Beale,qMSL"]=3 ["Beale,qSR"]=0 ["Beale,qEI"]=0 \
+        ["Beale,qPI"]=0 ["Beale,qUCB"]=0 ["Beale,qKG"]=0 \
+        ["Branin,HES"]=20 ["Branin,qMSL"]=3 ["Branin,qSR"]=0 ["Branin,qEI"]=0 \
+        ["Branin,qPI"]=0 ["Branin,qUCB"]=0 ["Branin,qKG"]=0 \
+        ["Cosine8,HES"]=20 ["Cosine8,qMSL"]=3 ["Cosine8,qSR"]=0 ["Cosine8,qEI"]=0 \
+        ["Cosine8,qPI"]=0 ["Cosine8,qUCB"]=0 ["Cosine8,qKG"]=0 \
+        ["EggHolder,HES"]=20 ["EggHolder,qMSL"]=3 ["EggHolder,qSR"]=0 ["EggHolder,qEI"]=0 \
+        ["EggHolder,qPI"]=0 ["EggHolder,qUCB"]=0 ["EggHolder,qKG"]=0 \
+        ["Griewank,HES"]=20 ["Griewank,qMSL"]=3 ["Griewank,qSR"]=0 ["Griewank,qEI"]=0 \
+        ["Griewank,qPI"]=0 ["Griewank,qUCB"]=0 ["Griewank,qKG"]=0 \
+        ["Hartmann,HES"]=20 ["Hartmann,qMSL"]=3 ["Hartmann,qSR"]=0 ["Hartmann,qEI"]=0 \
+        ["Hartmann,qPI"]=0 ["Hartmann,qUCB"]=0 ["Hartmann,qKG"]=0 \
+        ["HolderTable,HES"]=20 ["HolderTable,qMSL"]=3 ["HolderTable,qSR"]=0 ["HolderTable,qEI"]=0 \
+        ["HolderTable,qPI"]=0 ["HolderTable,qUCB"]=0 ["HolderTable,qKG"]=0 \
+        ["Levy,HES"]=20 ["Levy,qMSL"]=3 ["Levy,qSR"]=0 ["Levy,qEI"]=0 \
+        ["Levy,qPI"]=0 ["Levy,qUCB"]=0 ["Levy,qKG"]=0 \
+        ["Powell,HES"]=20 ["Powell,qMSL"]=3 ["Powell,qSR"]=0 ["Powell,qEI"]=0 \
+        ["Powell,qPI"]=0 ["Powell,qUCB"]=0 ["Powell,qKG"]=0 \
+        ["SixHumpCamel,HES"]=20 ["SixHumpCamel,qMSL"]=3 ["SixHumpCamel,qSR"]=0 ["SixHumpCamel,qEI"]=0 \
+        ["SixHumpCamel,qPI"]=0 ["SixHumpCamel,qUCB"]=0 ["SixHumpCamel,qKG"]=0 \
+        ["StyblinskiTang,HES"]=20 ["StyblinskiTang,qMSL"]=3 ["StyblinskiTang,qSR"]=0 ["StyblinskiTang,qEI"]=0 \
+        ["StyblinskiTang,qPI"]=0 ["StyblinskiTang,qUCB"]=0 ["StyblinskiTang,qKG"]=0 \
+        ["SynGP,HES"]=20 ["SynGP,qMSL"]=3 ["SynGP,qSR"]=0 ["SynGP,qEI"]=0 \
+        ["SynGP,qPI"]=0 ["SynGP,qUCB"]=0 ["SynGP,qKG"]=0 \
 )
-        
+
 
 # Write for loop to run all the experiments
 # When using HES agorithm, run the non-myopic and myopic versions separately
@@ -51,7 +105,9 @@ do
                           --env_names $env \
                           --seeds ${seeds[@]} \
                           --algo_n_iterations ${env_iterations[$env]} \
+                          --algo_n_initial_points ${env_initial_points[$env]} \
                           --algo_lookahead_steps ${algo_lookahead[$env,$algo]} \
+                          --algo_ts
 
         if [ "$algo" == "HES" ]
         then
@@ -61,7 +117,9 @@ do
                               --env_names $env \
                               --seeds ${seeds[@]} \
                               --algo_n_iterations ${env_iterations[$env]} \
+                              --algo_n_initial_points ${env_initial_points[$env]} \
                               --algo_lookahead_steps 1 \
+                              --algo_ts
         fi
         idx=$((idx+1))
     done
@@ -149,10 +207,11 @@ done
 # # SynGP - HES - Non-myopic
 # python _0_main.py --gpu_id 9 \
 #                   --algos HES \
-#                   --env_names SynGP \
-#                   --seeds 10 \
+#                   --env_names logcos \
+#                   --seeds 2 \
 #                   --algo_n_iterations 30 \
 #                   --algo_lookahead_steps 15 \
+#                   --algo_ts
 #                   --test_only \
 #                   --continue_once "results/exp_HES_SynGP_15" &
 
