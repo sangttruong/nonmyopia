@@ -519,11 +519,7 @@ class Actor:
             draw_loss_and_cost(self.parms.save_dir, losses, costs, iteration)
 
         elif self.parms.algo == "BudgetedBO":
-            bounds = torch.tensor(
-                [self.parms.bounds] * self.parms.x_dim,
-                dtype=self.parms.torch_dtype,
-                device=self.parms.device,
-            ).T
+            bounds = self.parms.bounds.T
 
             next_X = optimize_acqf_and_get_suggested_point(
                 acq_func=self.acqf,
@@ -554,20 +550,15 @@ class Actor:
                 )
 
             else:
-                # bounds = torch.tensor(
-                #     [self.parms.bounds] * self.parms.x_dim,
-                #     dtype=self.parms.torch_dtype,
-                #     device=self.parms.device,
-                # ).T
                 p_X = prev_X[-1]
                 if embedder is not None:
                     p_X = embedder.encode(p_X)
 
                 lb = p_X - self.parms.cost_func_hypers["radius"]
                 ub = p_X + self.parms.cost_func_hypers["radius"]
-
-                lb[lb < self.parms.bounds[0]] = self.parms.bounds[0]
-                ub[ub > self.parms.bounds[1]] = self.parms.bounds[1]
+                
+                lb = torch.max(lb, self.parms.bounds[..., 0])
+                ub = torch.max(ub, self.parms.bounds[..., 1])
 
                 bounds = torch.stack([lb, ub], dim=0)
 

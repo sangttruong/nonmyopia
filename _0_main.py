@@ -85,7 +85,6 @@ class Parameters:
         self.y_dim = 1
         self.algo_n_iterations = args.algo_n_iterations
         self.algo_lookahead_steps = args.algo_lookahead_steps
-        self.func_noise = 0.0
         if args.env_discretized:
             self.env_discretized = True
             self.num_categories = 20
@@ -236,6 +235,7 @@ class Parameters:
             ),
             axis=0,
         )
+        self.bounds = torch.tensor(self.bounds, device=self.device)
 
         self.task = args.task
         self.set_task_parms()
@@ -339,8 +339,8 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
         raise NotImplementedError
 
     if name != "AntBO":
-        f_.bounds[0, :] = torch.tensor(bounds[..., 0], device=f_.bounds.device)
-        f_.bounds[1, :] = torch.tensor(bounds[..., 1], device=f_.bounds.device)
+        f_.bounds[0, :] = bounds[..., 0]
+        f_.bounds[1, :] = bounds[..., 1]
 
     return EnvWrapper(f_)
 

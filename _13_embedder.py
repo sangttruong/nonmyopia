@@ -4,7 +4,7 @@ import torch
 class DiscreteEmbbeder:
     def __init__(self, num_categories, bounds):
         self.num_categories = num_categories
-        self.bounds = torch.tensor(bounds)
+        self.bounds = bounds
         self.range_size = torch.tensor(
             bounds[..., 1] - bounds[..., 0]) / num_categories
         midpoints = []

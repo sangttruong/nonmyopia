@@ -4,10 +4,10 @@
 gpu_id=(0 1 2 3 4 5 6 7 8 9)
 
 # Declare an array contraining all the seeds
-seeds=(1 2 3 4 5 6 7 8 9 10)
+seeds=(2 3 5 7 11)
 
 # Declear an array containing all the algorithms
-algos=(qMSL qSR qEI qPI qUCB qKG)
+algos=(HES qMSL qSR qEI qPI qUCB qKG)
 
 # Declare an array containing all environments
 envs=(SynGP)
@@ -107,7 +107,7 @@ do
                           --algo_n_iterations ${env_iterations[$env]} \
                           --algo_n_initial_points ${env_initial_points[$env]} \
                           --algo_lookahead_steps ${algo_lookahead[$env,$algo]} \
-                          --algo_ts
+                          --algo_ts &
 
         if [ "$algo" == "HES" ]
         then
@@ -119,7 +119,7 @@ do
                               --algo_n_iterations ${env_iterations[$env]} \
                               --algo_n_initial_points ${env_initial_points[$env]} \
                               --algo_lookahead_steps 1 \
-                              --algo_ts
+                              --algo_ts &
         fi
         idx=$((idx+1))
     done
@@ -206,11 +206,12 @@ done
 
 # # SynGP - HES - Non-myopic
 # python _0_main.py --gpu_id 9 \
-#                   --algos HES \
-#                   --env_names logcos \
+#                   --algos qEI \
+#                   --env_names SynGP \
 #                   --seeds 2 \
-#                   --algo_n_iterations 30 \
-#                   --algo_lookahead_steps 15 \
+#                   --algo_n_iterations 75 \
+#                   --algo_lookahead_steps 0 \
+#                   --algo_n_initial_points 25 \
 #                   --algo_ts
 #                   --test_only \
 #                   --continue_once "results/exp_HES_SynGP_15" &

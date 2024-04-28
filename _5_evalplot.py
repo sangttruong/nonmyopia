@@ -89,28 +89,6 @@ def eval_func(
             bayes_action = bayes_action.cpu().detach().numpy()
 
         else:
-            # bounds = torch.tensor(
-            #     [cfg.bounds] * cfg.x_dim, dtype=cfg.torch_dtype, device=cfg.device
-            # ).T
-
-            # if cfg.algo == "qMSL":
-            #     # Reinit 1-step model
-            #     q = 1 + 64
-            #     model = acqf.model
-            #     acqf = qMultiStepLookahead(
-            #         model=model,
-            #         batch_sizes=[1],
-            #         num_fantasies=[64],
-            #     )
-
-            # bayes_action, bayes_loss = optimize_acqf(
-            #     acq_function=acqf,
-            #     bounds=bounds,
-            #     q=q,
-            #     num_restarts=cfg.n_restarts,
-            #     raw_samples=cfg.n_restarts,
-            # )
-
             A = torch.empty(
                 [1, cfg.n_restarts, cfg.n_actions, cfg.x_dim],
                 device=cfg.device,
@@ -141,9 +119,9 @@ def eval_func(
                 fantasized_outcome = fantasized_outcome.squeeze(dim=-1)
                 # >>> n_fantasy_at_action_pts x n_fantasy_at_design_pts
                 # ... x batch_size x num_actions
-
+                
                 losses = loss_function(A=A_, Y=fantasized_outcome) + cost_function(
-                    prev_X=buffer["x"][iteration], current_X=A_, previous_cost=0
+                    prev_X=buffer["x"][iteration].expand_as(A_), current_X=A_, previous_cost=0
                 )
                 # >>> n_fantasy_at_design_pts x batch_size
 
@@ -244,7 +222,7 @@ def eval_and_plot_2D_with_posterior(
     if embedder is not None:
         bounds_plot_x = bounds_plot_y = [0, n_space - 1]
     else:
-        bounds_plot_x, bounds_plot_y = cfg.bounds
+        bounds_plot_x, bounds_plot_y = cfg.bounds.cpu().numpy()
     ax[0].set(xlabel="$x_1$", ylabel="$x_2$",
               xlim=bounds_plot_x, ylim=bounds_plot_y)
     ax[1].set(xlabel="$x_1$", ylabel="$x_2$",
@@ -261,7 +239,7 @@ def eval_and_plot_2D_with_posterior(
     ax[1].set_title(label="Posterior mean")
 
     # Plot function in 2D ####################################################
-    X_domain, Y_domain = cfg.bounds
+    X_domain, Y_domain = cfg.bounds.cpu().numpy()
     X, Y = np.linspace(*X_domain, n_space), np.linspace(*Y_domain, n_space)
     X, Y = np.meshgrid(X, Y)
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
@@ -347,7 +325,7 @@ def eval_and_plot_2D_with_posterior(
         ax[0].scatter(bayes_action[..., 0],
                       bayes_action[..., 1], label="Action")
 
-        if "actions" in kwargs:
+        if "actions" in kwargs and kwargs["actions"] is not None:
             actions = kwargs["actions"]
             actions = actions.cpu().detach().numpy()
             ax[0].scatter(
@@ -356,7 +334,7 @@ def eval_and_plot_2D_with_posterior(
                 label="Imaged Action",
             )
         if "X" in kwargs:
-            for X in kwargs["X"][::-1]:
+            for X in kwargs["X"].cpu().numpy()[::-1]:
                 ax[0].scatter(X[..., 0].reshape(-1, 1),
                               X[..., 1].reshape(-1, 1))
 
@@ -412,7 +390,7 @@ def eval_and_plot_2D_without_posterior(
     if embedder is not None:
         bounds_plot_x = bounds_plot_y = [0, n_space - 1]
     else:
-        bounds_plot_x, bounds_plot_y = cfg.bounds
+        bounds_plot_x, bounds_plot_y = cfg.bounds.cpu().numpy()
     ax.set(xlabel="$x_1$", ylabel="$x_2$",
            xlim=bounds_plot_x, ylim=bounds_plot_y)
     # ax[1].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot, ylim=bounds_plot)
@@ -427,7 +405,7 @@ def eval_and_plot_2D_without_posterior(
     # ax[1].set_title(label="Posterior mean")
 
     # Plot function in 2D ####################################################
-    X_domain, Y_domain = cfg.bounds
+    X_domain, Y_domain = cfg.bounds.cpu().numpy()
     X, Y = np.linspace(*X_domain, n_space), np.linspace(*Y_domain, n_space)
     X, Y = np.meshgrid(X, Y)
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
@@ -560,7 +538,7 @@ def eval_and_plot_1D(
 
     # Plotting ###############################################################
     fig, ax = plt.subplots(1, 1, figsize=(5, 4))
-    bounds_plot = cfg.bounds
+    bounds_plot = cfg.bounds.cpu().numpy()
     y_bounds = (-5, 5)
     ax.set(xlabel="$x$", ylabel="$y$", xlim=bounds_plot, ylim=y_bounds)
     title = "$\mathcal{H}_{\ell, \mathcal{A}}$-Entropy Search " + cfg.task

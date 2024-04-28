@@ -35,8 +35,8 @@ def run(parms, env) -> None:
     """
 
     # Finding maxima of env using gradient descent
-    print("Computing optimal value...")
     if not parms.env_discretized and parms.env_name != "SynGP":
+        print("Computing optimal value...")
         maxima = torch.tensor(
             (2, 2),
             device=parms.device,
@@ -44,12 +44,12 @@ def run(parms, env) -> None:
             requires_grad=True,
         )
         maxima_optimizer = torch.optim.Adam([maxima], lr=parms.acq_opt_lr)
-        bounds = torch.tensor(parms.bounds, device=parms.device)
         for i in tqdm(range(1000), desc="Finding maxima"):
             maxima_optimizer.zero_grad()
             maxima_ = (
-                torch.sigmoid(maxima) * (bounds[..., 1] - bounds[..., 0])
-                + bounds[..., 0]
+                torch.sigmoid(maxima) *
+                (parms.bounds[..., 1] - parms.bounds[..., 0])
+                + parms.bounds[..., 0]
             )
             maxima_value = -env(maxima_)
             maxima_value.backward()
@@ -58,31 +58,14 @@ def run(parms, env) -> None:
         maxima = maxima.cpu().detach().requires_grad_(False)
         maxima = (
             torch.sigmoid(maxima) *
-            (bounds[..., 1] - bounds[..., 0]) + bounds[..., 0]
+            (parms.bounds[..., 1] - parms.bounds[..., 0]) +
+            parms.bounds[..., 0]
         )
         optimal_value = env(maxima)
         print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
     else:
         # Finding maxima of env using grid search
-        if not parms.env_discretized and parms.env_name == "SynGP":
-            categories = torch.linspace(
-                parms.bounds[0, 0], parms.bounds[0, 1], 100)
-        else:
-            categories = torch.arange(0, parms.num_categories)
-
-        categories = categories.to(
-            device=parms.device, dtype=parms.torch_dtype)
-        X = [categories] * parms.x_dim
-        X = torch.stack(torch.meshgrid(*X), dim=-1).reshape(-1, parms.x_dim)
-        y = env(X)
-        optimal_value, idx = torch.max(y, dim=0)
-        maxima = X[idx].cpu().detach()
-        optimal_value = optimal_value.cpu().detach()
-        print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
-
-    # Min max scaling
-    # data_x = data_x * (parms.bounds[1] - parms.bounds[0]) + parms.bounds[0]
-    # >>> n_initial_points x dim
+        optimal_value = env.range_y[1]
 
     if parms.env_name == "AntBO":
         data_x = generate_random_X(parms.n_initial_points, parms.x_dim)
@@ -99,9 +82,6 @@ def run(parms, env) -> None:
     # >>> n_initial_points x dim
 
     data_y = env(data_x).reshape(-1, 1)
-    data_y = data_y + parms.func_noise * torch.randn_like(
-        data_y, dtype=parms.torch_dtype
-    )
     # >>> n_initial_points x 1
 
     data_hidden_state = torch.ones(
@@ -177,7 +157,7 @@ def run(parms, env) -> None:
             buffer["x"][: parms.n_initial_points],
             buffer["y"][: parms.n_initial_points],
             input_transform=Normalize(
-                d=parms.x_dim, bounds=torch.tensor(parms.bounds).T),
+                d=parms.x_dim, bounds=parms.bounds.T),
             outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
@@ -207,7 +187,7 @@ def run(parms, env) -> None:
             buffer["x"][: parms.n_initial_points],
             buffer["y"][: parms.n_initial_points],
             input_transform=Normalize(
-                d=parms.x_dim, bounds=torch.tensor(parms.bounds).T),
+                d=parms.x_dim, bounds=parms.bounds.T),
             outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
@@ -217,7 +197,7 @@ def run(parms, env) -> None:
         actor.construct_acqf(WM=WM, buffer=buffer[: parms.n_initial_points])
 
         ############
-        X, actions = actor.query(
+        X, _, actions = actor.query(
             buffer=buffer,
             iteration=parms.n_initial_points,
             embedder=embedder,
@@ -251,7 +231,7 @@ def run(parms, env) -> None:
             buffer["x"][:i],
             buffer["y"][:i],
             input_transform=Normalize(
-                d=parms.x_dim, bounds=torch.tensor(parms.bounds).T),
+                d=parms.x_dim, bounds=parms.bounds.T),
             outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
