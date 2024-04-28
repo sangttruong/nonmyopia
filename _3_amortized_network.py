@@ -143,7 +143,7 @@ class AmortizedNetwork(nn.Module):
 class Project2Range(nn.Module):
     r"""Project the input to a range."""
 
-    def __init__(self, min: int, max: int) -> None:
+    def __init__(self, _min, _max) -> None:
         r"""Initialize the module.
 
         Args:
@@ -151,8 +151,8 @@ class Project2Range(nn.Module):
             max: The maximum value of the range
         """
         super().__init__()
-        self.min = torch.tensor(min)
-        self.max = torch.tensor(max)
+        self.min = _min
+        self.max = _max
         self.range = self.max - self.min
 
     def forward(self, x):

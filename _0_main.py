@@ -70,7 +70,6 @@ class Parameters:
         self.algo = args.algo
         self.algo_ts = args.algo_ts
         self.env_name = args.env_name
-        self.env_noise = args.env_noise
         self.n_actions = 1
         self.y_dim = 1
         self.algo_n_iterations = args.algo_n_iterations
@@ -193,7 +192,7 @@ class Parameters:
 
         else:
             raise NotImplementedError
-
+        
         # Random select initial points
         self.bounds = np.array(self.bounds)
         if self.bounds.ndim < 2 or self.bounds.shape[0] < self.x_dim:
@@ -225,7 +224,9 @@ class Parameters:
             ),
             axis=0,
         )
-        self.bounds = torch.tensor(self.bounds, device=self.device)
+        
+        self.env_noise = args.env_noise * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
+        self.bounds = torch.tensor(self.bounds, dtype=self.torch_dtype, device=self.device)
 
         self.task = args.task
         self.set_task_parms()
@@ -332,7 +333,7 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
         f_.bounds[0, :] = bounds[..., 0]
         f_.bounds[1, :] = bounds[..., 1]
 
-    return EnvWrapper(f_)
+    return EnvWrapper(name, f_)
 
 
 def make_save_dir(config):

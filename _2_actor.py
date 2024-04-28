@@ -123,13 +123,13 @@ class Actor:
                 encoded_prev_X[0]
                 + self.parms.cost_func_hypers["radius"]
                 * (self.algo_lookahead_steps + 1),
-                max=torch.tensor(self.parms.bounds[..., 1]),
+                max=self.parms.bounds[..., 1],
             )
             lb = torch.clamp(
                 encoded_prev_X[0]
                 - self.parms.cost_func_hypers["radius"]
                 * (self.algo_lookahead_steps + 1),
-                min=torch.tensor(self.parms.bounds[..., 0]),
+                min=self.parms.bounds[..., 0],
             )
             A_randomized = (A_randomized * (ub - lb) + lb).detach()
 
@@ -141,12 +141,12 @@ class Actor:
                 ub = torch.clamp(
                     encoded_prev_X[0] +
                     self.parms.cost_func_hypers["radius"] * (i + 1),
-                    max=torch.tensor(self.parms.bounds[..., 1]),
+                    max=self.parms.bounds[..., 1],
                 )
                 lb = torch.clamp(
                     encoded_prev_X[0] -
                     self.parms.cost_func_hypers["radius"] * (i + 1),
-                    min=torch.tensor(self.parms.bounds[..., 0]),
+                    min=self.parms.bounds[..., 0],
                 )
 
                 X_randomized = (X_randomized * (ub - lb) + lb).detach()
@@ -420,7 +420,6 @@ class Actor:
                     embedder=embedder,
                 )
 
-                #############
                 return_dict = self.acqf.forward(
                     prev_X=prev_X,
                     prev_y=prev_y,
@@ -429,12 +428,7 @@ class Actor:
                     embedder=embedder,
                 )
 
-                #############
-                return_X = []
-                for X in return_dict["X"]:
-                    return_X.append(X.cpu().detach())
-
-                return return_X, return_dict["actions"].detach()
+                return return_dict["X"][0].detach(), None, return_dict["actions"].detach()
 
             optimizer = torch.optim.AdamW(
                 self._parameters, lr=self.parms.acq_opt_lr)
@@ -558,7 +552,7 @@ class Actor:
                 ub = p_X + self.parms.cost_func_hypers["radius"]
                 
                 lb = torch.max(lb, self.parms.bounds[..., 0])
-                ub = torch.max(ub, self.parms.bounds[..., 1])
+                ub = torch.min(ub, self.parms.bounds[..., 1])
 
                 bounds = torch.stack([lb, ub], dim=0)
 

@@ -4,11 +4,17 @@ from tqdm import tqdm
 
 
 class EnvWrapper:
-    def __init__(self, env):
+    def __init__(self, env_name, env):
         self.env = env
         self.bounds = env.bounds
         self.range_y = [self.optimize_min(), self.optimize_max()]
-        print("Env range: ", self.range_y)
+        print("Y range:", self.range_y)
+        
+        if env_name in ["SynGP", "Alpine"]:
+            self.optimal_value = self.range_y[1]
+        else:
+            self.optimal_value = self.env.optimal_value
+        print("Optimal value:", self.optimal_value)
 
     def optimize_min(self):
         def _min_fn_():

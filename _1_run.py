@@ -35,37 +35,20 @@ def run(parms, env) -> None:
     """
 
     # Finding maxima of env using gradient descent
-    if not parms.env_discretized and parms.env_name != "SynGP":
-        print("Computing optimal value...")
-        maxima = torch.tensor(
-            (2, 2),
-            device=parms.device,
-            dtype=parms.torch_dtype,
-            requires_grad=True,
-        )
-        maxima_optimizer = torch.optim.Adam([maxima], lr=parms.acq_opt_lr)
-        for i in tqdm(range(1000), desc="Finding maxima"):
-            maxima_optimizer.zero_grad()
-            maxima_ = (
-                torch.sigmoid(maxima) *
-                (parms.bounds[..., 1] - parms.bounds[..., 0])
-                + parms.bounds[..., 0]
-            )
-            maxima_value = -env(maxima_)
-            maxima_value.backward()
-            maxima_optimizer.step()
-
-        maxima = maxima.cpu().detach().requires_grad_(False)
-        maxima = (
-            torch.sigmoid(maxima) *
-            (parms.bounds[..., 1] - parms.bounds[..., 0]) +
-            parms.bounds[..., 0]
-        )
-        optimal_value = env(maxima)
-        print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
+    if not parms.env_discretized:
+        optimal_value = env.optimal_value
     else:
         # Finding maxima of env using grid search
-        optimal_value = env.range_y[1]
+        print("Computing optimal value...")
+        categories = torch.arange(0, parms.num_categories).to(
+            device=parms.device, dtype=parms.torch_dtype)
+        X = [categories] * parms.x_dim
+        X = torch.stack(torch.meshgrid(*X), dim=-1).reshape(-1, parms.x_dim)
+        y = env(X)
+        optimal_value, idx = torch.max(y, dim=0)
+        maxima = X[idx].cpu().detach()
+        optimal_value = optimal_value.cpu().detach()
+        print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
 
     if parms.env_name == "AntBO":
         data_x = generate_random_X(parms.n_initial_points, parms.x_dim)
@@ -204,7 +187,7 @@ def run(parms, env) -> None:
             initial=True,
         )
         ############
-
+        
         real_loss, _ = eval_and_plot(
             func=env,
             wm=WM,
