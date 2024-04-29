@@ -273,10 +273,12 @@ class Actor:
             )
 
         elif self.parms.algo == "qKG":
+            self.algo_lookahead_steps = 0
             self.acqf = qKnowledgeGradient(
                 model=WM, num_fantasies=self.parms.n_samples)
 
         elif self.parms.algo == "qEI":
+            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
@@ -287,6 +289,7 @@ class Actor:
             )
 
         elif self.parms.algo == "qPI":
+            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
@@ -295,12 +298,14 @@ class Actor:
             )
 
         elif self.parms.algo == "qSR":
+            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
             self.acqf = qSimpleRegret(model=WM, sampler=sampler)
 
         elif self.parms.algo == "qUCB":
+            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
@@ -315,7 +320,8 @@ class Actor:
             #     if next_nf < 1:
             #         next_nf = 1
             #     num_fantasies.append(next_nf)
-
+            
+            self.algo_lookahead_steps = 3
             self.acqf = qMultiStepLookahead(
                 model=WM,
                 batch_sizes=[1] * self.algo_lookahead_steps,
@@ -323,6 +329,7 @@ class Actor:
             )
 
         elif self.parms.aglo == "qNIPV":
+            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
@@ -524,10 +531,10 @@ class Actor:
         else:
             # The total numbers of branches
             q = 1 + sum(
-                [
-                    self.parms.n_samples**s
-                    for s in range(1, self.algo_lookahead_steps + 1)
-                ]
+                    [
+                        self.parms.n_samples**s
+                        for s in range(1, self.algo_lookahead_steps + 1)
+                    ]
             )
 
             if self.parms.env_name == "AntBO":

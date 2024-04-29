@@ -9,9 +9,9 @@ r"""Run the main experiments."""
 import os
 import copy
 import torch
+import wandb
 import numpy as np
 import dill as pickle
-
 from pathlib import Path
 from argparse import ArgumentParser
 
@@ -42,7 +42,6 @@ from _14_sequence_design_func import SequenceDesignFunction
 from _15_syngp import SynGP
 from _16_env_wrapper import EnvWrapper
 
-
 class Parameters:
     r"""Class to store all parameters for the experiment."""
 
@@ -72,7 +71,7 @@ class Parameters:
         self.env_name = args.env_name
         self.n_actions = 1
         self.y_dim = 1
-        self.algo_n_iterations = args.algo_n_iterations
+        self.algo_n_iterations = 0
         self.algo_lookahead_steps = args.algo_lookahead_steps
         if args.env_discretized:
             self.env_discretized = True
@@ -107,71 +106,99 @@ class Parameters:
             self.x_dim = 2
             self.bounds = [-2, 2]
             self.radius = 0.3
+            self.n_initial_points = 20
+            self.algo_n_iterations = 120
 
         elif self.env_name == "Alpine":
             self.x_dim = 2
             self.bounds = [0, 10]
             self.radius = 0.75
+            self.n_initial_points = 50
+            self.algo_n_iterations = 150
 
         elif self.env_name == "Beale":
             self.x_dim = 2
             self.bounds = [-4.5, 4.5]
             self.radius = 0.65
+            self.n_initial_points = 40
+            self.algo_n_iterations = 75
 
         elif self.env_name == "Branin":
             self.x_dim = 2
             self.bounds = [[-5, 10], [0, 15]]
             self.radius = 1.2
+            self.n_initial_points = 10
+            self.algo_n_iterations = 20
 
         elif self.env_name == "Cosine8":
             self.x_dim = 8
             self.bounds = [-1, 1]
             self.radius = 0.3
+            self.n_initial_points = 50
+            self.algo_n_iterations = 250
 
         elif self.env_name == "EggHolder":
             self.x_dim = 2
             self.bounds = [-100, 100]
             self.radius = 15.0
+            self.n_initial_points = 35
+            self.algo_n_iterations = 150
 
         elif self.env_name == "Griewank":
             self.x_dim = 2
             self.bounds = [-600, 600]
             self.radius = 85.0
+            self.n_initial_points = 8
+            self.algo_n_iterations = 20
 
         elif self.env_name == "Hartmann":
             self.x_dim = 6
             self.bounds = [0, 1]
             self.radius = 0.15
+            self.n_initial_points = 100
+            self.algo_n_iterations = 500
 
         elif self.env_name == "HolderTable":
             self.x_dim = 2
             self.bounds = [-2.5, 2.5]
             self.radius = 0.4
+            self.n_initial_points = 20
+            self.algo_n_iterations = 100
 
         elif self.env_name == "Levy":
             self.x_dim = 2
             self.bounds = [-10, 10]
             self.radius = 1.5
+            self.n_initial_points = 40
+            self.algo_n_iterations = 90
 
         elif self.env_name == "Powell":
             self.x_dim = 4
             self.bounds = [-4, 5]
             self.radius = 0.9
+            self.n_initial_points = 35
+            self.algo_n_iterations = 150
 
         elif self.env_name == "SixHumpCamel":
             self.x_dim = 2
             self.bounds = [[-3, 3], [-2, 2]]
             self.radius = 0.4
+            self.n_initial_points = 20
+            self.algo_n_iterations = 50
 
         elif self.env_name == "StyblinskiTang":
             self.x_dim = 2
             self.bounds = [-5, 5]
             self.radius = 0.75
+            self.n_initial_points = 30
+            self.algo_n_iterations = 50
 
         elif self.env_name == "SynGP":
             self.x_dim = 2
             self.bounds = [-1, 1]
             self.radius = 0.15
+            self.n_initial_points = 25
+            self.algo_n_iterations = 75
 
         elif self.env_name == "AntBO":
             self.x_dim = 11
@@ -197,7 +224,6 @@ class Parameters:
         self.bounds = np.array(self.bounds)
         if self.bounds.ndim < 2 or self.bounds.shape[0] < self.x_dim:
             self.bounds = np.tile(self.bounds, [self.x_dim, 1])
-        self.n_initial_points = args.algo_n_initial_points
 
         n_partitions = int(self.n_initial_points ** (1 / self.x_dim))
         remaining_points = self.n_initial_points - n_partitions**self.x_dim
@@ -336,6 +362,16 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
     return EnvWrapper(name, f_)
 
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+        
 def make_save_dir(config):
     r"""Create save directory without overwriting directories."""
     if config.test_only:
@@ -365,69 +401,77 @@ def make_save_dir(config):
 
 
 if __name__ == "__main__":
+    default_config = {
+        "seed": 2,
+        "task": "topk",
+        "env_name": "SynGP",
+        "env_noise": 0.0,
+        "env_discretized": False,
+        "algo": "HES",
+        "algo_ts": True,
+        # "algo_n_iterations": 75,
+        # "n_initial_points": 25,
+        "algo_lookahead_steps": 20,
+        "cost_spotlight_k": 100,
+        "cost_p_norm": 2.0,
+        "cost_max_noise": 1e-5,
+        "cost_discount": 0.0,
+        "cost_discount_threshold": -1,
+        "gpu_id": 0,
+        "cont": False,
+        "test_only": False
+    }
+    wandb.init(project="nonmyopia", config=default_config)
+    
     # Parse args
     parser = ArgumentParser()
-    parser.add_argument("--seeds", nargs="+", type=int, default=[2])
+    parser.add_argument("--seed", type=int, default=2)
     parser.add_argument("--task", type=str, default="topk")
-    parser.add_argument("--env_names", nargs="+", type=str, default=["SynGP"])
+    parser.add_argument("--env_name", type=str, default="SynGP")
     parser.add_argument("--env_noise", type=float, default=0.0)
-    parser.add_argument("--env_discretized", action="store_true")
-    parser.add_argument("--algos", nargs="+", type=str, default=["HES"])
-    parser.add_argument("--algo_ts", action="store_true")
-    parser.add_argument("--algo_n_iterations", type=int)
-    parser.add_argument("--algo_n_initial_points", type=int)
+    parser.add_argument("--env_discretized", type=str2bool, default=False)
+    parser.add_argument("--algo", type=str, default="HES")
+    parser.add_argument("--algo_ts", type=str2bool, default=False)
+    # parser.add_argument("--algo_n_iterations", type=int)
+    # parser.add_argument("--n_initial_points", type=int)
     parser.add_argument("--algo_lookahead_steps", type=int)
     parser.add_argument("--cost_spotlight_k", type=int, default=100)
     parser.add_argument("--cost_p_norm", type=float, default=2.0)
     parser.add_argument("--cost_max_noise", type=float, default=1e-5)
     parser.add_argument("--cost_discount", type=float, default=0.0)
     parser.add_argument("--cost_discount_threshold", type=float, default=-1)
-    parser.add_argument("--gpu_id", nargs="+", type=int, default=[0])
-    parser.add_argument("--cont", action="store_true")
-    parser.add_argument("--test_only", action="store_true")
+    parser.add_argument("--gpu_id", type=int, default=0)
+    parser.add_argument("--cont", type=str2bool, default=False)
+    parser.add_argument("--test_only", type=str2bool, default=False)
     args = parser.parse_args()
-
+    
     metrics = {}
-    list_processes = []
-    num_gpus = len(args.gpu_id)
-    num_seeds = len(args.seeds)
-    num_algos = len(args.algos)
-    for e, env_name in enumerate(args.env_names):
-        for i, seed in enumerate(args.seeds):
-            set_seed(seed)
+    set_seed(args.seed)
 
-            for j, algo in enumerate(args.algos):
-                # Copy args
-                local_args = copy.deepcopy(args)
-                local_args.seed = seed
-                local_args.gpu_id = args.gpu_id[(i * num_algos + j) % num_gpus]
-                local_args.algo = args.algos[j]
-                local_args.env_name = env_name
+    local_parms = Parameters(args)
+    make_save_dir(local_parms)
 
-                local_parms = Parameters(local_args)
+    # Init environment
+    env = make_env(
+        name=local_parms.env_name,
+        x_dim=local_parms.x_dim,
+        bounds=local_parms.bounds,
+        noise_std=local_parms.env_noise,
+    )
+    env = env.to(
+        dtype=local_parms.torch_dtype,
+        device=local_parms.device,
+    )
 
-                # Make save dir
-                make_save_dir(local_parms)
+    # Run trials
+    real_loss = run(local_parms, env)
 
-                # Init environment
-                env = make_env(
-                    name=env_name,
-                    x_dim=local_parms.x_dim,
-                    bounds=local_parms.bounds,
-                    noise_std=local_parms.env_noise,
-                )
-                env = env.to(
-                    dtype=local_parms.torch_dtype,
-                    device=local_parms.device,
-                )
+    # Assign loss to dictionary of metrics
+    metrics[f"{local_args.algo}_{local_parms.seed}"] = real_loss
 
-                # Run trials
-                real_loss = run(local_parms, env)
-
-                # Assign loss to dictionary of metrics
-                metrics[f"eval_metric_{local_args.algo}_{local_parms.seed}"] = real_loss
-
-                pickle.dump(
-                    metrics,
-                    open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb"),
-                )
+    pickle.dump(
+        metrics,
+        open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb"),
+    )
+    
+    wandb.finish()

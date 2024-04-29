@@ -11,6 +11,7 @@ import random
 import numpy as np
 import os
 import time
+import wandb
 
 from tqdm import tqdm
 from tensordict import TensorDict
@@ -268,5 +269,9 @@ def run(parms, env) -> None:
         # Save model to file after each iteration
         torch.save(WM.state_dict(), f"{parms.save_dir}/world_model.pt")
         print("Model saved to file.")
+
+        # Report to wandb
+        wandb.log({"x": buffer["x"][i], "y": buffer["y"][i],
+                   "loss": buffer["real_loss"][i], "time": buffer["runtime"][i]})
 
     return buffer["real_loss"].cpu().detach().numpy().tolist()
