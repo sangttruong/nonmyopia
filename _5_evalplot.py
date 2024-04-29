@@ -252,7 +252,7 @@ def eval_and_plot_2D_with_posterior(
 
     if embedder is not None:
         X, Y = (
-            embedder.decode(XY.permute(1, 2, 0))
+            embedder.decode(XY.permute(1, 2, 0).to(device=embedder.device))
             .permute(2, 0, 1)
             .long()
             .cpu()
@@ -275,10 +275,10 @@ def eval_and_plot_2D_with_posterior(
     # Plot data, optimal actions, next query #################################
     if embedder is not None:
         ax[0].scatter(
-            *embedder.decode(data_x[:iteration]).long().T, label="Data")
-        ax[0].scatter(*embedder.decode(bayes_action).long().T, label="Action")
+            *embedder.decode(data_x[:iteration].to(device=embedder.device)).cpu().long().T, label="Data")
+        ax[0].scatter(*embedder.decode(bayes_action.to(device=embedder.device)).cpu().long().T, label="Action")
         ax[0].scatter(
-            *embedder.decode(next_x.unsqueeze(0)).long().T, label="Next query"
+            *embedder.decode(next_x.unsqueeze(0).to(device=embedder.device)).cpu().long().T, label="Next query"
         )
 
         # Draw grid
@@ -289,27 +289,27 @@ def eval_and_plot_2D_with_posterior(
 
         # Splotlight cost
         previous_x = embedder.decode(
-            buffer["x"][iteration - 1].squeeze()).long()
+            buffer["x"][iteration - 1].squeeze().to(device=embedder.device)).long()
         previous_x = previous_x.cpu().detach()
         splotlight = plt.Rectangle(
             (
-                previous_x[0]
+                (previous_x[0]
                 - cfg.cost_func_hypers["radius"]
                 * n_space
-                / (cfg.bounds[0, 1] - cfg.bounds[0, 0]),
-                previous_x[1]
+                / (cfg.bounds[0, 1] - cfg.bounds[0, 0])).cpu(),
+                (previous_x[1]
                 - cfg.cost_func_hypers["radius"]
                 * n_space
-                / (cfg.bounds[1, 1] - cfg.bounds[1, 0]),
+                / (cfg.bounds[1, 1] - cfg.bounds[1, 0])).cpu(),
             ),
-            2
+            (2
             * cfg.cost_func_hypers["radius"]
             * n_space
-            / (cfg.bounds[0, 1] - cfg.bounds[0, 0]),
-            2
+            / (cfg.bounds[0, 1] - cfg.bounds[0, 0])).cpu(),
+            (2
             * cfg.cost_func_hypers["radius"]
             * n_space
-            / (cfg.bounds[1, 1] - cfg.bounds[1, 0]),
+            / (cfg.bounds[1, 1] - cfg.bounds[1, 0])).cpu(),
             color="black",
             linestyle="dashed",
             fill=False,
@@ -417,7 +417,7 @@ def eval_and_plot_2D_without_posterior(
 
     if embedder is not None:
         X, Y = (
-            embedder.decode(XY.permute(1, 2, 0))
+            embedder.decode(XY.permute(1, 2, 0).to(device=embedder.device))
             .permute(2, 0, 1)
             .long()
             .cpu()
@@ -439,10 +439,10 @@ def eval_and_plot_2D_without_posterior(
 
     # Plot data, optimal actions, next query #################################
     if embedder is not None:
-        ax.scatter(*embedder.decode(data_x[:iteration]).long().T, label="Data")
-        ax.scatter(*embedder.decode(bayes_action).long().T, label="Action")
-        ax.scatter(*embedder.decode(next_x.unsqueeze(0)
-                                    ).long().T, label="Next query")
+        ax.scatter(*embedder.decode(data_x[:iteration].to(device=embedder.device)).cpu().long().T, label="Data")
+        ax.scatter(*embedder.decode(bayes_action.to(device=embedder.device)).cpu().long().T, label="Action")
+        ax.scatter(*embedder.decode(next_x.unsqueeze(0).to(device=embedder.device)
+                                    ).cpu().long().T, label="Next query")
 
         # Draw grid
         plt.vlines(np.arange(0, n_space), 0, n_space,
@@ -452,27 +452,27 @@ def eval_and_plot_2D_without_posterior(
 
         # Splotlight cost
         previous_x = embedder.decode(
-            buffer["x"][iteration - 1].squeeze()).long()
+            buffer["x"][iteration - 1].squeeze().to(device=embedder.device)).long()
         previous_x = previous_x.cpu().detach()
         splotlight = plt.Rectangle(
             (
-                previous_x[0]
+                (previous_x[0]
                 - cfg.cost_func_hypers["radius"]
                 * n_space
-                / (cfg.bounds[0, 1] - cfg.bounds[0, 0]),
-                previous_x[1]
+                / (cfg.bounds[0, 1] - cfg.bounds[0, 0])).cpu(),
+                (previous_x[1]
                 - cfg.cost_func_hypers["radius"]
                 * n_space
-                / (cfg.bounds[1, 1] - cfg.bounds[1, 0]),
+                / (cfg.bounds[1, 1] - cfg.bounds[1, 0])).cpu(),
             ),
-            2
+            (2
             * cfg.cost_func_hypers["radius"]
             * n_space
-            / (cfg.bounds[0, 1] - cfg.bounds[0, 0]),
-            2
+            / (cfg.bounds[0, 1] - cfg.bounds[0, 0])).cpu(),
+            (2
             * cfg.cost_func_hypers["radius"]
             * n_space
-            / (cfg.bounds[1, 1] - cfg.bounds[1, 0]),
+            / (cfg.bounds[1, 1] - cfg.bounds[1, 0])).cpu(),
             color="black",
             linestyle="dashed",
             fill=False,
@@ -595,15 +595,15 @@ def eval_and_plot_1D(
     return real_loss, bayes_action
 
 
-def eval_and_plot(func, wm, cfg, *args, **kwargs):
+def eval_and_plot(func, wm, cfg, acqf, *args, **kwargs):
     r"""Draw the posterior of the model."""
     if cfg.x_dim == 1:
-        return eval_and_plot_1D(func, wm, cfg, *args, **kwargs)
+        return eval_and_plot_1D(func, wm, cfg, acqf, *args, **kwargs)
     elif cfg.x_dim == 2:
-        return eval_and_plot_2D(func, wm, cfg, *args, **kwargs)
+        return eval_and_plot_2D(func, wm, cfg, acqf, *args, **kwargs)
     else:
-        print("Plotting is only done when x_dim is 1 or 2.")
-        return eval_func
+        print("NOTICE: Plotting is only done when x_dim is 1 or 2.")
+        return eval_func(cfg, acqf, func, *args, **kwargs)
 
 
 def draw_metric(

@@ -117,7 +117,7 @@ class Actor:
                 encoded_prev_X = prev_X
 
             A_randomized = torch.rand(
-                (1000, 2), device=self.parms.device, dtype=self.parms.torch_dtype
+                (1000, self.parms.x_dim), device=self.parms.device, dtype=self.parms.torch_dtype
             )
             ub = torch.clamp(
                 encoded_prev_X[0]
@@ -136,7 +136,7 @@ class Actor:
             X_randomizeds = []
             for i in range(self.algo_lookahead_steps):
                 X_randomized = torch.rand(
-                    (1000, 2), device=self.parms.device, dtype=self.parms.torch_dtype
+                    (1000, self.parms.x_dim), device=self.parms.device, dtype=self.parms.torch_dtype
                 )
                 ub = torch.clamp(
                     encoded_prev_X[0] +
@@ -273,12 +273,10 @@ class Actor:
             )
 
         elif self.parms.algo == "qKG":
-            self.algo_lookahead_steps = 0
             self.acqf = qKnowledgeGradient(
                 model=WM, num_fantasies=self.parms.n_samples)
 
         elif self.parms.algo == "qEI":
-            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
@@ -289,7 +287,6 @@ class Actor:
             )
 
         elif self.parms.algo == "qPI":
-            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
@@ -298,14 +295,12 @@ class Actor:
             )
 
         elif self.parms.algo == "qSR":
-            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
             self.acqf = qSimpleRegret(model=WM, sampler=sampler)
 
         elif self.parms.algo == "qUCB":
-            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
@@ -313,15 +308,14 @@ class Actor:
                 model=WM, beta=0.1, sampler=sampler)
 
         elif self.parms.algo == "qMSL":
-            num_fantasies = [self.parms.n_samples] * self.algo_lookahead_steps
-            # num_fantasies = [self.parms.n_samples]
-            # for s in range(1, self.algo_lookahead_steps):
-            #     next_nf = num_fantasies[s-1] // 4
-            #     if next_nf < 1:
-            #         next_nf = 1
-            #     num_fantasies.append(next_nf)
+            # num_fantasies = [self.parms.n_samples] * self.algo_lookahead_steps
+            num_fantasies = [self.parms.n_samples]
+            for s in range(1, self.algo_lookahead_steps):
+                next_nf = num_fantasies[s-1] // 4
+                if next_nf < 1:
+                    next_nf = 1
+                num_fantasies.append(next_nf)
             
-            self.algo_lookahead_steps = 3
             self.acqf = qMultiStepLookahead(
                 model=WM,
                 batch_sizes=[1] * self.algo_lookahead_steps,
@@ -329,7 +323,6 @@ class Actor:
             )
 
         elif self.parms.aglo == "qNIPV":
-            self.algo_lookahead_steps = 0
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
@@ -571,6 +564,8 @@ class Actor:
                     num_restarts=self.parms.n_restarts,
                     raw_samples=self.parms.n_restarts,
                 )
+                if next_X.shape[0] > 1:
+                    next_X = next_X[0:1]
 
                 if embedder is not None:
                     next_X = embedder.decode(next_X.reshape(1, -1))

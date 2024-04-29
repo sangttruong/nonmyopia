@@ -1,0 +1,39 @@
+program: _0_main.py
+project: nonmyopia
+method: grid
+metric:
+    goal: minimize
+    name: loss
+parameters:
+    seed: 
+        values: [2, 3, 5, 7, 11]
+    task: 
+        values: [topk]
+    env_name: 
+        values: [Ackley, Alpine, Beale, Branin, Cosine8, EggHolder, Griewank, Hartmann, HolderTable, Levy, Powell, SixHumpCamel, StyblinskiTang, SynGP]
+    env_noise:  
+        values: [0.0, 0.01, 0.1]
+    env_discretized: 
+        values: [False]
+    algo: 
+        values: [HES, qMSL, qSR, qEI, qPI, qUCB, qKG]
+    algo_ts: 
+        values: [True]
+    algo_lookahead_steps:  
+        values: [20]
+    cost_spotlight_k: 
+        values: [100]
+    cost_p_norm:  
+        values: [2.0]
+    cost_max_noise: 
+        values: [1e-5]
+    cost_discount:  
+        values: [0.0]
+    cost_discount_threshold:  
+        values: [-1]
+    gpu_id:  
+        values: [0]
+    cont:  
+        values: [False]
+    test_only:  
+        values: [False]

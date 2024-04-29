@@ -5,13 +5,12 @@ class DiscreteEmbbeder:
     def __init__(self, num_categories, bounds):
         self.num_categories = num_categories
         self.bounds = bounds
-        self.range_size = torch.tensor(
-            bounds[..., 1] - bounds[..., 0]) / num_categories
+        self.range_size = (bounds[..., 1] - bounds[..., 0]) / num_categories
         midpoints = []
         for i in range(self.num_categories):
             midpoint = self.bounds[..., 0] + self.range_size * (i + 0.5)
             # rand uniform in range (- range_size/2, + range_size/2)
-            rand = torch.rand(1) * self.range_size - self.range_size / 2
+            rand = torch.rand(1, device=bounds.device) * self.range_size - self.range_size / 2
             midpoint = midpoint + rand
 
             # clip to bounds
@@ -20,7 +19,9 @@ class DiscreteEmbbeder:
             )
             midpoints.append(midpoint.tolist())
 
-        self.cat_range = torch.tensor(midpoints).T
+        self.cat_range = torch.tensor(midpoints, device=bounds.device).T
+        self.device = bounds.device
+        self.dtype = bounds.dtype
 
     def encode(self, sentence, *args, **kwargs):
         """Cat2Con

@@ -71,17 +71,17 @@ class Parameters:
         self.env_name = args.env_name
         self.n_actions = 1
         self.y_dim = 1
-        self.algo_n_iterations = 0
+        self.algo_n_iterations = None
         self.algo_lookahead_steps = args.algo_lookahead_steps
         if args.env_discretized:
             self.env_discretized = True
             self.num_categories = 20
-            self.save_dir += "_env_discretized"
+            self.save_dir += "_discretized"
         else:
             self.env_discretized = False
             self.num_categories = None
 
-        self.n_samples = 1  # 64
+        self.n_samples = 64 # 1
         self.amortized = True if self.algo == "HES" else False
         self.hidden_dim = 32
         self.acq_opt_lr = 0.001 if self.amortized else 1e-3
@@ -90,10 +90,12 @@ class Parameters:
 
         if self.algo == "HES" and self.algo_lookahead_steps > 1:
             self.n_restarts = 16
-
         elif self.algo == "qMSL" and self.algo_lookahead_steps > 1:
-            self.n_restarts = 16
-            self.n_samples = 8
+            self.n_restarts = 4
+            self.n_samples = 2
+            self.algo_lookahead_steps = 4
+        else:
+            self.algo_lookahead_steps = 0
 
         self.kernel = None
         self.cost_spotlight_k = args.cost_spotlight_k
