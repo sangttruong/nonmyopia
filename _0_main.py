@@ -467,7 +467,7 @@ if __name__ == "__main__":
     real_loss = run(local_parms, env)
 
     # Assign loss to dictionary of metrics
-    metrics[f"{local_args.algo}_{local_parms.seed}"] = real_loss
+    metrics[f"{local_parms.algo}_{local_parms.seed}"] = real_loss
 
     pickle.dump(
         metrics,
