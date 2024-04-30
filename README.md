@@ -14,6 +14,8 @@ There are two main experiments:
 1. Install the requirements
 ```bash
  pip install -r requirements.txt
+ or 
+ conda env create -f environment.yml
  ```
 2. Run the experiments by bash script `scripts.sh`
 ```bash
