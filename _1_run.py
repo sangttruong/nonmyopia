@@ -34,23 +34,8 @@ def run(parms, env) -> None:
         parms (Parameter): List of input parameters
         env: Environment
     """
-
-    # Finding maxima of env using gradient descent
-    if not parms.env_discretized:
-        optimal_value = env.optimal_value
-    else:
-        # Finding maxima of env using grid search
-        print("Computing optimal value...")
-        categories = torch.arange(0, parms.num_categories).to(
-            device=parms.device, dtype=parms.torch_dtype)
-        X = [categories] * parms.x_dim
-        X = torch.stack(torch.meshgrid(*X), dim=-1).reshape(-1, parms.x_dim)
-        y = env(X)
-        optimal_value, idx = torch.max(y, dim=0)
-        maxima = X[idx].cpu().detach()
-        optimal_value = optimal_value.cpu().detach()
-        print("Optimal value:", maxima.numpy().tolist(), optimal_value.item())
-
+    optimal_value = env.optimal_value
+    
     if parms.env_name == "AntBO":
         data_x = generate_random_X(parms.n_initial_points, parms.x_dim)
         data_x = data_x.to(
@@ -239,7 +224,8 @@ def run(parms, env) -> None:
 
             buffer["x"][i] = next_x
             buffer["y"][i] = next_y
-            buffer["h"][i] = hidden_state
+            if parms.amortized:
+                buffer["h"][i] = hidden_state
         else:
             next_x = buffer["x"][i]
             actions = None
@@ -267,7 +253,7 @@ def run(parms, env) -> None:
         print("Buffer saved to file.")
 
         # Save model to file after each iteration
-        torch.save(WM.state_dict(), f"{parms.save_dir}/world_model.pt")
+        torch.save(WM.state_dict(), f"{parms.save_dir}/world_model_{i}.pt")
         print("Model saved to file.")
 
         # Report to wandb

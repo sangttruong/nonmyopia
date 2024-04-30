@@ -7,13 +7,14 @@ class EnvWrapper:
     def __init__(self, env_name, env):
         self.env = env
         self.bounds = env.bounds
-        self.range_y = [self.optimize_min(), self.optimize_max()]
-        print("Y range:", self.range_y)
         
         if env_name in ["SynGP", "Alpine"]:
-            self.optimal_value = self.range_y[1]
+            self.optimal_value = self.optimize_max()
         else:
             self.optimal_value = self.env.optimal_value
+            
+        self.range_y = [self.optimize_min(), self.optimal_value]
+        print("Y range:", self.range_y)
         print("Optimal value:", self.optimal_value)
 
     def optimize_min(self):

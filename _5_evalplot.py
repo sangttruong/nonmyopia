@@ -597,12 +597,15 @@ def eval_and_plot_1D(
 
 def eval_and_plot(func, wm, cfg, acqf, *args, **kwargs):
     r"""Draw the posterior of the model."""
-    if cfg.x_dim == 1:
-        return eval_and_plot_1D(func, wm, cfg, acqf, *args, **kwargs)
-    elif cfg.x_dim == 2:
-        return eval_and_plot_2D(func, wm, cfg, acqf, *args, **kwargs)
+    if cfg.plot:
+        if cfg.x_dim == 1:
+            return eval_and_plot_1D(func, wm, cfg, acqf, *args, **kwargs)
+        elif cfg.x_dim == 2:
+            return eval_and_plot_2D(func, wm, cfg, acqf, *args, **kwargs)
+        else:
+            print("NOTICE: Plotting is only done when x_dim is 1 or 2.")
+            return eval_func(cfg, acqf, func, *args, **kwargs)
     else:
-        print("NOTICE: Plotting is only done when x_dim is 1 or 2.")
         return eval_func(cfg, acqf, func, *args, **kwargs)
 
 

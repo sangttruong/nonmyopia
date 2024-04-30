@@ -166,11 +166,11 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
                     x_dim,
                 ]
             X = X.reshape(*X_shape)
-            # >>> num_x_{step} * x_dim
+            # >>> num_x_{step} x 1 x x_dim x (num_categories)
 
             X_expanded_shape = [n_fantasies] + [-1] * len(X_shape)
             X_expanded = X[None, ...].expand(*X_expanded_shape)
-            # >>> n_samples * num_x_{step} * 1 * dim
+            # >>> n_samples x num_x_{step} x 1 x dim x (num_categories)
 
             if embedder is not None:
                 X = embedder.encode(X)
@@ -402,11 +402,9 @@ class qCostFunction(nn.Module):
             + torch.rand_like(diff) * self.max_noise
         )
         if self.discount > 0.0:
-            diff = (
-                diff
-                - self.discount
+            diff = diff * (1 - self.discount) \
                 * (previous_cost + diff > self.discount_threshold).float()
-            )
+            
         return diff
 
 

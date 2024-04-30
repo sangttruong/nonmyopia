@@ -7,6 +7,12 @@
 r"""Run the main experiments."""
 
 import os
+os.environ["OMP_NUM_THREADS"] = "2"
+os.environ["OPENBLAS_NUM_THREADS"] = "2"
+os.environ["MKL_NUM_THREADS"] = "2"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
+os.environ["NUMEXPR_NUM_THREADS"] = "2"
+
 import copy
 import torch
 import wandb
@@ -60,37 +66,29 @@ class Parameters:
         self.cont = args.cont
         self.test_only = args.test_only
         self.seed = args.seed
-
-        if not self.test_only:
-            self.save_dir = (
-                f"./results/{args.env_name}_{args.env_noise}/{args.algo}_ls{args.algo_lookahead_steps}_seed{args.seed}"
-            )
+        self.plot = args.plot
 
         self.algo = args.algo
-        self.algo_ts = args.algo_ts
+        self.algo_ts = False
         self.env_name = args.env_name
         self.n_actions = 1
         self.y_dim = 1
         self.algo_n_iterations = None
-        self.algo_lookahead_steps = args.algo_lookahead_steps
-        if args.env_discretized:
-            self.env_discretized = True
-            self.num_categories = 20
-            self.save_dir += "_discretized"
-        else:
-            self.env_discretized = False
-            self.num_categories = None
 
         self.n_samples = 64 # 1
-        self.amortized = True if self.algo == "HES" else False
+        self.amortized = False
         self.hidden_dim = 32
         self.acq_opt_lr = 0.001 if self.amortized else 1e-3
         self.acq_opt_iter = 500 if self.amortized else 500
         self.n_restarts = 64
 
-        if self.algo == "HES" and self.algo_lookahead_steps > 1:
+        if self.algo.startswith("HES"):
             self.n_restarts = 16
-        elif self.algo == "qMSL" and self.algo_lookahead_steps > 1:
+            self.algo = "HES"
+            self.algo_lookahead_steps = int(args.algo.split('-')[-1])
+            self.algo_ts = "TS" in args.algo
+            self.amortized = "AM" in args.algo
+        elif self.algo == "qMSL":
             self.n_restarts = 4
             self.n_samples = 2
             self.algo_lookahead_steps = 4
@@ -98,12 +96,6 @@ class Parameters:
             self.algo_lookahead_steps = 0
 
         self.kernel = None
-        self.cost_spotlight_k = args.cost_spotlight_k
-        self.cost_p_norm = args.cost_p_norm
-        self.cost_max_noise = args.cost_max_noise
-        self.cost_discount = args.cost_discount
-        self.cost_discount_threshold = args.cost_discount_threshold
-
         if self.env_name == "Ackley":
             self.x_dim = 2
             self.bounds = [-2, 2]
@@ -221,6 +213,29 @@ class Parameters:
 
         else:
             raise NotImplementedError
+
+        self.cost_spotlight_k = None
+        self.cost_p_norm = None
+        self.cost_max_noise = 1e-5
+        self.cost_discount = 0.0
+        self.cost_discount_threshold = 0.0
+
+        if args.cost_fn == "euclidean":
+            self.cost_spotlight_k = 1
+            self.cost_p_norm = 2
+        elif args.cost_fn == "manhattan":
+            self.cost_spotlight_k = 1
+            self.cost_p_norm = 1
+        elif args.cost_fn == "r-spotlight":
+            self.cost_spotlight_k = 1e5
+            self.cost_p_norm = 2
+        elif args.cost_fn == "non-markovian":
+            self.cost_spotlight_k = 1
+            self.cost_p_norm = 2
+            self.cost_discount = 0.1
+            self.cost_discount_threshold = 5 * self.radius
+        else:
+            raise NotImplementedError
         
         # Random select initial points
         self.bounds = np.array(self.bounds)
@@ -255,7 +270,18 @@ class Parameters:
         
         self.env_noise = args.env_noise * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
         self.bounds = torch.tensor(self.bounds, dtype=self.torch_dtype, device=self.device)
-
+        if not self.test_only:
+            self.save_dir = (
+                f"./results/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{self.seed}"
+            )
+            
+        if args.env_discretized:
+            self.env_discretized = True
+            self.num_categories = 20
+        else:
+            self.env_discretized = False
+            self.num_categories = None
+            
         self.task = args.task
         self.set_task_parms()
 
@@ -381,18 +407,23 @@ def make_save_dir(config):
     init_dir_path = Path(config.save_dir)
     dir_path = Path(str(init_dir_path))
 
+    if not os.path.exists(os.path.join(config.save_dir, "buffer.pt")):
+        config.cont = False
+    
     if not config.cont and not os.path.exists(config.save_dir):
         dir_path.mkdir(parents=True, exist_ok=False)
     elif not config.cont and os.path.exists(config.save_dir):
-        for i in range(100):
-            try:
-                dir_path.mkdir(parents=True, exist_ok=False)
-                break
-            except FileExistsError:
-                dir_path = Path(str(init_dir_path) + "_" + str(i).zfill(2))
+        # for i in range(100):
+        #     try:
+        #         dir_path.mkdir(parents=True, exist_ok=False)
+        #         break
+        #     except FileExistsError:
+        #         dir_path = Path(str(init_dir_path) + "_" + str(i).zfill(2))
         config.save_dir = str(dir_path)
     elif config.cont and not os.path.exists(config.save_dir):
-        raise FileNotFoundError(f"save_dir: {config.save_dir} does not exist")
+        print(f"WARNING: save_dir={config.save_dir} does not exist. Rerun from scratch.")
+        dir_path.mkdir(parents=True, exist_ok=False)
+        
     print(f"Created save_dir: {config.save_dir}")
 
     # Save config to save_dir as parameters.json
@@ -410,17 +441,19 @@ if __name__ == "__main__":
         "env_noise": 0.0,
         "env_discretized": False,
         "algo": "HES",
-        "algo_ts": True,
+        # "algo_ts": True,
         # "algo_n_iterations": 75,
         # "n_initial_points": 25,
-        "algo_lookahead_steps": 20,
-        "cost_spotlight_k": 100,
-        "cost_p_norm": 2.0,
-        "cost_max_noise": 1e-5,
-        "cost_discount": 0.0,
-        "cost_discount_threshold": -1,
+        # "algo_lookahead_steps": 20,
+        # "cost_spotlight_k": 100,
+        # "cost_p_norm": 2.0,
+        # "cost_max_noise": 1e-5,
+        # "cost_discount": 0.0,
+        # "cost_discount_threshold": -1,
+        "cost_fn": "euclidean",
+        "plot": True,
         "gpu_id": 0,
-        "cont": False,
+        "cont": True,
         "test_only": False
     }
     wandb.init(project="nonmyopia", config=default_config)
@@ -433,17 +466,19 @@ if __name__ == "__main__":
     parser.add_argument("--env_noise", type=float, default=0.0)
     parser.add_argument("--env_discretized", type=str2bool, default=False)
     parser.add_argument("--algo", type=str, default="HES")
-    parser.add_argument("--algo_ts", type=str2bool, default=False)
+    # parser.add_argument("--algo_ts", type=str2bool, default=False)
     # parser.add_argument("--algo_n_iterations", type=int)
     # parser.add_argument("--n_initial_points", type=int)
-    parser.add_argument("--algo_lookahead_steps", type=int)
-    parser.add_argument("--cost_spotlight_k", type=int, default=100)
-    parser.add_argument("--cost_p_norm", type=float, default=2.0)
-    parser.add_argument("--cost_max_noise", type=float, default=1e-5)
-    parser.add_argument("--cost_discount", type=float, default=0.0)
-    parser.add_argument("--cost_discount_threshold", type=float, default=-1)
+    # parser.add_argument("--algo_lookahead_steps", type=int)
+    # parser.add_argument("--cost_spotlight_k", type=int, default=100)
+    # parser.add_argument("--cost_p_norm", type=float, default=2.0)
+    # parser.add_argument("--cost_max_noise", type=float, default=1e-5)
+    # parser.add_argument("--cost_discount", type=float, default=0.0)
+    # parser.add_argument("--cost_discount_threshold", type=float, default=-1)
+    parser.add_argument("--cost_fn", type=str, default="euclidean")
+    parser.add_argument("--plot", type=str2bool, default=True)
     parser.add_argument("--gpu_id", type=int, default=0)
-    parser.add_argument("--cont", type=str2bool, default=False)
+    parser.add_argument("--cont", type=str2bool, default=True)
     parser.add_argument("--test_only", type=str2bool, default=False)
     args = parser.parse_args()
     

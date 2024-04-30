@@ -5,7 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 r"""Implement an actor."""
-
+import math 
 import torch
 from torch import Tensor
 from tqdm import tqdm
@@ -56,7 +56,7 @@ class Actor:
                     amor_net = AmortizedNetworkAntBO
                 else:
                     amor_net = AmortizedNetwork
-
+                
                 self.maps = amor_net(
                     input_dim=self.parms.x_dim + self.parms.y_dim,
                     output_dim=self.parms.x_dim,
@@ -190,27 +190,47 @@ class Actor:
 
         else:
             self.maps = []
-
+            if self.parms.algo_ts:
+                nf_design_pts = [1] * self.algo_lookahead_steps
+            else:
+                if self.algo_lookahead_steps == 1:
+                    nf_design_pts = [64]
+                elif self.algo_lookahead_steps == 2:
+                    nf_design_pts = [64, 8]  # [64, 64]
+                elif self.algo_lookahead_steps == 3:
+                    nf_design_pts = [64, 4, 2]  # [64, 32, 8]
+                elif self.algo_lookahead_steps >= 4:
+                    nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
+                    nf_design_pts = nf_design_pts + [1] * (
+                        self.algo_lookahead_steps - 4
+                    )
+                    
             for s in range(self.algo_lookahead_steps):
                 x = torch.rand(
-                    self.parms.n_samples**s * self.parms.n_restarts,
+                    math.prod(nf_design_pts[:s]) * self.parms.n_restarts,
                     self.parms.x_dim,
                     device=self.parms.device,
                     dtype=self.parms.torch_dtype,
                 )
-                x = project2range(x).requires_grad_(True)
-                self.maps.append(x)
+                x = project2range(x)
+                if embedder is not None:
+                    x = embedder.decode(x)
+                    x = torch.nn.functional.one_hot(x, num_classes=self.parms.num_categories).float()
+                self.maps.append(x.requires_grad_(True))
 
             a = torch.rand(
-                self.parms.n_samples**self.algo_lookahead_steps
+                math.prod(nf_design_pts)
                 * self.parms.n_restarts
                 * self.parms.n_actions,
                 self.parms.x_dim,
                 device=self.parms.device,
                 dtype=self.parms.torch_dtype,
             )
-            a = project2range(a).requires_grad_(True)
-            self.maps.append(a)
+            a = project2range(a)
+            if embedder is not None:
+                a = embedder.decode(a)
+                a = torch.nn.functional.one_hot(a, num_classes=self.parms.num_categories).float()
+            self.maps.append(a.requires_grad_(True))
             self._parameters = self.maps
 
     def set_initial_acqf_params(self):
@@ -469,7 +489,8 @@ class Actor:
                     best_next_X = return_dict["X"]
                     best_actions = return_dict["actions"]
                     best_hidden_state = return_dict["hidden_state"]
-                    best_map = self.maps.state_dict()
+                    if self.parms.amortized:
+                        best_map = self.maps.state_dict()
                     early_stop = 0
                 else:
                     if iteration > self.parms.n_initial_points or ep >= 200:
@@ -482,8 +503,8 @@ class Actor:
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
-                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}",
-                      end="\r", flush=True)
+                if (ep+1) % 50 == 0:
+                    print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}")
                 if early_stop > 50:
                     break
 
@@ -510,7 +531,8 @@ class Actor:
             actions = best_actions[..., idx, :, :].detach()
 
             # Draw losses by acq_opt_iter
-            draw_loss_and_cost(self.parms.save_dir, losses, costs, iteration)
+            if self.parms.plot:
+                draw_loss_and_cost(self.parms.save_dir, losses, costs, iteration)
 
         elif self.parms.algo == "BudgetedBO":
             bounds = self.parms.bounds.T

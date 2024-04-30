@@ -18,6 +18,7 @@ from botorch import settings
 from botorch.models.utils.assorted import fantasize as fantasize_flag
 from botorch.sampling.normal import SobolQMCNormalSampler
 from botorch.utils.gp_sampling import GPDraw
+from botorch.sampling.pathwise.posterior_samplers import draw_matheron_paths
 from _4_qhes import set_sampler_and_n_fantasy
 from _6_samplers import PosteriorMeanSampler
 
@@ -138,7 +139,8 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
         hidden_state_returned = []
         for step in range(self.algo_lookahead_steps):
             # Draw new f ~ p(f|D)
-            self.f = GPDraw(self.model, seed=0)
+            # self.f = GPDraw(self.model, seed=0)
+            self.f = draw_matheron_paths(self.model, torch.Size([1]))
 
             # condition on X[step], then sample, then condition on (x,prev_X y)
             if use_amortized_map:
@@ -166,12 +168,13 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
                     1,
                     x_dim,
                 ]
+
             X = X.reshape(*X_shape)
-            # >>> num_x_{step} * x_dim
+            # >>> num_x_{step} x 1 x x_dim x (num_categories)
 
             X_expanded_shape = [n_fantasies] + [-1] * len(X_shape)
             X_expanded = X[None, ...].expand(*X_expanded_shape)
-            # >>> n_samples * num_x_{step} * 1 * dim
+            # >>> n_samples x num_x_{step} x 1 x dim x (num_categories)
 
             if embedder is not None:
                 X = embedder.encode(X)

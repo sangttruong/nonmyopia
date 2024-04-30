@@ -124,7 +124,6 @@ class AmortizedNetwork(nn.Module):
         output = postpro(preprocess_x)
         if self.discrete:
             output = output.reshape(output.shape[0], -1, self.num_categories)
-            # breakpoint()
             output = output.softmax(dim=-1)
             # output = torch.nn.functional.gumbel_softmax(output, hard=False)
             # y_soft = output.softmax(dim=-1)
