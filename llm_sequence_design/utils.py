@@ -3,6 +3,7 @@ import torch
 from tqdm import tqdm
 from functools import partial
 from torch.utils.data import DataLoader
+from datasets import Dataset
 
 
 def get_dataset_embedding(dataset, model, tokenizer, data_args):
@@ -45,24 +46,22 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
     column_names = list(next(iter(dataset)).keys())
     tokenized_dataset = dataset.map(preprocess_func, batched=True,
                                     remove_columns=column_names, **kwargs)
+    
+    model_inputs = {
+        "inputs_embeds": [],
+        "rewards": []
+    }
+    
+    for example in tqdm(tokenized_dataset):
+        embeds = model.pretrained_model.model(
+            input_ids=torch.tensor([example['input_ids']], device=model.pretrained_model.device).long(),
+            attention_mask=torch.tensor([example['attention_mask']], device=model.pretrained_model.device).long()
+        )
+        model_inputs['inputs_embeds'].append(
+            embeds.last_hidden_state[0][-1].detach().cpu().tolist())
+        model_inputs['rewards'].append(example['rewards'])
 
-    def infer_embedding(batch):
-        model_inputs = {
-            "inputs_embeds": [],
-            "rewards": []
-        }
-        for input_ids, attention_mask, reward in zip(batch['input_ids'], batch['attention_mask'], batch['rewards']):
-            embeds = model.pretrained_model.model(input_ids=torch.tensor([input_ids]),
-                                                  attention_mask=torch.tensor([attention_mask]))
-            model_inputs['inputs_embeds'].append(
-                embeds.last_hidden_state[0][-1].detach().cpu())
-            model_inputs['rewards'].append(reward)
-
-        return model_inputs
-
-    embeded_dataset = tokenized_dataset.map(infer_embedding, batched=True,
-                                            remove_columns=['input_ids', 'attention_mask'], **kwargs)
-
+    embeded_dataset = Dataset.from_dict(model_inputs)
     return embeded_dataset
 
 
