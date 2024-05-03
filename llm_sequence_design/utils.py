@@ -46,19 +46,24 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
     column_names = list(next(iter(dataset)).keys())
     tokenized_dataset = dataset.map(preprocess_func, batched=True,
                                     remove_columns=column_names, **kwargs)
-    
+
     model_inputs = {
         "inputs_embeds": [],
         "rewards": []
     }
-    
+
     for example in tqdm(tokenized_dataset):
         embeds = model.pretrained_model.model(
-            input_ids=torch.tensor([example['input_ids']], device=model.pretrained_model.device).long(),
-            attention_mask=torch.tensor([example['attention_mask']], device=model.pretrained_model.device).long()
+            input_ids=torch.tensor(
+                [example['input_ids']], device=model.pretrained_model.device).long(),
+            attention_mask=torch.tensor(
+                [example['attention_mask']], device=model.pretrained_model.device).long()
         )
+        end_index = (example['input_ids'] !=
+                     tokenizer.pad_token_id).nonzero()[-1]
+
         model_inputs['inputs_embeds'].append(
-            embeds.last_hidden_state[0][-1].detach().cpu().tolist())
+            embeds.last_hidden_state[0][end_index].detach().cpu().tolist())
         model_inputs['rewards'].append(example['rewards'])
 
     embeded_dataset = Dataset.from_dict(model_inputs)
