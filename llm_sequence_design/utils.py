@@ -53,15 +53,20 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
     }
 
     for example in tqdm(tokenized_dataset):
-        embeds = model.pretrained_model.model(
-            input_ids=torch.tensor(
-                [example['input_ids']], device=model.pretrained_model.device).long(),
-            attention_mask=torch.tensor(
+        input_ids = torch.tensor(
+                [example['input_ids']], device=model.pretrained_model.device).long()
+        attention_mask = torch.tensor(
                 [example['attention_mask']], device=model.pretrained_model.device).long()
+        embeds = model.pretrained_model.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask
         )
-        end_index = (example['input_ids'] !=
-                     tokenizer.pad_token_id).nonzero()[-1]
-
+        
+        if tokenizer.pad_token_id is None:
+            end_index = -1
+        else:
+            end_index = (input_ids[0] != tokenizer.pad_token_id).nonzero()[-1]
+        
         model_inputs['inputs_embeds'].append(
             embeds.last_hidden_state[0][end_index].detach().cpu().tolist())
         model_inputs['rewards'].append(example['rewards'])

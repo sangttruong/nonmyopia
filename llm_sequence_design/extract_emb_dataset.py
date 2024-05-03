@@ -66,14 +66,14 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
 
     emb_testing_dataset = get_dataset_embedding(testing_dataset, world_model.model, world_model.tokenizer, data_args)
-    save_to_pkl(emb_testing_dataset.data, f"data/{dataset_attr.dataset.replace("/", "_")}-{wm_model_args.wm_model_name_or_path.split("/")[-1]}-embedding-test.pkl")
+    save_to_pkl(emb_testing_dataset.data, f"data/{data_args.dataset.replace('/', '_')}-{wm_model_args.wm_model_name_or_path.split('/')[-1]}-embedding-test.pkl")
     
     emb_training_dataset = get_dataset_embedding(training_dataset, world_model.model, world_model.tokenizer, data_args)
-    save_to_pkl(emb_training_dataset.data, f"data/{dataset_attr.dataset.replace("/", "_")}-{wm_model_args.wm_model_name_or_path.split("/")[-1]}-embedding-train.pkl")
+    save_to_pkl(emb_training_dataset.data, f"data/{data_args.dataset.replace('/', '_')}-{wm_model_args.wm_model_name_or_path.split('/')[-1]}-embedding-train.pkl")
 
     full_ds = DatasetDict({"train": emb_training_dataset, "validation": emb_testing_dataset})
-    full_ds.push_to_hub(model_args.export_hub_model_id,
-                        token=model_args.hf_hub_token,
+    full_ds.push_to_hub(wm_model_args.export_hub_model_id,
+                        token=wm_model_args.hf_hub_token,
                         commit_message="Upload data")
     
 if __name__ == '__main__':
