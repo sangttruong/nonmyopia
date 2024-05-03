@@ -68,7 +68,7 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
             end_index = (input_ids[0] != tokenizer.pad_token_id).nonzero()[-1]
         
         model_inputs['inputs_embeds'].append(
-            embeds.last_hidden_state[0][end_index].detach().cpu().tolist())
+            embeds.last_hidden_state[0][end_index].squeeze().detach().cpu().tolist())
         model_inputs['rewards'].append(example['rewards'])
 
     embeded_dataset = Dataset.from_dict(model_inputs)
