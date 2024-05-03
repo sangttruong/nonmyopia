@@ -6,5 +6,29 @@
       "text": "primary",
       "reward": "log_fluorescence"
     }
+  },
+  "ura-hcmut/proteinea_fluorescence-esm2_t33_650M_UR50D-embedding": {
+    "hf_hub_url": "ura-hcmut/proteinea_fluorescence-esm2_t33_650M_UR50D-embedding",
+    "formatting": "oracle"
+  },
+  "ura-hcmut/proteinea_fluorescence-esm2_t36_3B_UR50D-embedding": {
+    "hf_hub_url": "ura-hcmut/proteinea_fluorescence-esm2_t36_3B_UR50D-embedding",
+    "formatting": "oracle"
+  },
+  "ura-hcmut/proteinea_fluorescence-Llama-2-7b-hf-embedding": {
+    "hf_hub_url": "ura-hcmut/proteinea_fluorescence-Llama-2-7b-hf-embedding",
+    "formatting": "oracle"
+  },
+  "ura-hcmut/proteinea_fluorescence-Meta-Llama-3-8B-embedding": {
+    "hf_hub_url": "ura-hcmut/proteinea_fluorescence-Meta-Llama-3-8B-embedding",
+    "formatting": "oracle"
+  },
+  "ura-hcmut/proteinea_fluorescence-Mistral-7B-v0.1-embedding": {
+    "hf_hub_url": "ura-hcmut/proteinea_fluorescence-Mistral-7B-v0.1-embedding",
+    "formatting": "oracle"
+  },
+  "ura-hcmut/proteinea_fluorescence-gemma-7b-embedding": {
+    "hf_hub_url": "ura-hcmut/proteinea_fluorescence-gemma-7b-embedding",
+    "formatting": "oracle"
   }
 }

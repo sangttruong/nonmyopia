@@ -25,10 +25,10 @@ class OracleTrainer(Trainer):
     """
 
     def __init__(self, finetuning_args: "FinetuningArguments", **kwargs) -> None:
-        super().__init__(**kwargs)
+        self.emb_enabled = kwargs.pop("emb_enabled", False)
         self.finetuning_args = finetuning_args
         self.can_return_loss = True  # override property to return eval_loss
-        self.emb_enabled = kwargs.get("emb_enabled", False)
+        super().__init__(**kwargs)
 
     def create_optimizer(self) -> "torch.optim.Optimizer":
         if self.optimizer is None:
@@ -57,7 +57,13 @@ class OracleTrainer(Trainer):
         See: https://github.com/huggingface/transformers/blob/v4.30.2/src/transformers/trainer.py#L3509
         """
         if self.emb_enabled:
-            breakpoint()
+            rewards = model(inputs["inputs_embeds"])
+            if return_outputs:  # use the score on the last token except pad token for inference
+                scores = rewards
+            loss = torch.nn.functional.mse_loss(rewards,
+                             inputs["rewards"].reshape_as(rewards),
+                             reduction='mean').mean()
+
         else:
             # Compute rewards
             _, _, values = model(
@@ -94,10 +100,11 @@ class OracleTrainer(Trainer):
                                                      real_rewards[i].unsqueeze(
                                                          0),
                                                      reduction='mean').mean()
+            loss = loss / batch_size
 
-        loss = loss / batch_size
         if return_outputs:
-            scores = torch.stack(scores)
+            if not isinstance(scores, torch.Tensor):
+                scores = torch.stack(scores)
             return loss, [loss, scores]
 
         return loss

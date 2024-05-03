@@ -6,9 +6,10 @@ from ...extras.misc import fix_valuehead_checkpoint
 from ...extras.ploting import plot_loss
 from ...model import load_model, load_tokenizer
 from ..utils import create_modelcard_and_push
-from .metric import compute_accuracy, compute_rmse
+from .metric import compute_regression_metrics
 from .trainer import OracleTrainer
 
+from transformers import DefaultDataCollator
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
@@ -35,6 +36,10 @@ def run_oracle(
 
     # Update arguments
     training_args.remove_unused_columns = False  # important for pairwise dataset
+    if data_args.emb_enabled:
+        data_collator = DefaultDataCollator()
+    else:
+        data_collator = None
 
     # Initialize our Trainer
     trainer = OracleTrainer(
@@ -43,9 +48,10 @@ def run_oracle(
         finetuning_args=finetuning_args,
         tokenizer=tokenizer,
         callbacks=callbacks + [FixValueHeadModelCallback()],
-        compute_metrics=compute_rmse,
+        compute_metrics=compute_regression_metrics,
         train_dataset=train_dataset,
         eval_dataset=eval_dataset,
+        data_collator=data_collator,
         emb_enabled=data_args.emb_enabled,
     )
 
@@ -72,7 +78,7 @@ def run_oracle(
 
     # Predict
     if training_args.do_predict:
-        predict_results = trainer.predict(dataset, metric_key_prefix="predict")
+        predict_results = trainer.predict(eval_dataset, metric_key_prefix="predict")
         trainer.log_metrics("predict", predict_results.metrics)
         trainer.save_metrics("predict", predict_results.metrics)
         trainer.save_predictions(predict_results)

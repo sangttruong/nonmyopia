@@ -1,14 +1,12 @@
 from typing import Dict, Sequence, Tuple, Union
 
 import numpy as np
-import torch.nn.functional as F
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 
-
-def compute_accuracy(eval_preds: Sequence[Union[np.ndarray, Tuple[np.ndarray]]]) -> Dict[str, float]:
-    preds, _ = eval_preds
-    return {"accuracy": (preds[0] > preds[1]).sum() / len(preds[0])}
-
-
-def compute_rmse(eval_preds: Sequence[Union[np.ndarray, Tuple[np.ndarray]]]) -> Dict[str, float]:
-    preds, _ = eval_preds
-    return {"rmse": F.mse_loss(preds[0], preds[1], reduction="mean").sqrt().item()}
+def compute_regression_metrics(eval_preds: Sequence[Union[np.array, Tuple[np.array]]]) -> Dict[str, float]:
+    preds, labels = eval_preds
+    labels = labels.reshape(-1, 1)
+    
+    return {"mae": mean_absolute_error(labels, preds),
+            "r2": r2_score(labels, preds), 
+            "rmse": root_mean_squared_error(labels, preds)}

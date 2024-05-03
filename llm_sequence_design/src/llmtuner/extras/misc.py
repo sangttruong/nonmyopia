@@ -59,14 +59,19 @@ class AverageMeter:
 
 def check_dependencies() -> None:
     if int(os.environ.get("DISABLE_VERSION_CHECK", "0")):
-        logger.warning("Version checking has been disabled, may lead to unexpected behaviors.")
+        logger.warning(
+            "Version checking has been disabled, may lead to unexpected behaviors.")
     else:
-        require_version("transformers>=4.37.2", "To fix: pip install transformers>=4.37.2")
-        require_version("datasets>=2.14.3", "To fix: pip install datasets>=2.14.3")
-        require_version("accelerate>=0.27.2", "To fix: pip install accelerate>=0.27.2")
+        require_version("transformers>=4.37.2",
+                        "To fix: pip install transformers>=4.37.2")
+        require_version("datasets>=2.14.3",
+                        "To fix: pip install datasets>=2.14.3")
+        require_version("accelerate>=0.27.2",
+                        "To fix: pip install accelerate>=0.27.2")
         require_version("peft>=0.10.0", "To fix: pip install peft>=0.10.0")
         require_version("trl>=0.8.1", "To fix: pip install trl>=0.8.1")
-        require_version("gradio>=4.0.0,<=4.21.0", "To fix: pip install gradio==4.21.0")
+        require_version("gradio>=4.0.0,<=4.21.0",
+                        "To fix: pip install gradio==4.21.0")
 
 
 def count_parameters(model: torch.nn.Module) -> Tuple[int, int]:
@@ -109,7 +114,7 @@ def fix_valuehead_checkpoint(
 
     We assume `stage3_gather_16bit_weights_on_model_save=true`.
     """
-    if not isinstance(model.pretrained_model, (PreTrainedModel, PeftModel)):
+    if hasattr(model, "pretrained_model") and not isinstance(model.pretrained_model, (PreTrainedModel, PeftModel)):
         return
 
     if safe_serialization:
@@ -118,28 +123,35 @@ def fix_valuehead_checkpoint(
 
         path_to_checkpoint = os.path.join(output_dir, SAFE_WEIGHTS_NAME)
         with safe_open(path_to_checkpoint, framework="pt", device="cpu") as f:
-            state_dict: Dict[str, torch.Tensor] = {key: f.get_tensor(key) for key in f.keys()}
+            state_dict: Dict[str, torch.Tensor] = {
+                key: f.get_tensor(key) for key in f.keys()}
     else:
         path_to_checkpoint = os.path.join(output_dir, WEIGHTS_NAME)
-        state_dict: Dict[str, torch.Tensor] = torch.load(path_to_checkpoint, map_location="cpu")
+        state_dict: Dict[str, torch.Tensor] = torch.load(
+            path_to_checkpoint, map_location="cpu")
 
     decoder_state_dict = {}
     v_head_state_dict = {}
     for name, param in state_dict.items():
         if name.startswith("v_head."):
             v_head_state_dict[name] = param
-        else:
+        elif "pretrained_model." in name:
             decoder_state_dict[name.replace("pretrained_model.", "")] = param
+        else:
+            v_head_state_dict["vhead.summary." + name] = param
 
     os.remove(path_to_checkpoint)
-    model.pretrained_model.save_pretrained(
-        output_dir, state_dict=decoder_state_dict or None, safe_serialization=safe_serialization
-    )
+    if hasattr(model, "pretrained_model"):
+        model.pretrained_model.save_pretrained(
+            output_dir, state_dict=decoder_state_dict or None, safe_serialization=safe_serialization
+        )
 
     if safe_serialization:
-        save_file(v_head_state_dict, os.path.join(output_dir, V_HEAD_SAFE_WEIGHTS_NAME), metadata={"format": "pt"})
+        save_file(v_head_state_dict, os.path.join(
+            output_dir, V_HEAD_SAFE_WEIGHTS_NAME), metadata={"format": "pt"})
     else:
-        torch.save(v_head_state_dict, os.path.join(output_dir, V_HEAD_WEIGHTS_NAME))
+        torch.save(v_head_state_dict, os.path.join(
+            output_dir, V_HEAD_WEIGHTS_NAME))
 
     logger.info("Value head model saved at: {}".format(output_dir))
 
@@ -220,7 +232,8 @@ def try_download_model_from_ms(model_args: "ModelArguments") -> str:
         revision = "master" if model_args.model_revision == "main" else model_args.model_revision
         return snapshot_download(model_args.model_name_or_path, revision=revision, cache_dir=model_args.cache_dir)
     except ImportError:
-        raise ImportError("Please install modelscope via `pip install modelscope -U`")
+        raise ImportError(
+            "Please install modelscope via `pip install modelscope -U`")
 
 
 def use_modelscope() -> bool:
