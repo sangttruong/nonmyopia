@@ -24,10 +24,14 @@ def run_oracle(
     callbacks: Optional[List["TrainerCallback"]] = None,
 ):
     tokenizer = load_tokenizer(model_args)
-    dataset = get_dataset(tokenizer, model_args,
-                          data_args, training_args, stage="oracle")
+    data_args.split = "train"
+    train_dataset = get_dataset(tokenizer, model_args,
+                                data_args, training_args, stage="oracle")
+    data_args.split = "validation"
+    eval_dataset = get_dataset(tokenizer, model_args,
+                               data_args, training_args, stage="oracle")
     model = load_model(tokenizer, model_args, finetuning_args,
-                       training_args.do_train, add_valuehead=True)
+                       training_args.do_train, add_valuehead=True, emb_enabled=data_args.emb_enabled)
 
     # Update arguments
     training_args.remove_unused_columns = False  # important for pairwise dataset
@@ -40,7 +44,9 @@ def run_oracle(
         tokenizer=tokenizer,
         callbacks=callbacks + [FixValueHeadModelCallback()],
         compute_metrics=compute_rmse,
-        **split_dataset(dataset, data_args, training_args),
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        emb_enabled=data_args.emb_enabled,
     )
 
     # Training

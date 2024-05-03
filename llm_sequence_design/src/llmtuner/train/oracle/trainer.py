@@ -28,6 +28,7 @@ class OracleTrainer(Trainer):
         super().__init__(**kwargs)
         self.finetuning_args = finetuning_args
         self.can_return_loss = True  # override property to return eval_loss
+        self.emb_enabled = kwargs.get("emb_enabled", False)
 
     def create_optimizer(self) -> "torch.optim.Optimizer":
         if self.optimizer is None:
@@ -55,40 +56,44 @@ class OracleTrainer(Trainer):
         Note that the first element will be removed from the output tuple.
         See: https://github.com/huggingface/transformers/blob/v4.30.2/src/transformers/trainer.py#L3509
         """
-        # Compute rewards
-        _, _, values = model(
-            input_ids=inputs["input_ids"],
-            attention_mask=inputs["attention_mask"],
-            output_hidden_states=True,
-            return_dict=True)
+        if self.emb_enabled:
+            breakpoint()
+        else:
+            # Compute rewards
+            _, _, values = model(
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
+                output_hidden_states=True,
+                return_dict=True)
 
-        unwrapped_model: "PreTrainedModel" = self.accelerator.unwrap_model(
-            self.model)
-        if getattr(unwrapped_model.config, "model_type", None) == "chatglm":
-            values = torch.transpose(values, 0, 1)
+            unwrapped_model: "PreTrainedModel" = self.accelerator.unwrap_model(
+                self.model)
+            if getattr(unwrapped_model.config, "model_type", None) == "chatglm":
+                values = torch.transpose(values, 0, 1)
 
-        # Split the inputs and rewards into two parts, chosen and rejected
-        batch_size = inputs["input_ids"].size(0)
-        input_ids = inputs["input_ids"]
-        real_rewards = inputs["rewards"]
-        rewards = values
-        scores = []
+            # Split the inputs and rewards into two parts, chosen and rejected
+            batch_size = inputs["input_ids"].size(0)
+            input_ids = inputs["input_ids"]
+            real_rewards = inputs["rewards"]
+            rewards = values
+            scores = []
 
-        # Compute pairwise loss. Only backprop on the different tokens before padding
-        # Inspired by: https://github.com/CarperAI/trlx/blob/main/examples/summarize_rlhf/reward_model/reward_model.py
-        loss = 0
-        for i in range(batch_size):
-            end_index = length = (
-                input_ids[i] != self.tokenizer.pad_token_id).nonzero()[-1] + 1
-            div_index = end_index - 1
+            # Compute pairwise loss. Only backprop on the different tokens before padding
+            # Inspired by: https://github.com/CarperAI/trlx/blob/main/examples/summarize_rlhf/reward_model/reward_model.py
+            loss = 0
+            for i in range(batch_size):
+                end_index = length = (
+                    input_ids[i] != self.tokenizer.pad_token_id).nonzero()[-1] + 1
+                div_index = end_index - 1
 
-            assert div_index > 0
-            trunc_rewards = rewards[i, div_index:end_index]
-            if return_outputs:  # use the score on the last token except pad token for inference
-                scores.append(rewards[i, length-1])
-            loss += torch.nn.functional.mse_loss(trunc_rewards,
-                                                 real_rewards[i].unsqueeze(0),
-                                                 reduction='mean').mean()
+                assert div_index > 0
+                trunc_rewards = rewards[i, div_index:end_index]
+                if return_outputs:  # use the score on the last token except pad token for inference
+                    scores.append(rewards[i, length-1])
+                loss += torch.nn.functional.mse_loss(trunc_rewards,
+                                                     real_rewards[i].unsqueeze(
+                                                         0),
+                                                     reduction='mean').mean()
 
         loss = loss / batch_size
         if return_outputs:

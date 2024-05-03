@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any, Dict
 
+import torch
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 from trl import AutoModelForCausalLMWithValueHead
 
@@ -63,6 +64,7 @@ def load_model(
     finetuning_args: "FinetuningArguments",
     is_trainable: bool = False,
     add_valuehead: bool = False,
+    emb_enabled: bool = False,
 ) -> "PreTrainedModel":
     r"""
     Loads pretrained model. Must after load_tokenizer.
@@ -76,6 +78,12 @@ def load_model(
     patch_config(config, tokenizer, model_args, init_kwargs, is_trainable)
 
     model = None
+
+    if emb_enabled:
+        model = torch.nn.Linear(
+            in_features=config.hidden_size, out_features=1)
+        return model
+
     if is_trainable and model_args.use_unsloth:
         from unsloth import FastLanguageModel  # type: ignore
 

@@ -8,12 +8,12 @@ from src.llmtuner.model import load_model, load_tokenizer
 class Oracle:
     def __init__(self, model_args, finetuning_args):
         self.tokenizer = load_tokenizer(model_args)
-        self.__model__ = load_model(self.tokenizer,
-                                    model_args,
-                                    finetuning_args,
-                                    is_trainable=False,
-                                    add_valuehead=True
-                                    )
+        self.model = load_model(self.tokenizer,
+                                model_args,
+                                finetuning_args,
+                                is_trainable=False,
+                                add_valuehead=True
+                                )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
@@ -25,4 +25,4 @@ class Oracle:
             "attention_mask": torch.one_likes(X_tokenized),
         }
 
-        return self.__model__(model_inputs, *args, **kwargs)
+        return self.model(model_inputs, *args, **kwargs)

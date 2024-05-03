@@ -30,6 +30,7 @@ def load_single_dataset(
     dataset_attr: "DatasetAttr",
     model_args: "ModelArguments",
     data_args: "DataArguments",
+    do_align: bool = False,
 ) -> Union["Dataset", "IterableDataset"]:
     logger.info("Loading dataset {}...".format(dataset_attr))
     data_path, data_name, data_dir, data_files = None, None, None, None
@@ -119,7 +120,10 @@ def load_single_dataset(
         num_samples = min(data_args.max_samples, len(dataset))
         dataset = dataset.select(range(num_samples))
 
-    return align_dataset(dataset, dataset_attr, data_args)
+    if do_align:
+        return align_dataset(dataset, dataset_attr, data_args)
+
+    return dataset
 
 
 def get_dataset(
@@ -150,6 +154,12 @@ def get_dataset(
             raise ValueError(
                 "Turn off `streaming` when saving dataset to disk.")
 
+    # Load embedded dataset
+    if data_args.emb_enabled:
+        do_align = False
+    else:
+        do_align = True
+
     with training_args.main_process_first(desc="load dataset"):
         all_datasets = []
         for dataset_attr in get_dataset_list(data_args):
@@ -158,8 +168,11 @@ def get_dataset(
                     "The dataset is not applicable in the current training stage.")
 
             all_datasets.append(load_single_dataset(
-                dataset_attr, model_args, data_args))
+                dataset_attr, model_args, data_args, do_align=do_align))
         dataset = merge_dataset(all_datasets, data_args, training_args)
+
+    if data_args.emb_enabled:
+        return dataset
 
     with training_args.main_process_first(desc="pre-process dataset"):
         preprocess_func, print_function = get_preprocess_and_print_func(
