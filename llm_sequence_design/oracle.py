@@ -12,7 +12,7 @@ class Oracle:
                                 model_args,
                                 finetuning_args,
                                 is_trainable=False,
-                                add_valuehead=True
+                                add_valuehead=False
                                 )
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:

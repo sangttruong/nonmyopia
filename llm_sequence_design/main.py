@@ -1,4 +1,5 @@
 import os
+import gc
 import time
 import torch
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -88,6 +89,9 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
             data_args=data_args,
             callbacks=callbacks
         )
+        gc.collect()
+        torch.cuda.empty_cache()
+        accelerator.free_memory()
 
         # Adjusting the lookahead steps
         if actor.algo_lookahead_steps > 1 and (

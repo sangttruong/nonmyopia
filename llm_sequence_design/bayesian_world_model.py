@@ -17,7 +17,6 @@ from botorch.exceptions.warnings import (
     InputDataWarning,
 )
 from botorch.models.utils import (
-    # gpt_posterior_settings,
     multioutput_to_batch_mode_transform,
     validate_input_scaling
 )
@@ -25,8 +24,9 @@ from botorch.acquisition.objective import PosteriorTransform
 from botorch.models.model import Model
 from botorch.models.transforms.input import InputTransform
 from botorch.models.transforms.outcome import OutcomeTransform
-from botorch.posteriors import TorchPosterior
+from botorch.posteriors import TorchPosterior, GPyTorchPosterior
 from botorch.posteriors.transformed import TransformedPosterior
+from gpytorch.likelihoods import Likelihood
 from gpytorch.distributions.multivariate_normal import MultivariateNormal
 from sklearn.linear_model import BayesianRidge
 from torch import Tensor
@@ -240,25 +240,26 @@ class BayesianRidgeModel(Model, ABC):
 
     def forward(self, x: Tensor) -> Tensor:
         x = self.transform_inputs(x)
-        y_mean, y_std = self.br_model.predict(x.cpu().numpy(), return_std=True)
+        x_shape = x.shape
+        x = x.view(-1, x_shape[-1])
+        y_mean, y_std = self.br_model.predict(
+            x.cpu().detach().numpy(), return_std=True)
+
         return MultivariateNormal(
-            torch.tensor(y_mean).to(x).unsqueeze(-1),
-            torch.tensor(y_std).to(x).reshape((-1, 1, 1)),
+            torch.tensor(y_mean).to(x).reshape(x_shape[:-1]),
+            torch.tensor(y_std).to(x).reshape(
+                x_shape[:-1]).unsqueeze(-1) * torch.eye(x_shape[-2]).expand(x_shape[:-1] + (x_shape[-2],))
         )
-        # return MultivariateNormal(
-        #     torch.tensor(y_mean).to(x).unsqueeze(0),
-        #     torch.diag(torch.tensor(y_std).to(x), diagonal=0).unsqueeze(0),
-        # )
 
     def posterior(
         self,
         X: Tensor,
         posterior_transform: Optional[PosteriorTransform] = None,
         **kwargs: Any,
-    ) -> Union[TorchPosterior, TransformedPosterior]:
+    ) -> Union[GPyTorchPosterior, TransformedPosterior]:
 
         mvn = self.forward(X)
-        posterior = TorchPosterior(distribution=mvn)
+        posterior = GPyTorchPosterior(distribution=mvn)
 
         if hasattr(self, "outcome_transform"):
             posterior = self.outcome_transform.untransform_posterior(posterior)
