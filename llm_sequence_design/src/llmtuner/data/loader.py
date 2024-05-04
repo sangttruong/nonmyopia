@@ -133,10 +133,12 @@ def get_dataset(
     training_args: "Seq2SeqTrainingArguments",
     stage: Literal["pt", "sft", "rm", "ppo", "oracle"],
 ) -> Union["Dataset", "IterableDataset"]:
-    template = get_template_and_fix_tokenizer(tokenizer, data_args.template)
-    if data_args.train_on_prompt and template.efficient_eos:
-        raise ValueError(
-            "Current template does not support `train_on_prompt`.")
+    if not data_args.emb_enabled:
+        template = get_template_and_fix_tokenizer(
+            tokenizer, data_args.template)
+        if data_args.train_on_prompt and template.efficient_eos:
+            raise ValueError(
+                "Current template does not support `train_on_prompt`.")
 
     # Load tokenized dataset
     if data_args.tokenized_path is not None:
