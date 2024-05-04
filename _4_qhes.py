@@ -256,6 +256,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         # Reduce dimensions
         while len(acqf_loss.shape) > 1:
             acqf_loss = acqf_loss.mean(dim=0)
+        while len(acqf_cost.shape) > 1:
             acqf_cost = acqf_cost.mean(dim=0)
         # >>> batch number of x_0
 
