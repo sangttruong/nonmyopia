@@ -51,13 +51,13 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
         "inputs_embeds": [],
         "rewards": []
     }
-
+    
     for example in tqdm(tokenized_dataset):
         input_ids = torch.tensor(
-                [example['input_ids']], device=model.pretrained_model.device).long()
+                [example['input_ids']]).long()
         attention_mask = torch.tensor(
-                [example['attention_mask']], device=model.pretrained_model.device).long()
-        embeds = model.pretrained_model.model(
+                [example['attention_mask']]).long()
+        embeds = model.model(
             input_ids=input_ids,
             attention_mask=attention_mask
         )
@@ -65,7 +65,7 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
         if tokenizer.pad_token_id is None:
             end_index = -1
         else:
-            end_index = (input_ids[0] != tokenizer.pad_token_id).nonzero()[-1]
+            end_index = (input_ids[0] != tokenizer.pad_token_id).nonzero()[-1].cpu()
         
         model_inputs['inputs_embeds'].append(
             embeds.last_hidden_state[0][end_index].squeeze().detach().cpu().tolist())
@@ -76,6 +76,8 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
 
 
 def random_sampling(dataset, num_samples, *args, **kwargs):
+    if "constrained_reward" in kwargs:
+        dataset = dataset.filter(lambda sample: sample["reward"] < kwargs["constrained_reward"])
     total_samples = len(dataset)
     indices = random.sample(range(total_samples), num_samples)
     return dataset.select(indices)

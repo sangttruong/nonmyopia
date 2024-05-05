@@ -222,6 +222,11 @@ class OracleArguments:
             "help": "Path to the model weight or identifier from huggingface.co/models or modelscope.cn/models."
         },
     )
+    oracle_linear_head_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Path to the linear head."},
+    )
     oracle_adapter_name_or_path: Optional[str] = field(
         default=None,
         metadata={

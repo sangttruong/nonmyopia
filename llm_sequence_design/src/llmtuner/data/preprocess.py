@@ -154,7 +154,7 @@ def preprocess_unsupervised_dataset(
     data_args: "DataArguments",
 ) -> Dict[str, List[List[int]]]:
     # build inputs with format `<bos> X` and labels with format `Y <eos>`
-    model_inputs = {"input_ids": [], "attention_mask": [], "labels": []}
+    model_inputs = {"input_ids": [], "attention_mask": [], "output_ids":[], "labels": []}
 
     for i in range(len(examples["prompt"])):
         if len(examples["prompt"][i]) % 2 != 1:
@@ -180,7 +180,8 @@ def preprocess_unsupervised_dataset(
 
         model_inputs["input_ids"].append(input_ids)
         model_inputs["attention_mask"].append([1] * len(input_ids))
-        model_inputs["labels"].append(labels)
+        model_inputs["output_ids"].append(labels)
+        model_inputs["labels"].append(examples["reward"][i])
 
     return model_inputs
 

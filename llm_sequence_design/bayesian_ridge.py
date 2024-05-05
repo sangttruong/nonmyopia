@@ -248,7 +248,7 @@ class BayesianRidgeModel(Model, ABC):
         return MultivariateNormal(
             torch.tensor(y_mean).to(x).reshape(x_shape[:-1]),
             torch.tensor(y_std).to(x).reshape(
-                x_shape[:-1]).unsqueeze(-1) * torch.eye(x_shape[-2]).expand(x_shape[:-1] + (x_shape[-2],))
+                x_shape[:-1]).unsqueeze(-1) * torch.eye(x_shape[-2]).to(x).expand(x_shape[:-1] + (x_shape[-2],))
         )
 
     def posterior(

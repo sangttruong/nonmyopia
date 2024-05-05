@@ -44,6 +44,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     fix_finetuning_policy_args(policy_finetuning_args)
 
     world_model = WorldModel(wm_model_args, wm_finetuning_args)
+    world_model.load()
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):

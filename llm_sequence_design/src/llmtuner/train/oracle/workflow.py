@@ -53,10 +53,8 @@ def run_oracle(
         train_dataset = get_dataset(None, model_args,
                                     data_args, training_args, stage="oracle")
 
-        X_train = train_dataset.data["inputs_embeds"].to_numpy()
-        y_train = train_dataset.data["rewards"].to_numpy()
-        X_train = np.stack(X_train)
-        y_train = np.stack(y_train)
+        X_train = np.stack(train_dataset["inputs_embeds"])
+        y_train = np.stack(train_dataset["rewards"])
         model.fit(X_train, y_train)
 
         # Save model
@@ -78,10 +76,8 @@ def run_oracle(
         eval_dataset = get_dataset(None, model_args,
                                    data_args, training_args, stage="oracle")
 
-        X_test = eval_dataset.data["inputs_embeds"].to_numpy()
-        y_test = eval_dataset.data["rewards"].to_numpy()
-        X_test = np.stack(X_test)
-        y_test = np.stack(y_test)
+        X_test = np.stack(eval_dataset["inputs_embeds"])
+        y_test = np.stack(eval_dataset["rewards"])
 
         # Save results
         y_test_hat = model.predict(X_test)
@@ -98,10 +94,8 @@ def run_oracle(
         eval_dataset = get_dataset(None, model_args,
                                    data_args, training_args, stage="oracle")
 
-        X_test = eval_dataset.data["inputs_embeds"].to_numpy()
-        y_test = eval_dataset.data["rewards"].to_numpy()
-        X_test = np.stack(X_test)
-        y_test = np.stack(y_test)
+        X_test = np.array(eval_dataset.data["inputs_embeds"])
+        y_test = np.array(eval_dataset.data["rewards"])
 
         # Save to jsonl file
         y_test_hat = model.predict(X_test)

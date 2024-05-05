@@ -1,5 +1,4 @@
 import os
-import gc
 import time
 import torch
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -18,7 +17,7 @@ from world_model import WorldModel
 from actor import Actor
 from configs import (
     initinal_samples,
-    samples_per_iteration,
+    n_sequences,
     TRAINING_DATA_BUFFER,
     TESTING_DATA_BUFFER,
 )
@@ -31,7 +30,6 @@ from utils import (
     fix_finetuning_policy_args,
     fix_finetuning_wm_args,
 )
-
 
 def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["TrainerCallback"]] = None):
     wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
@@ -47,7 +45,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     fix_finetuning_policy_args(policy_finetuning_args)
 
     # Initializing models
-    # oracle = Oracle(oracle_model_args, wm_finetuning_args)
+    oracle = Oracle(oracle_model_args, wm_finetuning_args)
     world_model = WorldModel(wm_model_args, wm_finetuning_args)
 
     # Initializing full dataset
@@ -73,25 +71,29 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     # Randomly sample from training dataset
     initial_dataset = random_sampling(
         training_dataset, num_samples=initinal_samples)
+    initial_sequences = random_sampling(
+        testing_dataset, num_samples=n_sequences, constrained_reward=2.0)
+
     buffer = {
         "dataset": initial_dataset,
+        "x": [initial_sequences["text"]],
+        "y": [initial_sequences["reward"]],
         "eval_rmse": []
     }
+    
     actor = Actor(bo_args, policy_model_args,
                   policy_finetuning_args, training_args, generating_args)
 
     # Startign BO loop
     for i in range(bo_args.algo_n_iterations):
         # Warming up reward models
-        world_model.train_v2(
+        world_model.load()
+        world_model.train_v3(
             dataset=buffer["dataset"],
             training_args=training_args,
             data_args=data_args,
             callbacks=callbacks
         )
-        gc.collect()
-        torch.cuda.empty_cache()
-        accelerator.free_memory()
 
         # Adjusting the lookahead steps
         if actor.algo_lookahead_steps > 1 and (
@@ -99,6 +101,16 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         ):
             actor.algo_lookahead_steps -= 1
 
+        # Rollout training dataset for policy
+        rollout_dataset = actor.rollout(world_model)
+
+        # Unload LLM in world model
+        world_model.unload()
+        
+        # Train new policy with rolled out dataset
+        actor.load_policy()
+        actor.train_policy(dataset=rollout_dataset, data_args=data_args)
+        
         # Get the next action
         iter_start_time = time.time()
         next_x = actor.query(buffer["dataset"], world_model)
@@ -106,6 +118,9 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         iter_end_time = time.time()
         print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
 
+        # Unload LLM in policy
+        actor.unload_policy()
+        
         # Final evaluation
 
         # Exporting the best model

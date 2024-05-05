@@ -1,4 +1,5 @@
 import math
+import gc
 import os
 import sys
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
@@ -35,24 +36,40 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-
 class Policy:
     def __init__(self, model_args, finetuning_args):
-        self.tokenizer = load_tokenizer(model_args)
-        self.model = load_model(self.tokenizer,
-                                model_args,
-                                finetuning_args,
-                                is_trainable=True,
-                                add_valuehead=False
-                                )
+        self.tokenizer = None
+        self.model = None
+        self.model_args = model_args
+        self.finetuning_args = finetuning_args
 
         self.__prompt__ = POLICY_PROMPT
 
     def __verify_output__(self, X: List[str], Y: List[str]):
         return [editdistance.eval(x, y) for x, y in zip(X, Y)]
 
+    def load(self):
+        self.tokenizer = load_tokenizer(self.model_args)
+        self.model = load_model(self.tokenizer,
+                                self.model_args,
+                                self.finetuning_args,
+                                is_trainable=True,
+                                add_valuehead=True
+                                )
+    def unload(self):
+        del self.tokenizer
+        del self.model
+        self.tokenizer = None
+        self.model = None
+        gc.collect()
+        torch.cuda.empty_cache()
+
+    def format_prompt(self, X: List[str]):
+        prompt = [self.__prompt__.format(protein=x) for x in X]
+        return prompt
+
     def generate(self, X: List[str], *args, **kwargs):
-        prompt = self.__prompt__.format(protein=X)
+        prompt = self.format_prompt(X)
         prompt_tokenized = self.tokenizer.encode(prompt)
         input_ids = prompt_tokenized
         outputs = {}
@@ -91,7 +108,6 @@ class PolicyPPOTrainer(PPOTrainer, Trainer):
         generating_args: "GeneratingArguments",
         callbacks: List["TrainerCallback"],
         model: "AutoModelForCausalLMWithValueHead",
-        reward_model: Optional["AutoModelForCausalLMWithValueHead"],
         ref_model: Optional["AutoModelForCausalLMWithValueHead"],
         tokenizer: "PreTrainedTokenizer",
         dataset: "Dataset",
@@ -116,6 +132,7 @@ class PolicyPPOTrainer(PPOTrainer, Trainer):
             accelerator_kwargs={"step_scheduler_with_optimizer": False},
             log_with=training_args.report_to[0] if training_args.report_to else None,
             project_kwargs={"logging_dir": training_args.logging_dir},
+            remove_unused_columns=training_args.remove_unused_columns
         )
 
         # Create optimizer and scheduler
@@ -131,7 +148,7 @@ class PolicyPPOTrainer(PPOTrainer, Trainer):
             model, training_args, finetuning_args)
         scheduler = self.create_scheduler(
             training_args, num_training_steps, optimizer)
-
+        
         PPOTrainer.__init__(
             self,
             config=ppo_config,
@@ -146,7 +163,6 @@ class PolicyPPOTrainer(PPOTrainer, Trainer):
         self.args = training_args
         self.model_args = model_args
         self.finetuning_args = finetuning_args
-        self.reward_model = reward_model
         self.current_device = get_current_device()  # patch for deepspeed training
 
         self.generation_config = GenerationConfig(
@@ -158,9 +174,6 @@ class PolicyPPOTrainer(PPOTrainer, Trainer):
 
         self.state = TrainerState()
         self.control = TrainerControl()
-        self.is_deepspeed_enabled = self.accelerator.distributed_type == "DEEPSPEED" and hasattr(
-            self.accelerator.state, "deepspeed_plugin"
-        )
         self.log_callback, self.save_callback = callbacks[0], callbacks[1]
         assert isinstance(self.log_callback, LogCallback) and isinstance(
             self.save_callback, FixValueHeadModelCallback)
@@ -169,18 +182,6 @@ class PolicyPPOTrainer(PPOTrainer, Trainer):
             logger.info(
                 "max_steps is given, it will override any value given in num_train_epochs")
 
-        if finetuning_args.reward_model_type == "full":
-            if self.is_deepspeed_enabled:
-                if not (
-                    getattr(reward_model.pretrained_model,
-                            "is_loaded_in_8bit", False)
-                    or getattr(reward_model.pretrained_model, "is_loaded_in_4bit", False)
-                ):  # quantized models are already set on the correct device
-                    self.reward_model = self._prepare_deepspeed(
-                        self.reward_model)
-            else:
-                self.reward_model = self.accelerator.prepare_model(
-                    self.reward_model, evaluation_mode=True)
 
     def ppo_train(self, resume_from_checkpoint: Optional[str] = None) -> None:
         r"""
@@ -246,23 +247,8 @@ class PolicyPPOTrainer(PPOTrainer, Trainer):
                 dataiter = iter(self.dataloader)
                 batch = next(dataiter)
 
-            # Cast to inference mode
-            unwrapped_model.gradient_checkpointing_disable()
-            unwrapped_model.config.use_cache = True
-            self.model.eval()
-
             # Get inputs
-            self.tokenizer.padding_side = "right"  # change padding side
-            queries, responses, rewards = [], [], []
-            for idx in range(0, self.config.batch_size, self.config.mini_batch_size):
-                mini_batch_queries, mini_batch_responses = self.get_inputs(
-                    batch[idx: idx + self.config.mini_batch_size]
-                )
-                mini_batch_rewards = self.get_rewards(
-                    mini_batch_queries, mini_batch_responses, unwrapped_model)
-                queries.extend(mini_batch_queries)
-                responses.extend(mini_batch_responses)
-                rewards.extend(mini_batch_rewards)
+            queries, responses, rewards = self.get_inputs(batch)
 
             # Cast to training mode
             unwrapped_model.gradient_checkpointing_enable()
@@ -369,94 +355,16 @@ class PolicyPPOTrainer(PPOTrainer, Trainer):
         r"""
         Generates model's responses given queries.
         """
-        if self.model_args.upcast_layernorm:
-            layernorm_params = dump_layernorm(self.model)
-
-        # handle llama2 ppo with gradient accumulation > 1
-        if batch["input_ids"].size(0) == 1:
-            start_index = (batch["input_ids"][0] !=
-                           self.tokenizer.pad_token_id).nonzero()[0].item()
-            for k, v in batch.items():
-                batch[k] = v[:, start_index:]
-
-        unwrapped_model: "AutoModelForCausalLMWithValueHead" = self.accelerator.unwrap_model(
-            self.model)
-        generate_output: torch.Tensor = unwrapped_model.generate(
-            generation_config=self.generation_config, logits_processor=get_logits_processor(), **batch
-        )
-
-        if self.model_args.upcast_layernorm:
-            restore_layernorm(self.model, layernorm_params)
-
-        query = batch["input_ids"].detach().cpu()
-        response = generate_output[:,
-                                   batch["input_ids"].size(-1):].detach().cpu()
-        queries, responses = [], []
-        for i in range(len(query)):
-            query_start_index = (query[i] != self.tokenizer.pad_token_id).nonzero()[
-                0].item()
-            response_index = (
-                response[i] != self.tokenizer.pad_token_id).nonzero()
-
-            if len(response_index) == 0:
-                response_length = 1  # allow empty response
-            else:
-                response_length = response_index[-1].item() + 1
-
-            # remove padding from left
-            queries.append(query[i, query_start_index:])
-            # remove padding from right
-            responses.append(response[i, :response_length])
-
-        return queries, responses
-
-    @torch.no_grad()
-    def get_rewards(
-        self,
-        queries: List[torch.Tensor],
-        responses: List[torch.Tensor],
-        unwrapped_model: "AutoModelForCausalLMWithValueHead",
-    ) -> List[torch.Tensor]:
-        r"""
-        Computes scores using given reward model.
-
-        Both inputs and outputs are put on CPU.
-        """
-        if self.finetuning_args.reward_model_type == "api":
-            token_ids = [torch.cat((q, r), dim=-1).tolist()
-                         for q, r in zip(queries, responses)]
-            messages = self.tokenizer.batch_decode(
-                token_ids, skip_special_tokens=True)
-            return get_rewards_from_server(self.reward_model, messages)
-
-        if self.finetuning_args.reward_model_type == "lora":
-            replace_model(unwrapped_model, target="reward")
-            reward_model = self.model
-        else:
-            reward_model = self.reward_model
-
-        batch = self.prepare_model_inputs(queries, responses)
-
-        # support bf16
-        with torch.cuda.amp.autocast(dtype=self.model_args.compute_dtype):
-            _, _, values = reward_model(
-                **batch, output_hidden_states=True, return_dict=True, use_cache=False)
-
-        if getattr(unwrapped_model.config, "model_type", None) == "chatglm":  # assume same architecture
-            values = torch.transpose(values, 0, 1)
-
+        queries = []
+        responses = []
         rewards = []
-        for i in range(values.size(0)):
-            end_indexes = (batch["input_ids"][i] !=
-                           self.tokenizer.pad_token_id).nonzero()
-            end_index = end_indexes[-1].item() if len(end_indexes) else 0
-            # use fp32 type
-            rewards.append(values[i, end_index].float().detach().cpu())
+        for i in range(len(batch)):
+            queries.append(torch.tensor(batch[i][0]['input_ids']))
+            responses.append(torch.tensor(batch[i][0]['output_ids']))
+            rewards.append(torch.tensor(batch[i][0]['labels']))
+    
+        return queries, responses, rewards
 
-        if self.finetuning_args.reward_model_type == "lora":
-            replace_model(unwrapped_model, target="default")
-
-        return rewards
 
     @PPODecorators.empty_device_cache()
     def batched_forward_pass(

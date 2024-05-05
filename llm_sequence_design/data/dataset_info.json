@@ -7,6 +7,22 @@
       "reward": "log_fluorescence"
     }
   },
+  "proteinea/solubility": {
+    "hf_hub_url": "proteinea/solubility",
+    "formatting": "oracle",
+    "columns": {
+      "text": "sequences",
+      "reward": "labels"
+    }
+  },
+  "ICML2022/ProteinGym": {
+    "hf_hub_url": "ICML2022/ProteinGym",
+    "formatting": "oracle",
+    "columns": {
+      "text": "mutant",
+      "reward": "DMS_score"
+    }
+  },
   "ura-hcmut/proteinea_fluorescence-esm2_t33_650M_UR50D-embedding": {
     "hf_hub_url": "ura-hcmut/proteinea_fluorescence-esm2_t33_650M_UR50D-embedding",
     "formatting": "oracle"
@@ -29,6 +45,10 @@
   },
   "ura-hcmut/proteinea_fluorescence-gemma-7b-embedding": {
     "hf_hub_url": "ura-hcmut/proteinea_fluorescence-gemma-7b-embedding",
+    "formatting": "oracle"
+  },
+  "ura-hcmut/proteinea_fluorescence-llama-molinst-protein-7b-embedding": {
+    "hf_hub_url": "ura-hcmut/proteinea_fluorescence-llama-molinst-protein-7b-embedding",
     "formatting": "oracle"
   }
 }

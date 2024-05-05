@@ -179,11 +179,11 @@ def get_bo_args(args: Optional[Dict[str, Any]] = None) -> _BO_CLS:
         raise ValueError(
             "`predict_with_generate` cannot be set as True while training.")
 
-    if training_args.do_train and policy_finetuning_args.policy_quantization_device_map == "auto":
+    if training_args.do_train and policy_model_args.policy_quantization_device_map == "auto":
         raise ValueError(
             "Cannot use device map for quantized models in training.")
 
-    if policy_finetuning_args.policy_use_dora and policy_finetuning_args.policy_use_unsloth:
+    if policy_finetuning_args.policy_use_dora and policy_model_args.policy_use_unsloth:
         raise ValueError("Unsloth does not support DoRA.")
 
     if policy_finetuning_args.policy_pure_bf16:
