@@ -227,4 +227,4 @@ def create_app(chat_model: "ChatModel") -> "FastAPI":
 if __name__ == "__main__":
     chat_model = ChatModel()
     app = create_app(chat_model)
-    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("API_PORT", 8000)), workers=1)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("API_PORT", 1337)), workers=1)

@@ -18,6 +18,8 @@ import copy
 import os
 import pandas as pd
 from tueplots import bundles
+from gpytorch.priors.torch_priors import GammaPrior
+from gpytorch.kernels import MaternKernel, ScaleKernel
 
 plt.rcParams.update(bundles.neurips2023())
 
@@ -96,8 +98,8 @@ class Parameters:
 
         elif self.env_name == "HolderTable":
             self.x_dim = 2
-            self.bounds = [-2.5, 2.5]
-            self.radius = 0.4
+            self.bounds = [0, 10]
+            self.radius = 0.75
 
         elif self.env_name == "Levy":
             self.x_dim = 2
@@ -148,6 +150,7 @@ class Parameters:
         self.bounds = np.array(self.bounds)
         if self.bounds.ndim < 2 or self.bounds.shape[0] < self.x_dim:
             self.bounds = np.tile(self.bounds, [self.x_dim, 1])
+        self.bounds = torch.tensor(self.bounds).to(self.device)
 
     def __str__(self):
         r"""Return string representation of parameters."""
@@ -175,11 +178,11 @@ def eval(
             data_x = np.random.randint(0, 10, (n_points, 8))
         else:
             data_x = np.random.uniform(
-                low=cfg.bounds[..., 0],
-                high=cfg.bounds[..., 1],
+                low=cfg.bounds[..., 0].cpu(),
+                high=cfg.bounds[..., 1].cpu(),
                 size=[n_points, local_parms.x_dim]
             )
-            data_x = torch.tensor(data_x, dtype=torch.float32)
+            data_x = torch.tensor(data_x, dtype=torch.float32, device=cfg.device)
 
     data_y = func(data_x).reshape(-1)
     y_hat = wm.posterior(data_x).mean.detach()
@@ -209,7 +212,7 @@ def plot(
     if embedder is not None:
         bounds_plot_x = bounds_plot_y = [0, n_space - 1]
     else:
-        bounds_plot_x, bounds_plot_y = cfg.bounds
+        bounds_plot_x, bounds_plot_y = cfg.bounds.cpu()
 
     ax[0].set(xlabel="$x_1$", ylabel="$x_2$",
               xlim=bounds_plot_x, ylim=bounds_plot_y)
@@ -220,7 +223,7 @@ def plot(
     ax[1].set_title(label="Posterior mean")
 
     # Plot function in 2D ####################################################
-    X_domain, Y_domain = cfg.bounds
+    X_domain, Y_domain = cfg.bounds.cpu()
     X, Y = np.linspace(*X_domain, n_space), np.linspace(*Y_domain, n_space)
     X, Y = np.meshgrid(X, Y)
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
@@ -279,10 +282,10 @@ def plot(
 
 def main(env, local_parms):
     # Random select initial points
-    bounds = np.array(local_parms.bounds)
-    if bounds.shape[0] < local_parms.x_dim:
-        bounds = np.tile(bounds, [local_parms.x_dim, 1])
-    local_parms.bounds = bounds
+    # bounds = np.array(local_parms.bounds.cpu())
+    # if bounds.shape[0] < local_parms.x_dim:
+    #     bounds = np.tile(bounds, [local_parms.x_dim, 1])
+    bounds = local_parms.bounds.cpu().numpy()
 
     n_partitions = int(local_parms.n_points ** (1 / local_parms.x_dim))
     remaining_points = local_parms.n_points - n_partitions**local_parms.x_dim
@@ -312,16 +315,12 @@ def main(env, local_parms):
     train_X = torch.tensor(
         train_X, dtype=local_parms.torch_dtype, device=local_parms.device)
     train_y = env(train_X).reshape(-1, 1)
-
+    
     WM = SingleTaskGP(
         train_X=train_X,
         train_Y=train_y,
-        input_transform=Normalize(
-            d=local_parms.x_dim, bounds=torch.tensor(bounds).T),
-        outcome_transform=Standardize(1),
-        covar_module=local_parms.kernel,
     )
-
+    
     mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
     fit_gpytorch_model(mll)
 
@@ -360,7 +359,7 @@ def main(env, local_parms):
             func=env,
             wm=WM,
             cfg=local_parms,
-            data_x=train_X,
+            data_x=train_X.cpu(),
         )
 
     return train_eval_vals, test_eval_vals
@@ -463,6 +462,7 @@ if __name__ == "__main__":
                 test_df["n_points"].values, test_df["rmse_std"].values, test_df["rsquare_std"].values)}
         else:
             for n_points in tqdm([1, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]):
+            # for n_points in tqdm([100, 500]):
                 list_train_vals = []
                 list_test_vals = []
                 for i, seed in enumerate(args.seeds):

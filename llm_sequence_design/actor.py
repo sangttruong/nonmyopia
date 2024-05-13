@@ -25,11 +25,12 @@ def collate_fn(data):
     return list(zipped)
     
 class Actor:
-    def __init__(self, bo_args, policy_model_args, policy_finetuning_args, training_args, generating_args):
+    def __init__(self, bo_args, policy_model_args, policy_finetuning_args, data_args, training_args, generating_args):
         self.bo_args = bo_args
+        self.data_args = data_args
         self.policy_model_args = policy_model_args
         self.policy_finetuning_args = policy_finetuning_args
-        self.policy = Policy(self.policy_model_args, self.policy_finetuning_args)
+        self.policy = Policy(self.policy_model_args, self.policy_finetuning_args, self.data_args)
         self.training_args = copy.deepcopy(training_args)
         self.training_args.output_dir = os.path.join(
             self.training_args.output_dir, "policy")
@@ -43,23 +44,29 @@ class Actor:
         else:
             raise NotImplementedError
 
-    def load_policy(self):
-        self.policy.load()
+    def load_policy(self, *args, **kwargs):
+        self.policy.load(*args, **kwargs)
 
     def unload_policy(self):
         self.policy.unload()
+
+    def load_policy_inference(self, *args, **kwargs):
+        return self.policy.load_inference(*args, **kwargs)
+
+    def unload_policy_inference(self, *args, **kwargs):
+        return self.policy.unload_inference(*args, **kwargs)
         
-    def query(self, X, reward_model):
+    def query(self, prevX, prevY, reward_model):
         # Query the next sequence
-        breakpoint()
-        
-    
+        X = prevX[-1]
+        return self.policy.generate(X, prevX, prevY, generating_args=self.generating_args)
+
     @torch.no_grad()
     def rollout(
         self,
         reward_model,
     ):
-        n_sequences = 10
+        n_sequences = 16
         sequence_length = 237
         n_steps = 2
         
@@ -85,7 +92,14 @@ class Actor:
         data_dict = {"prompt": [], "response": [], "reward": [], "system": [], "tools": []}
         for i in range(n_steps):
             data_dict["prompt"].extend(
-                [[{"role": "user", "content": seq}] for seq in self.policy.format_prompt(sequences[i])]
+                [
+                    [{"role": "user", "content": seq}] for seq in \
+                        self.policy.format_prompt(
+                            X=sequences[i], 
+                            prevX=sequences[:i+1], 
+                            prevY=rewards[:i+1].float().detach().cpu().tolist()
+                        )
+                ]
             )
             data_dict["response"].extend(
                 [[{"role": "assistant", "content": seq}] for seq in sequences[i+1]]

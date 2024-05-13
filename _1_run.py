@@ -125,9 +125,9 @@ def run(parms, env) -> None:
         WM = SingleTaskGP(
             buffer["x"][: parms.n_initial_points],
             buffer["y"][: parms.n_initial_points],
-            input_transform=Normalize(
-                d=parms.x_dim, bounds=parms.bounds.T),
-            outcome_transform=Standardize(1),
+            # input_transform=Normalize(
+            #     d=parms.x_dim, bounds=parms.bounds.T),
+            # outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
 
@@ -155,9 +155,9 @@ def run(parms, env) -> None:
         WM = SingleTaskGP(
             buffer["x"][: parms.n_initial_points],
             buffer["y"][: parms.n_initial_points],
-            input_transform=Normalize(
-                d=parms.x_dim, bounds=parms.bounds.T),
-            outcome_transform=Standardize(1),
+            # input_transform=Normalize(
+            #     d=parms.x_dim, bounds=parms.bounds.T),
+            # outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
 
@@ -199,9 +199,9 @@ def run(parms, env) -> None:
         WM = SingleTaskGP(
             buffer["x"][:i],
             buffer["y"][:i],
-            input_transform=Normalize(
-                d=parms.x_dim, bounds=parms.bounds.T),
-            outcome_transform=Standardize(1),
+            # input_transform=Normalize(
+            #     d=parms.x_dim, bounds=parms.bounds.T),
+            # outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
 
@@ -234,19 +234,19 @@ def run(parms, env) -> None:
         buffer["runtime"][i] = iter_end_time - iter_start_time
 
         # Evaluate and plot
-        buffer["real_loss"][i], _ = eval_and_plot(
-            func=env,
-            wm=WM,
-            cfg=parms,
-            acqf=actor.acqf,
-            buffer=buffer,
-            next_x=next_x,
-            optimal_value=optimal_value,
-            iteration=i,
-            embedder=embedder,
-            actions=actions,
-        )
-        print("Real loss:", buffer["real_loss"][i].item())
+        # buffer["real_loss"][i], _ = eval_and_plot(
+        #     func=env,
+        #     wm=WM,
+        #     cfg=parms,
+        #     acqf=actor.acqf,
+        #     buffer=buffer,
+        #     next_x=next_x,
+        #     optimal_value=optimal_value,
+        #     iteration=i,
+        #     embedder=embedder,
+        #     actions=actions,
+        # )
+        # print("Real loss:", buffer["real_loss"][i].item())
 
         # Save buffer to file after each iteration
         torch.save(buffer, f"{parms.save_dir}/buffer.pt")

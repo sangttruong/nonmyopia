@@ -2,6 +2,9 @@ import math
 import gc
 import os
 import sys
+import copy
+import time
+import requests
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
 import torch
@@ -24,7 +27,9 @@ from src.llmtuner.train.utils import create_custom_optimzer, create_custom_sched
 from src.llmtuner.train.ppo.utils import dump_layernorm, get_rewards_from_server, replace_model, restore_layernorm
 from src.llmtuner.hparams import ModelArguments
 
-from configs import POLICY_PROMPT
+from openai import OpenAI
+from configs import HISTORY_FORMAT, POLICY_PROMPT
+from utils import run_server, shutdown_server
 
 if TYPE_CHECKING:
     from datasets import Dataset
@@ -37,21 +42,27 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 class Policy:
-    def __init__(self, model_args, finetuning_args):
+    def __init__(self, model_args, finetuning_args, data_args):
         self.tokenizer = None
         self.model = None
         self.model_args = model_args
         self.finetuning_args = finetuning_args
+        self.data_args = data_args
 
         self.__prompt__ = POLICY_PROMPT
+        self.__history__ = HISTORY_FORMAT
 
     def __verify_output__(self, X: List[str], Y: List[str]):
         return [editdistance.eval(x, y) for x, y in zip(X, Y)]
 
-    def load(self):
+    def load(self, iteration=0):
         self.tokenizer = load_tokenizer(self.model_args)
+        model_args = copy.deepcopy(self.model_args)
+        if iteration == 0:
+            model_args.adapter_name_or_path = None
+            
         self.model = load_model(self.tokenizer,
-                                self.model_args,
+                                model_args,
                                 self.finetuning_args,
                                 is_trainable=True,
                                 add_valuehead=True
@@ -64,35 +75,111 @@ class Policy:
         gc.collect()
         torch.cuda.empty_cache()
 
-    def format_prompt(self, X: List[str]):
-        prompt = [self.__prompt__.format(protein=x) for x in X]
+    def load_inference(self):
+        api_port = 1337
+        deploy_command = f"""API_PORT={api_port} python src/api_demo.py \
+                            --model_name_or_path {self.model_args.model_name_or_path} \
+                            --adapter_name_or_path {self.model_args.adapter_name_or_path[0]} \
+                            --template {self.data_args.template} \
+                            --vllm_gpu_util 0.9 \
+                            --infer_backend vllm \
+                            --vllm_enforce_eager"""
+        
+        print("Deploying LLM...")
+        server_process = run_server(deploy_command)
+        time.sleep(5)
+
+        url = f"http://localhost:{api_port}/v1/models"
+        while True:
+            try:
+                print("Waiting for server...")
+                response = requests.request("GET", url, headers={}, data={})
+                if response.status_code == 200:
+                    break
+            except:
+                time.sleep(2)
+
+        return server_process
+
+    def unload_inference(self, server_process):
+        # del self.model
+        # self.model = None
+        # gc.collect()
+        # torch.cuda.empty_cache()
+
+        # Shutdown server
+        shutdown_server(server_process)
+
+    def format_prompt(self, X: List[str], prevX: List[List[str]], prevY: List[List[float]]):
+        # prevX, prevY: n_steps x n_protein
+        histories = [[] for _ in range(len(X))]
+        for stepX, stepY in zip(prevX, prevY):
+            for i, (pX, pY) in enumerate(zip(stepX, stepY)):
+                histories[i].append(self.__history__.format(protein=pX, fluorescence=pY))
+
+        histories = ['\n'.join(h) for h in histories]
+        prompt = [self.__prompt__.format(history=h, protein=x) for h, x in zip(histories, X)]
         return prompt
 
-    def generate(self, X: List[str], *args, **kwargs):
-        prompt = self.format_prompt(X)
-        prompt_tokenized = self.tokenizer.encode(prompt)
-        input_ids = prompt_tokenized
-        outputs = {}
+    def generate(self, X: List[str], prevX: List[List[str]], prevY: List[List[float]], generating_args={}, **kwargs):
+        prompts = self.format_prompt(X, prevX, prevY)
+        max_retry = 1
+        api_port = 1337
+        outputs = []
 
-        while len(input_ids) > 0:
-            model_inputs = {
-                "input_ids": input_ids,
-                "attention_mask": [torch.one_likes(x) for x in input_ids],
-            }
+        client = OpenAI(base_url=f"http://localhost:{api_port}/v1", api_key="token-abc123")
 
-            generations = self.model.generate(
-                model_inputs, *args, **kwargs)
-            generations_valid = self.__verify_output__(X, generations)
-            input_ids = []
-
-            for i, generation in enumerate(generations):
-                if generations_valid[i] > 1:
-                    input_ids.append(prompt_tokenized[i])
+        for pi, prompt in tqdm(enumerate(prompts)):
+            trying_time = 0
+            while trying_time < max_retry:
+                completion = client.chat.completions.create(
+                    model=self.model_args.model_name_or_path,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                generations = completion.choices[0].message.content
+                
+                generations_ed = self.__verify_output__([prompt], [generations])
+                if generations_ed[0] <= 1:
+                    outputs.append(generations)
+                    break
                 else:
-                    outputs[i] = generation
+                    trying_time += 1
 
-        outputs = [outputs[i] for i in range(len(X))]
+            if trying_time == max_retry:
+                outputs.append(X[pi])
+
         return outputs
+
+        
+        
+    # def generate(self, X: List[str], prevX: List[List[str]], prevY: List[List[float]], generating_args={}, **kwargs):
+    #     n_sequences = len(X)
+    #     prompt = self.format_prompt(X, prevX, prevY)
+    #     prompt_tokenized = self.tokenizer(prompt, return_tensors=None, padding=True)
+    #     generation_config = GenerationConfig(**(generating_args.to_dict()))
+    #     invalid_idx = list(range(n_sequences))
+    #     outputs = {}
+        
+    #     while len(invalid_idx) > 0:
+    #         model_inputs = {
+    #             k: torch.tensor([v[i] for i in range(len(v)) if i in invalid_idx], device=self.model.pretrained_model.device) for k,v in prompt_tokenized.items()
+    #         }
+    #         generations = self.model.pretrained_model.generate(
+    #             model_inputs["input_ids"], generation_config=generation_config, **kwargs)
+    #         breakpoint()
+    #         generations_ed = self.__verify_output__(X, generations)
+    #         valid_idx = []
+
+    #         for idx, generation, ed in zip(invalid_idx, generations, generations_ed):
+    #             if ed <= 1:
+    #                 outputs[idx] = generation
+    #                 valid_idx.append(idx)
+
+    #         for idx in valid_idx:
+    #             invalid_idx.remove(idx)
+
+    #     outputs = [outputs[i] for i in range(n_sequences)]
+    #     return outputs
 
 
 class PolicyPPOTrainer(PPOTrainer, Trainer):

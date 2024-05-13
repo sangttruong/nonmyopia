@@ -1,6 +1,7 @@
 import os
 import time
 import torch
+import pickle
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from src.llmtuner.hparams import get_bo_args
@@ -81,8 +82,8 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         "eval_rmse": []
     }
     
-    actor = Actor(bo_args, policy_model_args,
-                  policy_finetuning_args, training_args, generating_args)
+    actor = Actor(bo_args, policy_model_args, policy_finetuning_args, 
+                  data_args, training_args, generating_args)
 
     # Startign BO loop
     for i in range(bo_args.algo_n_iterations):
@@ -108,23 +109,38 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         world_model.unload()
         
         # Train new policy with rolled out dataset
-        actor.load_policy()
+        actor.load_policy(iteration=i)
         actor.train_policy(dataset=rollout_dataset, data_args=data_args)
-        
-        # Get the next action
-        iter_start_time = time.time()
-        next_x = actor.query(buffer["dataset"], world_model)
-
-        iter_end_time = time.time()
-        print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
-
-        # Unload LLM in policy
         actor.unload_policy()
         
-        # Final evaluation
+        # Get the next X
+        server_process = actor.load_policy_inference()
+        iter_start_time = time.time()
+        
+        next_X = actor.query(prevX=buffer["x"], prevY=buffer["y"], reward_model=world_model)
 
-        # Exporting the best model
+        iter_end_time = time.time()
+        actor.unload_policy_inference(server_process)
+        print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
 
+        # Query Oracle for y
+        oracle.load()
+        next_y = oracle(next_X)
+        oracle.unload()
+
+        buffer["x"].append(next_X)
+        buffer["y"].append(next_y)
+        
+        print("Next X", next_X)
+        print("Next y", next_y)
+
+        # Evaluation
+        breakpoint()
+        
+
+        # Save buffer and world models
+        
+    
 
 if __name__ == '__main__':
     main()

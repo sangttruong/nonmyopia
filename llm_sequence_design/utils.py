@@ -1,10 +1,12 @@
 import random
 import torch
+import os
+import psutil
 from tqdm import tqdm
 from functools import partial
 from torch.utils.data import DataLoader
 from datasets import Dataset
-
+import subprocess
 
 def get_dataset_embedding(dataset, model, tokenizer, data_args):
     def tokenize_dataset(
@@ -54,9 +56,9 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
     
     for example in tqdm(tokenized_dataset):
         input_ids = torch.tensor(
-                [example['input_ids']]).long()
+                [example['input_ids']], device= model.model.device).long()
         attention_mask = torch.tensor(
-                [example['attention_mask']]).long()
+                [example['attention_mask']], device= model.model.device).long()
         embeds = model.model(
             input_ids=input_ids,
             attention_mask=attention_mask
@@ -81,6 +83,47 @@ def random_sampling(dataset, num_samples, *args, **kwargs):
     total_samples = len(dataset)
     indices = random.sample(range(total_samples), num_samples)
     return dataset.select(indices)
+
+def run_server(cmd_string):
+    try:
+        server_process = subprocess.Popen(cmd_string, shell=True)
+        return server_process
+    except Exception as e:
+        print(f"Error starting server: {e}")
+        return None
+
+def kill(proc_pid):
+    process = psutil.Process(proc_pid)
+    for proc in process.children(recursive=True):
+        proc.kill()
+    process.kill()
+    
+def shutdown_server(process):
+    try:
+        kill(process.pid)
+        # process.terminate()
+        print("Server shutdown successfully.")
+    except Exception as e:
+        print(f"Error shutting down server: {e}")
+
+def start_process(command):
+    os.system(command)
+    
+def kill_process(command):
+    find_pid_command = f"""pgrep -af "{command}" """
+    pid_output = subprocess.check_output(find_pid_command, shell=True)
+    pid_lines = pid_output.decode().splitlines()
+    pids = [line.split()[0] for line in pid_lines]
+
+    print("PID(s) of the process:")
+    print(pids)
+
+    if pids:
+        kill_pid_command = f"kill -9 {' '.join(pids)}"
+        subprocess.run(kill_pid_command, shell=True)
+        print("Process(es) killed.")
+    else:
+        print("No matching process found.")
 
 
 def fix_oracle_model_args(model_args):

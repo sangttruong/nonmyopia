@@ -542,9 +542,9 @@ def get_infer_args(args: Optional[Dict[str, Any]] = None) -> _INFER_CLS:
             raise ValueError(
                 "vLLM engine only supports auto-regressive models.")
 
-        if model_args.adapter_name_or_path is not None:
-            raise ValueError(
-                "vLLM engine does not support LoRA adapters. Merge them first.")
+        # if model_args.adapter_name_or_path is not None:
+        #     raise ValueError(
+        #         "vLLM engine does not support LoRA adapters. Merge them first.")
 
         if model_args.quantization_bit is not None:
             raise ValueError("vLLM engine does not support quantization.")

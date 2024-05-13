@@ -10,6 +10,7 @@ from .base_engine import BaseEngine, Response
 
 if is_vllm_available():
     from vllm import AsyncEngineArgs, AsyncLLMEngine, RequestOutput, SamplingParams
+    from vllm.lora.request import LoRARequest
 
 if TYPE_CHECKING:
     from ..hparams import DataArguments, FinetuningArguments, GeneratingArguments, ModelArguments
@@ -24,6 +25,8 @@ class VllmEngine(BaseEngine):
         generating_args: "GeneratingArguments",
     ) -> None:
         self.can_generate = finetuning_args.stage == "sft"
+        enable_lora = model_args.adapter_name_or_path is not None
+        
         engine_args = AsyncEngineArgs(
             model=model_args.model_name_or_path,
             trust_remote_code=True,
@@ -33,12 +36,17 @@ class VllmEngine(BaseEngine):
             disable_log_stats=True,
             disable_log_requests=True,
             enforce_eager=model_args.vllm_enforce_eager,
+            enable_lora=enable_lora
         )
         self.model = AsyncLLMEngine.from_engine_args(engine_args)
         self.tokenizer = load_tokenizer(model_args)
         self.tokenizer.padding_side = "left"
         self.template = get_template_and_fix_tokenizer(self.tokenizer, data_args.template)
         self.generating_args = generating_args.to_dict()
+        if model_args.adapter_name_or_path:
+            self.lora_request = LoRARequest("adapter", 1, model_args.adapter_name_or_path[0])
+        else:
+            self.lora_request = None
 
     async def _generate(
         self,
@@ -92,7 +100,8 @@ class VllmEngine(BaseEngine):
             skip_special_tokens=True,
         )
         result_generator = self.model.generate(
-            prompt=None, sampling_params=sampling_params, request_id=request_id, prompt_token_ids=prompt_ids
+            prompt=None, sampling_params=sampling_params, request_id=request_id, prompt_token_ids=prompt_ids,
+            lora_request=self.lora_request
         )
         return result_generator
 

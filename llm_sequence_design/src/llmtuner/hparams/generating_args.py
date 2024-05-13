@@ -54,3 +54,12 @@ class GeneratingArguments:
         else:
             args.pop("max_new_tokens", None)
         return args
+
+    def to_vllm_params(self) -> Dict[str, Any]:
+        args = asdict(self)
+        args.pop("do_sample", None)
+        args.pop("num_beams", None)
+        args.pop("max_length", None)
+        args["max_tokens"] = args["max_new_tokens"]
+        args.pop("max_new_tokens", None)
+        return args

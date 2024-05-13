@@ -1,8 +1,10 @@
 initinal_samples = 10
-n_sequences = 100
+n_sequences = 5
 
-
-POLICY_PROMPT = '''Edit 1 amino acid in below protein sequence to create a new protein with higher fluorescence. The amino acid mus be in set {{L, A, G, V, S, E, R, T, I, D, P, K, Q, N, F, Y, M, H, W, C, X, B, U, Z, O}}. Please return only the modified protein sequence.
+HISTORY_FORMAT = '''Protein: {protein} - Fluorescence: {fluorescence}'''
+POLICY_PROMPT = '''Given the following protein sequences and their corresponding fluorescence value.
+{history}
+Edit 1 amino acid in the below protein sequence to create a new protein with higher fluorescence. The amino acid must be in set {{L, A, G, V, S, E, R, T, I, D, P, K, Q, N, F, Y, M, H, W, C, X, B, U, Z, O}}. Please return only the modified protein sequence.
 Protein sequence: {protein}
 Modified protein sequence: '''
 

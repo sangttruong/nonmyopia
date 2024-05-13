@@ -100,92 +100,92 @@ class Parameters:
             self.x_dim = 2
             self.bounds = [-2, 2]
             self.radius = 0.3
-            self.n_initial_points = 20
-            self.algo_n_iterations = 120
+            self.n_initial_points = 50
+            self.algo_n_iterations = 100
 
         elif self.env_name == "Alpine":
             self.x_dim = 2
             self.bounds = [0, 10]
             self.radius = 0.75
-            self.n_initial_points = 50
+            self.n_initial_points = 100
             self.algo_n_iterations = 150
 
         elif self.env_name == "Beale":
             self.x_dim = 2
             self.bounds = [-4.5, 4.5]
             self.radius = 0.65
-            self.n_initial_points = 40
-            self.algo_n_iterations = 75
+            self.n_initial_points = 100
+            self.algo_n_iterations = 150
 
         elif self.env_name == "Branin":
             self.x_dim = 2
             self.bounds = [[-5, 10], [0, 15]]
             self.radius = 1.2
-            self.n_initial_points = 10
-            self.algo_n_iterations = 20
+            self.n_initial_points = 20
+            self.algo_n_iterations = 70
 
         elif self.env_name == "Cosine8":
             self.x_dim = 8
             self.bounds = [-1, 1]
             self.radius = 0.3
-            self.n_initial_points = 50
-            self.algo_n_iterations = 250
+            self.n_initial_points = 200
+            self.algo_n_iterations = 300
 
         elif self.env_name == "EggHolder":
             self.x_dim = 2
             self.bounds = [-100, 100]
             self.radius = 15.0
-            self.n_initial_points = 35
+            self.n_initial_points = 100
             self.algo_n_iterations = 150
 
         elif self.env_name == "Griewank":
             self.x_dim = 2
             self.bounds = [-600, 600]
             self.radius = 85.0
-            self.n_initial_points = 8
-            self.algo_n_iterations = 20
+            self.n_initial_points = 20
+            self.algo_n_iterations = 70
 
         elif self.env_name == "Hartmann":
             self.x_dim = 6
             self.bounds = [0, 1]
             self.radius = 0.15
-            self.n_initial_points = 100
-            self.algo_n_iterations = 500
+            self.n_initial_points = 500
+            self.algo_n_iterations = 600
 
         elif self.env_name == "HolderTable":
             self.x_dim = 2
-            self.bounds = [-2.5, 2.5]
-            self.radius = 0.4
-            self.n_initial_points = 20
-            self.algo_n_iterations = 100
+            self.bounds = [0, 10]
+            self.radius = 0.75
+            self.n_initial_points = 100
+            self.algo_n_iterations = 150
 
         elif self.env_name == "Levy":
             self.x_dim = 2
             self.bounds = [-10, 10]
             self.radius = 1.5
-            self.n_initial_points = 40
-            self.algo_n_iterations = 90
+            self.n_initial_points = 75
+            self.algo_n_iterations = 125
 
         elif self.env_name == "Powell":
             self.x_dim = 4
             self.bounds = [-4, 5]
             self.radius = 0.9
-            self.n_initial_points = 35
-            self.algo_n_iterations = 150
+            self.n_initial_points = 100
+            self.algo_n_iterations = 200
 
         elif self.env_name == "SixHumpCamel":
             self.x_dim = 2
             self.bounds = [[-3, 3], [-2, 2]]
             self.radius = 0.4
-            self.n_initial_points = 20
-            self.algo_n_iterations = 50
+            self.n_initial_points = 40
+            self.algo_n_iterations = 90
 
         elif self.env_name == "StyblinskiTang":
             self.x_dim = 2
             self.bounds = [-5, 5]
             self.radius = 0.75
-            self.n_initial_points = 30
-            self.algo_n_iterations = 50
+            self.n_initial_points = 45
+            self.algo_n_iterations = 95
 
         elif self.env_name == "SynGP":
             self.x_dim = 2
@@ -268,7 +268,7 @@ class Parameters:
             axis=0,
         )
         
-        self.env_noise = args.env_noise * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
+        self.env_noise = args.env_noise # * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
         self.bounds = torch.tensor(self.bounds, dtype=self.torch_dtype, device=self.device)
         if not self.test_only:
             self.save_dir = (
@@ -338,10 +338,10 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
     elif name == "EggHolder":
         f_ = EggHolder(negate=True, noise_std=noise_std)
     elif name == "Griewank":
-        f_ = Griewank(dim=x_dim, noise_std=noise_std)
+        f_ = Griewank(dim=x_dim, negate=True, noise_std=noise_std)
     elif name == "Hartmann":
         f_ = Hartmann(dim=x_dim, negate=True, noise_std=noise_std)
-    elif name == "HolderTable":
+    elif name == "HolderTable": 
         f_ = HolderTable(negate=True, noise_std=noise_std)
     elif name == "Levy":
         f_ = Levy(dim=x_dim, negate=True, noise_std=noise_std)
@@ -386,8 +386,11 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
     if name != "AntBO":
         f_.bounds[0, :] = bounds[..., 0]
         f_.bounds[1, :] = bounds[..., 1]
-
-    return EnvWrapper(name, f_)
+        
+    f = EnvWrapper(name, f_)
+    f.noise_std = noise_std * (f.range_y[1] - f.range_y[0]) /  100
+    
+    return f
 
 
 def str2bool(v):

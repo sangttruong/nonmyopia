@@ -1,32 +1,13 @@
-# compute_environment: LOCAL_MACHINE
-# debug: false
-# deepspeed_config:
-#   deepspeed_config_file: /dfs/user/sttruong/nonmyopia/llm_sequence_design/examples/deepspeed/ds_z3_offload_config.json
-#   zero3_init_flag: false
-# distributed_type: DEEPSPEED
-# downcast_bf16: 'no'
-# enable_cpu_affinity: false
-# machine_rank: 0
-# main_training_function: main
-# num_machines: 1 # the number of nodes
-# num_processes: 3 # the number of GPUs in all nodes
-# rdzv_backend: static
-# same_network: true
-# tpu_env: []
-# tpu_use_cluster: false
-# tpu_use_sudo: false
-# use_cpu: false
 compute_environment: LOCAL_MACHINE
 debug: false
 deepspeed_config:
- deepspeed_config_file: /dfs/user/sttruong/nonmyopia/llm_sequence_design/examples/deepspeed/ds_z3_offload_config.json
- zero3_init_flag: false
-distributed_type: MULTI_GPU
+  deepspeed_config_file: /dfs/user/sttruong/nonmyopia/llm_sequence_design/examples/deepspeed/ds_z3_offload_config.json
+  zero3_init_flag: false
+distributed_type: DEEPSPEED
 downcast_bf16: 'no'
-gpu_ids: all
+enable_cpu_affinity: false
 machine_rank: 0
 main_training_function: main
-mixed_precision: bf16
 num_machines: 1 # the number of nodes
 num_processes: 1 # the number of GPUs in all nodes
 rdzv_backend: static
@@ -34,4 +15,23 @@ same_network: true
 tpu_env: []
 tpu_use_cluster: false
 tpu_use_sudo: false
-use_cpu: false
+use_cpu: true
+# compute_environment: LOCAL_MACHINE
+# debug: false
+# deepspeed_config:
+#  deepspeed_config_file: /dfs/user/sttruong/nonmyopia/llm_sequence_design/examples/deepspeed/ds_z3_offload_config.json
+#  zero3_init_flag: false
+# distributed_type: MULTI_GPU
+# downcast_bf16: 'no'
+# gpu_ids: all
+# machine_rank: 0
+# main_training_function: main
+# mixed_precision: bf16
+# num_machines: 1 # the number of nodes
+# num_processes: 1 # the number of GPUs in all nodes
+# rdzv_backend: static
+# same_network: true
+# tpu_env: []
+# tpu_use_cluster: false
+# tpu_use_sudo: false
+# use_cpu: false
