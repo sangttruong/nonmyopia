@@ -1,6 +1,3 @@
-initinal_samples = 10
-n_sequences = 5
-
 HISTORY_FORMAT = '''Protein: {protein} - Fluorescence: {fluorescence}'''
 POLICY_PROMPT = '''Given the following protein sequences and their corresponding fluorescence value.
 {history}

@@ -37,6 +37,34 @@ class BOArguments:
         },
     )
 
+    initinal_sequences: int = field(
+        default=None,
+        metadata={
+            "help": "The number of initial sequences for training WM."
+        },
+    )
+
+    n_sequences: int = field(
+        default=None,
+        metadata={
+            "help": "The number of sequences to optimzie."
+        },
+    )
+
+    n_restarts: int = field(
+        default=None,
+        metadata={
+            "help": "The number of restarts."
+        },
+    )
+
+    rollout_sequences: int = field(
+        default=None,
+        metadata={
+            "help": "The number of rollout sequence used to train policy."
+        },
+    )
+
     cost_spotlight_k: Optional[int] = field(
         default=100,
         metadata={

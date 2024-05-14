@@ -18,8 +18,6 @@ from oracle import Oracle
 from world_model import WorldModel
 from actor import Actor
 from configs import (
-    initinal_samples,
-    n_sequences,
     TRAINING_DATA_BUFFER,
     TESTING_DATA_BUFFER,
 )
@@ -78,10 +76,10 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     # Initializing training buffer
     # Randomly sample from training dataset
     initial_dataset = random_sampling(
-        training_dataset, num_samples=initinal_samples)
+        training_dataset, num_samples=bo_args.initinal_sequences)
     # Random choose sequences with reward < 2.0 as inital sequence
     initial_sequences = random_sampling(
-        testing_dataset, num_samples=n_sequences, constrained_reward=2.0)
+        testing_dataset, num_samples=bo_args.n_sequences, constrained_reward=2.0)
 
     buffer = {
         "dataset": initial_dataset,
@@ -112,7 +110,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
             actor.algo_lookahead_steps -= 1
 
         # Rollout training dataset for policy
-        rollout_dataset = actor.rollout(world_model)
+        rollout_dataset = actor.rollout(world_model, n_sequences=bo_args.rollout_sequences)
 
         # Unload LLM in world model
         world_model.unload()
@@ -127,7 +125,12 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         world_model.load()
         iter_start_time = time.time()
         
-        next_X = actor.query(prevX=buffer["x"], prevY=buffer["y"], reward_model=world_model)
+        next_X = actor.query(
+            prevX=buffer["x"], 
+            prevY=buffer["y"], 
+            reward_model=world_model,
+            n_restarts=bo_args.n_restarts
+        )
 
         iter_end_time = time.time()
         world_model.unload()
@@ -136,7 +139,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
         # Query Oracle for y
         oracle.load()
-        next_y = oracle(next_X)
+        next_y = oracle(next_X, batch_size=training_args.per_device_train_batch_size)
         oracle.unload()
 
         buffer["x"].append(next_X)

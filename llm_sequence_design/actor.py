@@ -72,7 +72,7 @@ class Actor:
                 
                 for step in range(self.algo_lookahead_steps):
                     next_X = self.policy.generate(local_X, local_prevX, local_prevy, generating_args=self.generating_args)
-                    next_y = reward_model.sample(next_X).mean(0).float().detach().cpu().tolist()
+                    next_y = reward_model.sample(next_X, batch_size=self.training_args.per_device_train_batch_size).mean(0).float().detach().cpu().tolist()
 
                     local_prevX.append(next_X)
                     local_prevy.append(next_y)
@@ -118,7 +118,7 @@ class Actor:
                 
         # Infer reward
         flatten_sequences = [s for ss in sequences for s in ss ]
-        rewards = reward_model.sample(flatten_sequences, sample_size=1)
+        rewards = reward_model.sample(flatten_sequences, sample_size=1, batch_size=self.training_args.per_device_train_batch_size)
         rewards = rewards.reshape(1, -1, n_sequences).mean(0)
 
         # Create dataset
