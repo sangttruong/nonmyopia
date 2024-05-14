@@ -52,6 +52,9 @@ class WorldModel:
                                 is_trainable=False,
                                 add_valuehead=False
                                 )
+
+    def load_linear_head(self):
+        self.linear_head = joblib.load(os.path.join(wm_training_args.output_dir, f"model_{iteration}.joblib"))
         
     def unload(self):
         del self.tokenizer
@@ -64,9 +67,8 @@ class WorldModel:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
 
-    def forward(self, X, **kwargs):
+    def forward(self, X, batch_size = 32, **kwargs):
         total_X = len(X)
-        batch_size = 32
         posteriors = []
         
         for i in tqdm(range((total_X//batch_size) + 1)):
@@ -112,6 +114,7 @@ class WorldModel:
         training_args,
         data_args,
         callbacks: Optional[List["TrainerCallback"]] = None,
+        iteration = 0,
         **kwargs
     ):
         wm_training_args = copy.deepcopy(training_args)
@@ -129,7 +132,21 @@ class WorldModel:
         self.linear_head = BayesianRidgeModel(X_train, y_train)
         
         os.makedirs(wm_training_args.output_dir, exist_ok=True)
-        joblib.dump(self.linear_head, os.path.join(wm_training_args.output_dir, 'model.joblib'))
+        joblib.dump(self.linear_head, os.path.join(wm_training_args.output_dir, f"model_{iteration}.joblib"))
+
+    def eval_v3(
+        self,
+        dataset,
+        **kwargs
+    ):
+        X_test = np.stack(eval_dataset["inputs_embeds"])
+        y_test = np.stack(eval_dataset["rewards"])
+
+        y_test_hat = self.linear_head.predict(X_test)
+        eval_metrics = compute_regression_metrics((y_test_hat, y_test))
+        eval_metrics = {f"eval_{k}": v for k, v in eval_metrics.items()}
+
+        return eval_metrics
         
     def train_v2(
         self,

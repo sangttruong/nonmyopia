@@ -3,6 +3,7 @@ import time
 import torch
 import pickle
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from datasets import concatenate_datasets, Dataset, Features, Value
 
 from src.llmtuner.hparams import get_bo_args
 from src.llmtuner.extras.callbacks import LogCallback
@@ -58,6 +59,9 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
                 dataset_attr, policy_model_args, data_args))
         training_dataset = merge_dataset(
             all_datasets, data_args, training_args)
+        training_dataset = training_dataset.cast(
+            Features({'text': Value(dtype='string'), 'reward': Value(dtype='float32')})
+        )
 
     with training_args.main_process_first(desc="load testing dataset"):
         all_datasets = []
@@ -67,11 +71,15 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
                 dataset_attr, policy_model_args, data_args))
         testing_dataset = merge_dataset(
             all_datasets, data_args, training_args)
+        testing_dataset = testing_dataset.cast(
+            Features({'text': Value(dtype='string'), 'reward': Value(dtype='float32')})
+        )
 
     # Initializing training buffer
     # Randomly sample from training dataset
     initial_dataset = random_sampling(
         training_dataset, num_samples=initinal_samples)
+    # Random choose sequences with reward < 2.0 as inital sequence
     initial_sequences = random_sampling(
         testing_dataset, num_samples=n_sequences, constrained_reward=2.0)
 
@@ -79,7 +87,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         "dataset": initial_dataset,
         "x": [initial_sequences["text"]],
         "y": [initial_sequences["reward"]],
-        "eval_rmse": []
+        "eval_rmse": [0]
     }
     
     actor = Actor(bo_args, policy_model_args, policy_finetuning_args, 
@@ -93,7 +101,8 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
             dataset=buffer["dataset"],
             training_args=training_args,
             data_args=data_args,
-            callbacks=callbacks
+            callbacks=callbacks,
+            iteration=i
         )
 
         # Adjusting the lookahead steps
@@ -115,11 +124,13 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         
         # Get the next X
         server_process = actor.load_policy_inference()
+        world_model.load()
         iter_start_time = time.time()
         
         next_X = actor.query(prevX=buffer["x"], prevY=buffer["y"], reward_model=world_model)
 
         iter_end_time = time.time()
+        world_model.unload()
         actor.unload_policy_inference(server_process)
         print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
 
@@ -130,16 +141,19 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
         buffer["x"].append(next_X)
         buffer["y"].append(next_y)
-        
         print("Next X", next_X)
         print("Next y", next_y)
 
-        # Evaluation
-        breakpoint()
-        
+        # Merge dataset for world_model
+        observed = Dataset.from_dict({"text": next_X, "reward": next_y})
+        observed = observed.cast(
+            Features({'text': Value(dtype='string'), 'reward': Value(dtype='float32')})
+        )
+        buffer["dataset"] = concatenate_datasets([buffer["dataset"], observed])
 
-        # Save buffer and world models
-        
+        # Save buffer
+        with open("results/buffer.pkl", "wb") as f:
+            pickle.dump(buffer, f)
     
 
 if __name__ == '__main__':

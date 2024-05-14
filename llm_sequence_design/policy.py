@@ -81,7 +81,7 @@ class Policy:
                             --model_name_or_path {self.model_args.model_name_or_path} \
                             --adapter_name_or_path {self.model_args.adapter_name_or_path[0]} \
                             --template {self.data_args.template} \
-                            --vllm_gpu_util 0.9 \
+                            --vllm_gpu_util {self.model_args.vllm_gpu_util} \
                             --infer_backend vllm \
                             --vllm_enforce_eager"""
         

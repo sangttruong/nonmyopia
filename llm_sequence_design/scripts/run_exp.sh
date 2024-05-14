@@ -32,13 +32,13 @@ CUDA_VISIBLE_DEVICES=4 accelerate launch \
     --output_dir ckpts \
     --overwrite_output_dir True \
     --report_to none \
-    --algo HES \
+    --algo HES-TS-AM \
     --algo_n_iterations 10 \
     --algo_lookahead_steps 10
 
 
 
-CUDA_VISIBLE_DEVICES=4 python main.py \
+CUDA_VISIBLE_DEVICES=1 python main.py \
     --oracle_model_name_or_path google/gemma-7b \
     --oracle_linear_head_path ckpts/oracle_bayesridge-seed2 \
     --wm_model_name_or_path google/gemma-7b \
@@ -50,6 +50,7 @@ CUDA_VISIBLE_DEVICES=4 python main.py \
     --policy_lora_dropout 0.1 \
     --policy_lora_target q_proj,k_proj,v_proj,o_proj \
     --policy_ppo_epochs 1 \
+    --policy_vllm_gpu_util 0.5 \
     --do_train \
     --template llama2 \
     --dataset proteinea/fluorescence \
@@ -62,6 +63,6 @@ CUDA_VISIBLE_DEVICES=4 python main.py \
     --output_dir ckpts \
     --overwrite_output_dir True \
     --report_to none \
-    --algo HES \
+    --algo HES-TS-AM \
     --algo_n_iterations 10 \
-    --algo_lookahead_steps 10
+    --algo_lookahead_steps 2

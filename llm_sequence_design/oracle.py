@@ -3,6 +3,7 @@ import os
 import gc
 import torch
 import joblib
+import numpy as np
 from tqdm import tqdm
 from src.llmtuner.hparams import ModelArguments
 from src.llmtuner.model import load_model, load_tokenizer
@@ -39,9 +40,8 @@ class Oracle:
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self.forward(*args, **kwargs)
 
-    def forward(self, X, *args, **kwargs):
+    def forward(self, X, batch_size = 32, **kwargs):
         total_X = len(X)
-        batch_size = 32
         outputs = []
         
         for i in tqdm(range((total_X//batch_size) + 1)):

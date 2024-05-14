@@ -39,7 +39,7 @@ class Actor:
 
         self.algo_lookahead_steps = bo_args.algo_lookahead_steps
 
-        if self.bo_args.algo == "HES":
+        if self.bo_args.algo == "HES-TS-AM":
             self.acqf = acqf_hes
         else:
             raise NotImplementedError
@@ -56,22 +56,55 @@ class Actor:
     def unload_policy_inference(self, *args, **kwargs):
         return self.policy.unload_inference(*args, **kwargs)
         
-    def query(self, prevX, prevY, reward_model):
+    def query(self, prevX, prevY, reward_model, n_restarts=3):
         # Query the next sequence
         X = prevX[-1]
-        return self.policy.generate(X, prevX, prevY, generating_args=self.generating_args)
+        n_sequences = len(X)
+        # >>> n_sequences
+
+        if self.bo_args.algo == "HES-TS-AM":
+            X_returned = []
+            rewards = []
+            for rid in range(n_restarts):
+                local_prevX = copy.deepcopy(prevX)
+                local_prevy = copy.deepcopy(prevY)
+                local_X = local_prevX[-1]
+                
+                for step in range(self.algo_lookahead_steps):
+                    next_X = self.policy.generate(local_X, local_prevX, local_prevy, generating_args=self.generating_args)
+                    next_y = reward_model.sample(next_X).mean(0).float().detach().cpu().tolist()
+
+                    local_prevX.append(next_X)
+                    local_prevy.append(next_y)
+                    local_X = next_X
+
+                action_X = self.policy.generate(local_X, local_prevX, local_prevy, generating_args=self.generating_args)
+                action_y = reward_model.sample(action_X).mean(0).float().detach().cpu().tolist()
+
+                X_returned.append(local_prevX)
+                rewards.append(action_y)
+
+            # For each sequence, find the best next sequence across n_restarts based on computed reward
+            best_idx = torch.tensor(rewards).argmax(dim=0).numpy().tolist()
+            output = []
+            
+            for bi, si in zip(best_idx, list(range(n_sequences))):
+                output.append(X_returned[bi][0][si])
+
+            return output
+            
+        else:
+            raise NotImplementedError
 
     @torch.no_grad()
     def rollout(
         self,
         reward_model,
+        n_sequences = 16,
+        sequence_length = 237,
     ):
-        n_sequences = 16
-        sequence_length = 237
-        n_steps = 2
-        
         sequences = [[''.join(random.choices(ALLOWED_TOKENS, k=sequence_length)) for _ in range(n_sequences)]]
-        for i in range(n_steps):
+        for i in range(self.algo_lookahead_steps):
             step_sequences = []
             
             edit_idxs = random.choices(list(range(sequence_length)), k=n_sequences)
@@ -90,7 +123,7 @@ class Actor:
 
         # Create dataset
         data_dict = {"prompt": [], "response": [], "reward": [], "system": [], "tools": []}
-        for i in range(n_steps):
+        for i in range(self.algo_lookahead_steps):
             data_dict["prompt"].extend(
                 [
                     [{"role": "user", "content": seq}] for seq in \
