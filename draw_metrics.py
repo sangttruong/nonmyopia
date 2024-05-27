@@ -309,8 +309,8 @@ def draw_metric(
 
         ax.set_xlabel("Step")
         ax.set_ylabel(metric_name)
-        if metric_name != "Time (s)":
-            ax.set_ylim(0, 1.05)
+        # if metric_name != "Time (s)":
+        #     ax.set_ylim(0, 1.05)
 
     handles, labels = ax.get_legend_handles_labels()
     if metric_name != "Time (s)":
