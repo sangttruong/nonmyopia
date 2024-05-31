@@ -64,7 +64,6 @@ class Parameters:
         self.gpu_id = args.gpu_id
         self.torch_dtype = torch.double
         self.cont = args.cont
-        self.test_only = args.test_only
         self.seed = args.seed
         self.plot = args.plot
 
@@ -270,10 +269,9 @@ class Parameters:
         
         self.env_noise = args.env_noise # * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
         self.bounds = torch.tensor(self.bounds, dtype=self.torch_dtype, device=self.device)
-        if not self.test_only:
-            self.save_dir = (
-                f"./results/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{self.seed}"
-            )
+        self.save_dir = (
+            f"./results/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{self.seed}"
+        )
             
         if args.env_discretized:
             self.env_discretized = True
@@ -405,8 +403,6 @@ def str2bool(v):
         
 def make_save_dir(config):
     r"""Create save directory without overwriting directories."""
-    if config.test_only:
-        return
     init_dir_path = Path(config.save_dir)
     dir_path = Path(str(init_dir_path))
 
@@ -456,9 +452,9 @@ if __name__ == "__main__":
         "cost_fn": "euclidean",
         "plot": True,
         "gpu_id": 0,
-        "cont": True,
-        "test_only": False
+        "cont": True
     }
+    # WandB start
     wandb.init(project="nonmyopia", config=default_config)
     
     # Parse args
@@ -468,7 +464,7 @@ if __name__ == "__main__":
     parser.add_argument("--env_name", type=str, default="SynGP")
     parser.add_argument("--env_noise", type=float, default=0.0)
     parser.add_argument("--env_discretized", type=str2bool, default=False)
-    parser.add_argument("--algo", type=str, default="HES")
+    parser.add_argument("--algo", type=str, default="HES-TS-AM-20")
     # parser.add_argument("--algo_ts", type=str2bool, default=False)
     # parser.add_argument("--algo_n_iterations", type=int)
     # parser.add_argument("--n_initial_points", type=int)
@@ -482,10 +478,8 @@ if __name__ == "__main__":
     parser.add_argument("--plot", type=str2bool, default=True)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=True)
-    parser.add_argument("--test_only", type=str2bool, default=False)
     args = parser.parse_args()
     
-    metrics = {}
     set_seed(args.seed)
 
     local_parms = Parameters(args)
@@ -504,14 +498,7 @@ if __name__ == "__main__":
     )
 
     # Run trials
-    real_loss = run(local_parms, env)
+    run(local_parms, env)
 
-    # Assign loss to dictionary of metrics
-    metrics[f"{local_parms.algo}_{local_parms.seed}"] = real_loss
-
-    pickle.dump(
-        metrics,
-        open(os.path.join(local_parms.save_dir, "metrics.pkl"), "wb"),
-    )
-    
+    # WandB end
     wandb.finish()

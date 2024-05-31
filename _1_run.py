@@ -34,8 +34,6 @@ def run(parms, env) -> None:
         parms (Parameter): List of input parameters
         env: Environment
     """
-    optimal_value = env.optimal_value
-    
     if parms.env_name == "AntBO":
         data_x = generate_random_X(parms.n_initial_points, parms.x_dim)
         data_x = data_x.to(
@@ -60,38 +58,37 @@ def run(parms, env) -> None:
     )
 
     actor = Actor(parms=parms)
-    buffer_size = parms.algo_n_iterations
     fill_value = float("nan")
     continue_iter = 0
     buffer = TensorDict(
         dict(
             x=torch.full(
-                (buffer_size, parms.x_dim),
+                (parms.algo_n_iterations, parms.x_dim),
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
             y=torch.full(
-                (buffer_size, 1),
+                (parms.algo_n_iterations, 1),
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
             h=torch.full(
-                (buffer_size, parms.hidden_dim),
+                (parms.algo_n_iterations, parms.hidden_dim),
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
-            real_loss=torch.full(
-                (buffer_size,),
+            cost=torch.full(
+                (parms.algo_n_iterations,),
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
             runtime=torch.full(
-                (buffer_size,),
+                (parms.algo_n_iterations,),
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
         ),
-        batch_size=[buffer_size],
+        batch_size=[parms.algo_n_iterations],
         device=parms.device,
     )
 
@@ -103,7 +100,7 @@ def run(parms, env) -> None:
     else:
         embedder = None
 
-    if parms.cont and not parms.test_only:
+    if parms.cont:
         # Load buffers from previous iterations
         buffer_old = torch.load(
             os.path.join(parms.save_dir, "buffer.pt"), map_location=parms.device
@@ -118,83 +115,30 @@ def run(parms, env) -> None:
         torch.cuda.empty_cache()
         print("Continue from iteration: {}".format(continue_iter))
 
-    elif parms.cont and parms.test_only:
-        buffer = torch.load(
-            os.path.join(parms.save_dir, "buffer.pt"), map_location=parms.device
-        )
-        WM = SingleTaskGP(
-            buffer["x"][: parms.n_initial_points],
-            buffer["y"][: parms.n_initial_points],
-            # input_transform=Normalize(
-            #     d=parms.x_dim, bounds=parms.bounds.T),
-            # outcome_transform=Standardize(1),
-            covar_module=parms.kernel,
-        ).to(parms.device)
-
-        mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
-        fit_gpytorch_model(mll)
-        actor.construct_acqf(WM=WM, buffer=buffer[: parms.n_initial_points])
-
-        real_loss, _ = eval_and_plot(
-            func=env,
-            wm=WM,
-            cfg=parms,
-            acqf=actor.acqf,
-            buffer=buffer,
-            next_x=buffer["x"][parms.n_initial_points - 1],
-            optimal_value=optimal_value,
-            iteration=parms.n_initial_points - 1,
-            embedder=embedder,
-        )
-        buffer["real_loss"][parms.n_initial_points - 1] = real_loss
-
     else:
         buffer["x"][: parms.n_initial_points] = data_x
         buffer["y"][: parms.n_initial_points] = data_y
         buffer["h"][: parms.n_initial_points] = data_hidden_state
-        WM = SingleTaskGP(
-            buffer["x"][: parms.n_initial_points],
-            buffer["y"][: parms.n_initial_points],
-            # input_transform=Normalize(
-            #     d=parms.x_dim, bounds=parms.bounds.T),
-            # outcome_transform=Standardize(1),
-            covar_module=parms.kernel,
-        ).to(parms.device)
 
-        mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
-        fit_gpytorch_model(mll)
-        actor.construct_acqf(WM=WM, buffer=buffer[: parms.n_initial_points])
-
-        ############
-        X, _, actions = actor.query(
-            buffer=buffer,
-            iteration=parms.n_initial_points,
-            embedder=embedder,
-            initial=True,
-        )
-        ############
-        
-        real_loss, _ = eval_and_plot(
-            func=env,
-            wm=WM,
-            cfg=parms,
-            acqf=actor.acqf,
-            buffer=buffer,
-            next_x=buffer["x"][parms.n_initial_points - 1],
-            optimal_value=optimal_value,
-            iteration=parms.n_initial_points - 1,
-            embedder=embedder,
-            actions=actions,
-            X=X,
-        )
-        buffer["real_loss"][parms.n_initial_points - 1] = real_loss
-
-    # Run BO loop
+    # Set start iteration
     continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
-
+    
+    # Warm-up parameters
+    WM = SingleTaskGP(
+        buffer["x"][: continue_iter],
+        buffer["y"][: continue_iter],
+        # input_transform=Normalize(
+        #     d=parms.x_dim, bounds=parms.bounds.T),
+        # outcome_transform=Standardize(1),
+        covar_module=parms.kernel,
+    ).to(parms.device)
+    mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+    fit_gpytorch_model(mll)
+    actor.construct_acqf(WM=WM, buffer=buffer[:continue_iter])
+    actor.reset_parameters(buffer=buffer[:continue_iter], embedder=embedder)
+    
+    # Run BO loop
     for i in range(continue_iter, parms.algo_n_iterations):
-        iter_start_time = time.time()
-
         # Initialize model (which is the GP in this case)
         WM = SingleTaskGP(
             buffer["x"][:i],
@@ -204,7 +148,6 @@ def run(parms, env) -> None:
             # outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
-
         mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
         fit_gpytorch_model(mll)
 
@@ -213,40 +156,29 @@ def run(parms, env) -> None:
             parms.algo_n_iterations - i < actor.algo_lookahead_steps
         ):
             actor.algo_lookahead_steps -= 1
+
+        # Construct acqf
         actor.construct_acqf(WM=WM, buffer=buffer[:i])
 
-        if not parms.test_only:
-            # Query and observe next point
-            next_x, hidden_state, actions = actor.query(
-                buffer=buffer, iteration=i, embedder=embedder
-            )
-            next_y = env(next_x).reshape(-1, 1)
+        # Query and observe next point
+        query_start_time = time.time()
+        output = actor.query(
+            buffer=buffer, 
+            iteration=i, 
+            embedder=embedder
+        )
+        query_end_time = time.time()
 
-            buffer["x"][i] = next_x
-            buffer["y"][i] = next_y
-            if parms.amortized:
-                buffer["h"][i] = hidden_state
-        else:
-            next_x = buffer["x"][i]
-            actions = None
-
-        iter_end_time = time.time()
-        buffer["runtime"][i] = iter_end_time - iter_start_time
+        # Save output to buffer
+        buffer["x"][i] = output["next_X"]
+        buffer["y"][i] = env(output["next_X"])
+        if parms.amortized:
+            buffer["h"][i] = output["hidden_state"]
+        buffer["cost"][i] = output["cost"]
+        buffer["runtime"][i] = query_end_time - query_start_time
 
         # Evaluate and plot
-        # buffer["real_loss"][i], _ = eval_and_plot(
-        #     func=env,
-        #     wm=WM,
-        #     cfg=parms,
-        #     acqf=actor.acqf,
-        #     buffer=buffer,
-        #     next_x=next_x,
-        #     optimal_value=optimal_value,
-        #     iteration=i,
-        #     embedder=embedder,
-        #     actions=actions,
-        # )
-        # print("Real loss:", buffer["real_loss"][i].item())
+        ## Separated ##
 
         # Save buffer to file after each iteration
         torch.save(buffer, f"{parms.save_dir}/buffer.pt")
@@ -257,7 +189,9 @@ def run(parms, env) -> None:
         print("Model saved to file.")
 
         # Report to wandb
-        wandb.log({"x": buffer["x"][i], "y": buffer["y"][i],
-                   "loss": buffer["real_loss"][i], "time": buffer["runtime"][i]})
-
-    return buffer["real_loss"].cpu().detach().numpy().tolist()
+        wandb.log({
+            "x": buffer["x"][i], 
+            "y": buffer["y"][i],
+            "cost": buffer["cost"][i],
+            "runtime": buffer["runtime"][i]
+        })

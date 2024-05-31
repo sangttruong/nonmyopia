@@ -113,6 +113,7 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
         prev_hid_state: Tensor,
         maps: List[nn.Module],
         embedder: nn.Module = None,
+        prev_cost: float = 0.0
     ) -> Dict[str, Tensor]:
         """
         Evaluate qMultiStepEHIG objective (q-MultistepHES).
@@ -134,6 +135,7 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
         num_categories = prev_X.shape[2] if embedder is not None else 0
         previous_X = prev_X
         previous_y = prev_y
+        previous_cost = prev_cost
 
         X_returned = []
         hidden_state_returned = []
@@ -185,7 +187,7 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
 
             # Sample posterior
             ys = self.f(X.squeeze(dim=list(range(X.dim() - 3)))).unsqueeze(0)
-
+            
             # Update previous_Xy
             if num_categories > 0:
                 previous_X = X_expanded.reshape(-1, x_dim, num_categories)
@@ -221,9 +223,6 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
         action_yis = self.f(
             actions.squeeze(dim=list(range(actions.dim() - 3)))
         ).unsqueeze(0)
-        # >> Tensor[*[n_samples]*i, n_restarts, n_actions, 1]
-
-        action_yis = action_yis.squeeze(dim=-1)
         # >> Tensor[*[n_samples]*i, n_restarts, n_actions]
 
         # Calculate loss value
@@ -234,7 +233,7 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
         if embedder is not None:
             first_prev_X = embedder.encode(first_prev_X)
         acqf_cost = self.cost_function(
-            prev_X=first_prev_X, current_X=X_returned[0], previous_cost=0
+            prev_X=first_prev_X, current_X=X_returned[0], previous_cost=previous_cost
         )
         for i in range(self.algo_lookahead_steps - 1):
             cX = X_returned[i + 1]
@@ -248,8 +247,8 @@ class qMultiStepHEntropySearchTS(MCAcquisitionFunction):
             acqf_cost = acqf_cost + self.cost_function(
                 prev_X=pX, current_X=cX, previous_cost=acqf_cost
             )
-        acqf_cost = acqf_cost.squeeze(dim=-1)
-
+        acqf_cost = acqf_cost.squeeze(dim=-1).sum(dim=-1)
+        
         # Reduce dimensions
         while len(acqf_loss.shape) > 1:
             acqf_loss = acqf_loss.mean(dim=0)

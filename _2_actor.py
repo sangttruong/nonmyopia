@@ -86,9 +86,7 @@ class Actor:
 
     def reset_parameters(
         self,
-        prev_X: Tensor,
-        prev_y: Tensor,
-        prev_hid_state: Tensor,
+        buffer,
         embedder=None,
     ):
         r"""Reset actor parameters.
@@ -105,6 +103,24 @@ class Actor:
         print("Resetting actor parameters...")
         project2range = Project2Range(
             self.parms.bounds[..., 0], self.parms.bounds[..., 1]
+        )
+        # Inititalize required variables
+        prev_X = buffer["x"][-1:].expand(
+            self.parms.n_restarts, -1
+        )
+        if embedder is not None:
+            # Discretize: Continuous -> Discrete
+            prev_X = embedder.decode(prev_X)
+            prev_X = torch.nn.functional.one_hot(
+                prev_X, num_classes=self.parms.num_categories
+            ).to(dtype=self.parms.torch_dtype)
+            # >>> n_restarts x x_dim x n_categories
+
+        prev_y = buffer["y"][-1:].expand(
+            self.parms.n_restarts, -1
+        )
+        prev_hid_state = buffer["h"][-1:].expand(
+            self.parms.n_restarts, -1
         )
 
         if self.parms.amortized:
@@ -178,9 +194,6 @@ class Actor:
                 )
                 dist = torch.distributions.Normal(mean, std)
                 loss += -dist.log_prob(A_randomized).mean()
-
-                print(f"Loss resetting: {loss.item():.5f}",
-                      end="\r", flush=True)
 
                 grads = torch.autograd.grad(
                     loss, self._parameters, allow_unused=True)
@@ -411,10 +424,10 @@ class Actor:
         """
         assert self.acqf is not None, "Acquisition function is not initialized."
 
+        # Inititalize required variables
         prev_X = buffer["x"][iteration - 1: iteration].expand(
             self.parms.n_restarts, -1
         )
-
         if embedder is not None:
             # Discretize: Continuous -> Discrete
             prev_X = embedder.decode(prev_X)
@@ -429,33 +442,17 @@ class Actor:
         prev_hid_state = buffer["h"][iteration - 1: iteration].expand(
             self.parms.n_restarts, -1
         )
+        prev_cost = buffer["cost"][self.parms.n_initial_points:iteration].sum() if iteration > self.parms.n_initial_points else 0.0
+        
         # Optimize the acquisition function
         if self.parms.algo == "HES":
-            # Reset the actor parameters for diversity
-            if iteration == self.parms.n_initial_points and initial:
-                self.reset_parameters(
-                    prev_X=prev_X,
-                    prev_y=prev_y,
-                    prev_hid_state=prev_hid_state,
-                    embedder=embedder,
-                )
-
-                return_dict = self.acqf.forward(
-                    prev_X=prev_X,
-                    prev_y=prev_y,
-                    prev_hid_state=prev_hid_state,
-                    maps=self.maps,
-                    embedder=embedder,
-                )
-
-                return return_dict["X"][0].detach(), None, return_dict["actions"].detach()
-
             optimizer = torch.optim.AdamW(
                 self._parameters, lr=self.parms.acq_opt_lr)
             lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 optimizer, T_max=20, eta_min=1e-5
             )
             best_loss = torch.tensor([float("inf")], device=self.parms.device)
+            best_cost = torch.tensor([float("inf")], device=self.parms.device)
             best_next_X = None
             best_actions = None
             best_hidden_state = None
@@ -472,6 +469,7 @@ class Actor:
                     prev_hid_state=prev_hid_state,
                     maps=self.maps,
                     embedder=embedder,
+                    prev_cost=prev_cost
                 )
 
                 acqf_loss = return_dict["acqf_loss"].mean()
@@ -480,12 +478,11 @@ class Actor:
 
                 losses.append(acqf_loss.item())
                 costs.append(acqf_cost.item())
-                loss = (return_dict["acqf_loss"] +
-                        return_dict["acqf_cost"]).mean()
+                loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
 
-                if best_loss.mean() - loss > 0.1:
-                    best_loss = return_dict["acqf_loss"] + \
-                        return_dict["acqf_cost"]
+                if (best_loss + best_cost).mean() - loss > 0.1:
+                    best_loss = return_dict["acqf_loss"]
+                    best_cost = return_dict["acqf_cost"]
                     best_next_X = return_dict["X"]
                     best_actions = return_dict["actions"]
                     best_hidden_state = return_dict["hidden_state"]
@@ -495,6 +492,7 @@ class Actor:
                 else:
                     if iteration > self.parms.n_initial_points or ep >= 200:
                         early_stop += 1
+                        
                 grads = torch.autograd.grad(
                     loss, self._parameters, allow_unused=True)
                 for param, grad in zip(self._parameters, grads):
@@ -503,32 +501,37 @@ class Actor:
                 lr_scheduler.step()
                 optimizer.zero_grad()
 
-                if (ep+1) % 50 == 0:
+                if ep % 50 == 0:
                     print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}")
+                    
                 if early_stop > 50:
                     break
 
             self.acqf.clean_dump_model()
 
             # Choose which restart produce the lowest loss
-            idx = torch.argmin(best_loss)
-
+            idx = torch.argmin(best_loss + best_cost)
+            
+            # Best acqf loss
+            acqf_loss = best_loss[idx].detach()
+            # >>> n_actions * 1
+            
             # Get next X as X_0 at idx
-            next_X = best_next_X[0][idx].reshape(1, -1)
+            next_X = best_next_X[0][idx].reshape(1, -1).detach()
+
+            # Get best actions
+            actions = best_actions[..., idx, :, :].detach()
 
             # Get next hidden state of X_0 at idx
-            hidden_state = best_hidden_state[0]
+            hidden_state = best_hidden_state[0].detach()
             # >>> n_restarts * hidden_dim
-
             if self.parms.amortized:
                 hidden_state = hidden_state[idx: idx + 1]
                 # >>> n_restarts * hidden_dim
                 self.maps.load_state_dict(best_map)
 
-            acqf_loss = best_loss[idx]
-            # >>> n_actions * 1
-
-            actions = best_actions[..., idx, :, :].detach()
+            # Compute acqf loss
+            acqf_cost = self.acqf.cost_function(prev_X=buffer["x"][iteration - 1: iteration], current_X=next_X, previous_cost=prev_cost).detach()
 
             # Draw losses by acq_opt_iter
             if self.parms.plot:
@@ -586,6 +589,8 @@ class Actor:
                     num_restarts=self.parms.n_restarts,
                     raw_samples=self.parms.n_restarts,
                 )
+                next_X, acqf_loss = next_X.detach(), acqf_loss.detach()
+                
                 if next_X.shape[0] > 1:
                     next_X = next_X[0:1]
 
@@ -596,13 +601,12 @@ class Actor:
                     ).to(dtype=self.parms.torch_dtype)
                     next_X = embedder.encode(next_X)
 
-            hidden_state = prev_hid_state[0]
+            hidden_state = prev_hid_state[0].detach()
             actions = None
-
-        next_X = next_X.detach()
-        acqf_loss = acqf_loss.detach()
-        hidden_state = hidden_state.detach()
-
-        print("Acqf loss:", acqf_loss.item())
-
-        return next_X, hidden_state, actions
+        
+        return {
+            "cost": acqf_cost,
+            "next_X": next_X,
+            "actions": actions,
+            "hidden_state": hidden_state,
+        }

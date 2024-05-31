@@ -110,6 +110,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         prev_hid_state: Tensor,
         maps: List[nn.Module],
         embedder: nn.Module = None,
+        prev_cost: float = 0.0
     ) -> Dict[str, Tensor]:
         """
         Evaluate qMultiStepEHIG objective (q-MultistepHES).
@@ -131,6 +132,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         num_categories = prev_X.shape[2] if embedder is not None else 0
         previous_X = prev_X
         previous_y = prev_y
+        previous_cost = prev_cost
         if self._model is None:
             fantasized_model = self.model
         else:
@@ -188,7 +190,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
 
                 # Update conditions
                 fantasized_model = fantasized_model.condition_on_observations(
-                    X=fantasized_model.transform_inputs(X), Y=ys
+                    X=fantasized_model.transform_inputs(X_expanded), Y=ys
                 )
 
             # Update previous_Xy
@@ -237,7 +239,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         if embedder is not None:
             first_prev_X = embedder.encode(first_prev_X)
         acqf_cost = self.cost_function(
-            prev_X=first_prev_X, current_X=X_returned[0], previous_cost=0
+            prev_X=first_prev_X, current_X=X_returned[0], previous_cost=previous_cost
         )
         for i in range(self.algo_lookahead_steps - 1):
             cX = X_returned[i + 1]
@@ -251,7 +253,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             acqf_cost = acqf_cost + self.cost_function(
                 prev_X=pX, current_X=cX, previous_cost=acqf_cost
             )
-        acqf_cost = acqf_cost.squeeze(dim=-1)
+        acqf_cost = acqf_cost.squeeze(dim=-1).sum(dim=-1)
 
         # Reduce dimensions
         while len(acqf_loss.shape) > 1:
@@ -403,8 +405,7 @@ class qCostFunction(nn.Module):
             + torch.rand_like(diff) * self.max_noise
         )
         if self.discount > 0.0:
-            diff = diff * (1 - self.discount) \
-                * (previous_cost + diff > self.discount_threshold).float()
+            diff = diff * (1 - self.discount * (previous_cost + diff > self.discount_threshold).float())
             
         return diff
 
