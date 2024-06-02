@@ -202,7 +202,7 @@ class Actor:
                 nf_design_pts = [1] * self.algo_lookahead_steps
             else:
                 if self.algo_lookahead_steps == 0:
-                    nf_design_pts = [1]
+                    nf_design_pts = []
                 elif self.algo_lookahead_steps == 1:
                     nf_design_pts = [64]
                 elif self.algo_lookahead_steps == 2:
@@ -271,7 +271,9 @@ class Actor:
             if self.parms.algo_ts:
                 nf_design_pts = [1] * self.algo_lookahead_steps
             else:
-                if self.algo_lookahead_steps == 1:
+                if self.algo_lookahead_steps == 0:
+                    nf_design_pts = []
+                elif self.algo_lookahead_steps == 1:
                     nf_design_pts = [64]
                 elif self.algo_lookahead_steps == 2:
                     nf_design_pts = [64, 8]  # [64, 64]
@@ -282,13 +284,6 @@ class Actor:
                     nf_design_pts = nf_design_pts + [1] * (
                         self.algo_lookahead_steps - 4
                     )
-
-                # nf_design_pts = [self.parms.n_samples]
-                # for s in range(1, self.algo_lookahead_steps):
-                #     next_nf = nf_design_pts[s-1] // 4
-                #     if next_nf < 1:
-                #         next_nf = 1
-                #     nf_design_pts.append(next_nf)
 
             self.acqf = self.acqf_class(
                 model=WM,
@@ -306,20 +301,27 @@ class Actor:
             sampler = SobolQMCNormalSampler(
                 sample_shape=self.parms.n_samples, seed=0, resample=False
             )
-
-            num_fantasies = [self.parms.n_samples]
-            for s in range(1, self.algo_lookahead_steps):
-                next_nf = num_fantasies[s-1] // 4
-                if next_nf < 1:
-                    next_nf = 1
-                num_fantasies.append(next_nf)
+            
+            if self.algo_lookahead_steps == 0:
+                nf_design_pts = []
+            elif self.algo_lookahead_steps == 1:
+                nf_design_pts = [64]
+            elif self.algo_lookahead_steps == 2:
+                nf_design_pts = [64, 8]  # [64, 64]
+            elif self.algo_lookahead_steps == 3:
+                nf_design_pts = [64, 4, 2]  # [64, 32, 8]
+            elif self.algo_lookahead_steps >= 4:
+                nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
+                nf_design_pts = nf_design_pts + [1] * (
+                    self.algo_lookahead_steps - 4
+                )
             
             self.acqf = self.acqf_class(
                 name=self.parms.algo,
                 model=WM, 
                 lookahead_steps=self.algo_lookahead_steps,
                 n_actions=self.parms.n_actions,
-                num_fantasies=num_fantasies,
+                num_fantasies=nf_design_pts,
                 loss_function_class=self.parms.loss_function_class,
                 loss_func_hypers=self.parms.loss_func_hypers,
                 cost_function_class=self.parms.cost_function_class,
@@ -474,17 +476,17 @@ class Actor:
                 acqf_loss = return_dict["acqf_loss"].mean()
                 acqf_cost = return_dict["acqf_cost"].mean()
                 # >> n_restart
-
+                
                 losses.append(acqf_loss.item())
                 costs.append(acqf_cost.item())
                 loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
 
-                if (best_loss + best_cost).mean() - loss > 0.1:
-                    best_loss = return_dict["acqf_loss"]
-                    best_cost = return_dict["acqf_cost"]
-                    best_next_X = return_dict["X"]
-                    best_actions = return_dict["actions"]
-                    best_hidden_state = return_dict["hidden_state"]
+                if (best_loss + best_cost).mean() - loss > 0.01:
+                    best_loss = return_dict["acqf_loss"].detach()
+                    best_cost = return_dict["acqf_cost"].detach()
+                    best_next_X = [x.detach() for x in return_dict["X"]]
+                    best_actions = return_dict["actions"].detach()
+                    best_hidden_state = return_dict["hidden_state"].detach() if return_dict["hidden_state"] else None
                     if self.parms.amortized:
                         best_map = self.maps.state_dict()
                     early_stop = 0
@@ -513,18 +515,18 @@ class Actor:
             idx = torch.argmin(best_loss + best_cost)
             
             # Best acqf loss
-            acqf_loss = best_loss[idx].detach()
+            acqf_loss = best_loss[idx]
             # >>> n_actions * 1
             
             # Get next X as X_0 at idx
-            next_X = best_next_X[0][idx].reshape(1, -1).detach()
+            next_X = best_next_X[0][idx].reshape(1, -1)
 
             # Get best actions
-            actions = best_actions[..., idx, :, :].detach()
+            actions = best_actions[..., idx, :, :]
 
             # Get next hidden state of X_0 at idx
             if self.parms.amortized:
-                hidden_state = best_hidden_state[0][idx: idx + 1].detach()
+                hidden_state = best_hidden_state[0][idx: idx + 1]
                 # >>> n_restarts * hidden_dim
                 self.maps.load_state_dict(best_map)
             else:

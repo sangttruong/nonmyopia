@@ -89,8 +89,8 @@ class Parameters:
             self.amortized = "AM" in args.algo
         elif self.algo == "qMSL":
             self.n_restarts = 4
-            self.n_samples = 2
-            self.algo_lookahead_steps = 4
+            self.n_samples = 4
+            self.algo_lookahead_steps = 3 # Equivalent 4 in HES
             self.amortized = False
         else:
             self.algo_lookahead_steps = 0
@@ -452,7 +452,7 @@ if __name__ == "__main__":
         # "cost_discount": 0.0,
         # "cost_discount_threshold": -1,
         "cost_fn": "euclidean",
-        "plot": True,
+        "plot": False,
         "gpu_id": 0,
         "cont": True
     }
@@ -477,7 +477,7 @@ if __name__ == "__main__":
     # parser.add_argument("--cost_discount", type=float, default=0.0)
     # parser.add_argument("--cost_discount_threshold", type=float, default=-1)
     parser.add_argument("--cost_fn", type=str, default="euclidean")
-    parser.add_argument("--plot", type=str2bool, default=True)
+    parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=True)
     args = parser.parse_args()

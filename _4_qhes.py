@@ -245,13 +245,13 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             cX = X_returned[i + 1]
             pX = X_returned[i][None, ...].expand_as(cX)
             acqf_cost = acqf_cost + self.cost_function(
-                prev_X=pX, current_X=cX, previous_cost=acqf_cost
+                prev_X=pX, current_X=cX, previous_cost=acqf_cost + previous_cost
             )
         for i in range(self.n_actions):
             cX = actions[..., i : i + 1, :]
             pX = X_returned[-1][None, ...].expand_as(cX)
             acqf_cost = acqf_cost + self.cost_function(
-                prev_X=pX, current_X=cX, previous_cost=acqf_cost
+                prev_X=pX, current_X=cX, previous_cost=acqf_cost + previous_cost
             )
         acqf_cost = acqf_cost.squeeze(dim=-1).sum(dim=-1)
 

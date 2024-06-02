@@ -62,27 +62,27 @@ class qBOAcqf(MCAcquisitionFunction):
                 sampler=sampler,
             )
 
-        elif self.parms.algo == "qPI":
+        elif self.name == "qPI":
             self.bo_acqf = qProbabilityOfImprovement(
                 model=self.model,
                 best_f=best_f,
                 sampler=sampler,
             )
 
-        elif self.parms.algo == "qSR":
+        elif self.name == "qSR":
             self.bo_acqf = qSimpleRegret(model=self.model, sampler=sampler)
 
-        elif self.parms.algo == "qUCB":
+        elif self.name == "qUCB":
             self.bo_acqf = qUpperConfidenceBound(model=self.model, sampler=sampler)
 
-        elif self.parms.algo == "qMSL":
+        elif self.name == "qMSL":
             self.bo_acqf = qMultiStepLookahead(
                 model=self.model,
                 batch_sizes=[1] * self.algo_lookahead_steps,
                 num_fantasies=num_fantasies,
             )
 
-        elif self.parms.aglo == "qNIPV":
+        elif self.name == "qNIPV":
             self.bo_acqf = qNegIntegratedPosteriorVariance(
                 model=self.model, mc_points=0, sampler=sampler  # TODO
             )
@@ -100,29 +100,45 @@ class qBOAcqf(MCAcquisitionFunction):
         n_restarts = prev_X.shape[0]
         x_dim = prev_X.shape[1]
         
-        actions = maps[-1]
+        actions = torch.concat(maps)
         if embedder is not None:
             actions = embedder.encode(actions)
             
         action_shape = [
             n_restarts,
-            self.n_actions,
+            -1,
             x_dim,
         ]
-        actions = actions.reshape(*action_shape)
-            
-        acqf_loss =  - self.bo_acqf(actions)
-
-        first_prev_X = prev_X[:, None, ...]
-        acqf_cost = self.cost_function(
-            prev_X=first_prev_X, current_X=actions, previous_cost=prev_cost
-        )
-        acqf_cost = acqf_cost.squeeze(dim=-1).sum(dim=-1)
         
+        actions = actions.reshape(*action_shape)
+        acqf_loss =  - self.bo_acqf(actions)
+        # >>> batch_size
+
+        pX = prev_X[:, None, ...]
+        if self.name == "qMSL":
+            acqf_cost = 0
+            for cX in self.bo_acqf.get_multi_step_tree_input_representation(actions):
+                acqf_cost = acqf_cost + self.cost_function(
+                    prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
+                )
+                pX = cX[None, ...]
+        else:
+            acqf_cost = self.cost_function(
+                prev_X=pX, current_X=actions, previous_cost=prev_cost
+            )
+        acqf_cost = acqf_cost.squeeze(dim=-1).sum(dim=-1)
+        while len(acqf_cost.shape) > 1:
+            acqf_cost = acqf_cost.mean(dim=0)
+
+        if self.name == "qMSL":
+            X_returned = self.bo_acqf.get_multi_step_tree_input_representation(actions)
+        else:
+            X_returned = [actions]
+            
         return {
             "acqf_loss": acqf_loss,
             "acqf_cost": acqf_cost,
-            "X": [actions],
+            "X": X_returned,
             "actions": actions,
             "hidden_state": None
         }
