@@ -91,8 +91,10 @@ class Parameters:
             self.n_restarts = 4
             self.n_samples = 2
             self.algo_lookahead_steps = 4
+            self.amortized = False
         else:
             self.algo_lookahead_steps = 0
+            self.amortized = False
 
         self.kernel = None
         if self.env_name == "Ackley":

@@ -179,6 +179,18 @@ def run(parms, env) -> None:
 
         # Evaluate and plot
         ## Separated ##
+        # eval_and_plot(
+        #     func=env,
+        #     wm=WM,
+        #     cfg=parms,
+        #     acqf=actor.acqf,
+        #     buffer=buffer,
+        #     next_x=output["next_X"],
+        #     optimal_value=env.optimal_value,
+        #     iteration=i,
+        #     embedder=embedder,
+        #     actions=output["actions"],
+        # )
 
         # Save buffer to file after each iteration
         torch.save(buffer, f"{parms.save_dir}/buffer.pt")
