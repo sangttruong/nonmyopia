@@ -62,7 +62,7 @@ class Parameters:
         print("Using device:", self.device)
 
         self.gpu_id = args.gpu_id
-        self.torch_dtype = torch.double
+        self.torch_dtype = torch.float32
         self.cont = args.cont
         self.seed = args.seed
         self.plot = args.plot
@@ -91,10 +91,10 @@ class Parameters:
             self.n_restarts = 4
             self.n_samples = 4
             self.algo_lookahead_steps = 3 # Equivalent 4 in HES
-            self.amortized = False
+        elif self.algo == "qKG":
+            self.algo_lookahead_steps = 1
         else:
             self.algo_lookahead_steps = 0
-            self.amortized = False
 
         self.kernel = None
         if self.env_name == "Ackley":
@@ -454,7 +454,7 @@ if __name__ == "__main__":
         "cost_fn": "euclidean",
         "plot": False,
         "gpu_id": 0,
-        "cont": True
+        "cont": False
     }
     # WandB start
     wandb.init(project="nonmyopia", config=default_config)
@@ -479,7 +479,7 @@ if __name__ == "__main__":
     parser.add_argument("--cost_fn", type=str, default="euclidean")
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
-    parser.add_argument("--cont", type=str2bool, default=True)
+    parser.add_argument("--cont", type=str2bool, default=False)
     args = parser.parse_args()
     
     set_seed(args.seed)

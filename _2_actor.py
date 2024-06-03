@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 r"""Implement an actor."""
+import gc
 import math 
 import torch
 from torch import Tensor
@@ -77,6 +78,7 @@ class Actor:
 
         # Initialize some actor attributes
         self.algo_lookahead_steps = self.parms.algo_lookahead_steps
+        self.acqf = None
         self.acqf_params = {}
 
     def reset_parameters(
@@ -267,6 +269,10 @@ class Actor:
         Returns:
             AcquisitionFunction: An aquisition function instance
         """
+        del self.acqf
+        gc.collect()
+        torch.cuda.empty_cache()
+        
         if self.parms.algo == "HES":
             if self.parms.algo_ts:
                 nf_design_pts = [1] * self.algo_lookahead_steps
@@ -486,7 +492,7 @@ class Actor:
                     best_cost = return_dict["acqf_cost"].detach()
                     best_next_X = [x.detach() for x in return_dict["X"]]
                     best_actions = return_dict["actions"].detach()
-                    best_hidden_state = return_dict["hidden_state"].detach() if return_dict["hidden_state"] else None
+                    best_hidden_state = [x.detach() for x in return_dict["hidden_state"]] if return_dict["hidden_state"] else None
                     if self.parms.amortized:
                         best_map = self.maps.state_dict()
                     early_stop = 0

@@ -185,12 +185,12 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             with fantasize_flag():
                 with settings.propagate_grads(False):
                     ppd = fantasized_model.posterior(X)
-                ys = self.design_samplers[step](ppd)
+                ys = self.design_samplers[step](ppd).to(X)
                 # >>> n_samples * num_x_{step} * y_dim
-
+                
                 # Update conditions
                 fantasized_model = fantasized_model.condition_on_observations(
-                    X=fantasized_model.transform_inputs(X_expanded), Y=ys
+                    X=fantasized_model.transform_inputs(X), Y=ys
                 )
 
             # Update previous_Xy
@@ -261,7 +261,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         while len(acqf_cost.shape) > 1:
             acqf_cost = acqf_cost.mean(dim=0)
         # >>> batch number of x_0
-
+        
         return {
             "acqf_loss": acqf_loss,
             "acqf_cost": acqf_cost,

@@ -91,7 +91,7 @@ def run(parms, env) -> None:
         batch_size=[parms.algo_n_iterations],
         device=parms.device,
     )
-
+    
     if parms.env_discretized:
         embedder = DiscreteEmbbeder(
             num_categories=parms.num_categories,

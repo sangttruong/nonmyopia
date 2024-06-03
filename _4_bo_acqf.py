@@ -52,8 +52,7 @@ class qBOAcqf(MCAcquisitionFunction):
         self.loss_function = loss_function_class(**loss_func_hypers)
 
         if self.name == "qKG":
-            self.bo_acqf = qKnowledgeGradient(
-                model=self.model, num_fantasies=num_fantasies)
+            self.bo_acqf = qKnowledgeGradient(model=self.model, sampler=sampler)
 
         elif self.name == "qEI":
             self.bo_acqf = qExpectedImprovement(
@@ -73,7 +72,9 @@ class qBOAcqf(MCAcquisitionFunction):
             self.bo_acqf = qSimpleRegret(model=self.model, sampler=sampler)
 
         elif self.name == "qUCB":
-            self.bo_acqf = qUpperConfidenceBound(model=self.model, sampler=sampler)
+            self.bo_acqf = qUpperConfidenceBound(
+                model=self.model, beta=0.1, sampler=sampler
+            )
 
         elif self.name == "qMSL":
             self.bo_acqf = qMultiStepLookahead(
@@ -115,6 +116,9 @@ class qBOAcqf(MCAcquisitionFunction):
         # >>> batch_size
 
         pX = prev_X[:, None, ...]
+        if embedder is not None:
+            pX = embedder.encode(pX)
+            
         if self.name == "qMSL":
             acqf_cost = 0
             for cX in self.bo_acqf.get_multi_step_tree_input_representation(actions):
@@ -132,6 +136,8 @@ class qBOAcqf(MCAcquisitionFunction):
 
         if self.name == "qMSL":
             X_returned = self.bo_acqf.get_multi_step_tree_input_representation(actions)
+        elif self.name == "qKG":
+            X_returned = [self.bo_acqf.extract_candidates(actions)]
         else:
             X_returned = [actions]
             
