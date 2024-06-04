@@ -156,6 +156,8 @@ def run(parms, env) -> None:
             parms.algo_n_iterations - i < actor.algo_lookahead_steps
         ):
             actor.algo_lookahead_steps -= 1
+            if not parms.amortized:
+                actor.reset_parameters(buffer=buffer[:i], embedder=embedder)
 
         # Construct acqf
         actor.construct_acqf(WM=WM, buffer=buffer[:i])

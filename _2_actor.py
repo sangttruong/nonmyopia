@@ -416,7 +416,7 @@ class Actor:
             self.parms.n_restarts, -1
         )
         prev_cost = buffer["cost"][self.parms.n_initial_points:iteration].sum() if iteration > self.parms.n_initial_points else 0.0
-        
+
         # Optimize the acquisition function
         if self.parms.algo == "BudgetedBO":
             bounds = self.parms.bounds.T

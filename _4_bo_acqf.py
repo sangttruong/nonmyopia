@@ -126,6 +126,16 @@ class qBOAcqf(MCAcquisitionFunction):
                     prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
                 )
                 pX = cX[None, ...]
+        elif self.name == "qKG":
+            cX = actions[..., :-self.bo_acqf.num_fantasies, :]
+            acqf_cost = self.cost_function(
+                    prev_X=pX.expand_as(cX), current_X=cX, previous_cost=prev_cost
+                )
+            pX = cX
+            cX = actions[..., -self.bo_acqf.num_fantasies:, :]
+            acqf_cost = acqf_cost + self.cost_function(
+                    prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
+                )
         else:
             acqf_cost = self.cost_function(
                 prev_X=pX, current_X=actions, previous_cost=prev_cost

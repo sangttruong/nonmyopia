@@ -62,7 +62,7 @@ class Parameters:
         print("Using device:", self.device)
 
         self.gpu_id = args.gpu_id
-        self.torch_dtype = torch.float32
+        self.torch_dtype = torch.double
         self.cont = args.cont
         self.seed = args.seed
         self.plot = args.plot
