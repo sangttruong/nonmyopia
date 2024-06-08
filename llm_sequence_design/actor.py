@@ -15,7 +15,7 @@ from src.llmtuner.train.utils import create_ref_model
 from src.llmtuner.data.preprocess import preprocess_unsupervised_dataset
 from src.llmtuner.data.template import get_template_and_fix_tokenizer
 from acqfs import (
-    acqf_hes,
+    acqf_random,
 )
 from configs import ALLOWED_TOKENS
 from policy import Policy, PolicyPPOTrainer
@@ -39,9 +39,7 @@ class Actor:
 
         self.algo_lookahead_steps = bo_args.algo_lookahead_steps
 
-        if self.bo_args.algo == "HES-TS-AM":
-            self.acqf = acqf_hes
-        else:
+        if self.bo_args.algo != "HES-TS-AM":
             raise NotImplementedError
 
     def load_policy(self, *args, **kwargs):

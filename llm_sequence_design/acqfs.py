@@ -1,5 +1,5 @@
 import random
 
 
-def acqf_hes():
+def acqf_random():
     pass
