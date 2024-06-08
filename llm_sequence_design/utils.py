@@ -2,12 +2,22 @@ import random
 import torch
 import os
 import psutil
+import numpy as np
 from tqdm import tqdm
 from functools import partial
 from torch.utils.data import DataLoader
 from datasets import Dataset
 import subprocess
 
+def set_seed(seed):
+    random.seed(seed)
+    # torch.backends.cudnn.deterministic=True
+    # torch.backends.cudnn.benchmark = False
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.cuda.manual_seed_all(seed)
+    
 def get_dataset_embedding(dataset, model, tokenizer, data_args):
     def tokenize_dataset(
         examples,

@@ -1,9 +1,11 @@
 import math
+import re
 import gc
 import os
 import sys
 import copy
 import time
+import random
 import requests
 from typing import TYPE_CHECKING, Dict, List, Optional, Tuple
 
@@ -81,8 +83,11 @@ class Policy:
                             --model_name_or_path {self.model_args.model_name_or_path} \
                             --adapter_name_or_path {self.model_args.adapter_name_or_path[0]} \
                             --template {self.data_args.template} \
-                            --vllm_gpu_util {self.model_args.vllm_gpu_util} \
                             --infer_backend vllm \
+                            --vllm_gpu_util {self.model_args.vllm_gpu_util} \
+                            --temperature 0.6 \
+                            --top_k 50 \
+                            --top_p 0.9 \
                             --vllm_enforce_eager"""
         
         print("Deploying LLM...")
@@ -112,24 +117,29 @@ class Policy:
 
     def format_prompt(self, X: List[str], prevX: List[List[str]], prevY: List[List[float]]):
         # prevX, prevY: n_steps x n_protein
-        histories = [[] for _ in range(len(X))]
-        for stepX, stepY in zip(prevX, prevY):
-            for i, (pX, pY) in enumerate(zip(stepX, stepY)):
-                histories[i].append(self.__history__.format(protein=pX, fluorescence=pY))
+        # histories = [[] for _ in range(len(X))]
+        # for stepX, stepY in zip(prevX, prevY):
+        #     for i, (pX, pY) in enumerate(zip(stepX, stepY)):
+        #         histories[i].append(self.__history__.format(protein=pX, fluorescence=pY))
 
-        histories = ['\n'.join(h) for h in histories]
-        prompt = [self.__prompt__.format(history=h, protein=x) for h, x in zip(histories, X)]
+        # histories = ['\n'.join(h) for h in histories]
+        # prompt = [self.__prompt__.format(history=h, protein=x) for h, x in zip(histories, X)]
+
+        prompt = [self.__prompt__.format(protein=x) for x in X]
         return prompt
 
+    def post_process(self, generation):
+        return re.findall("[A-Z]{230,}", generation)
+        
     def generate(self, X: List[str], prevX: List[List[str]], prevY: List[List[float]], generating_args={}, **kwargs):
         prompts = self.format_prompt(X, prevX, prevY)
-        max_retry = 1
+        max_retry = generating_args.top_k
         api_port = 1337
         outputs = []
 
         client = OpenAI(base_url=f"http://localhost:{api_port}/v1", api_key="token-abc123")
 
-        for pi, prompt in tqdm(enumerate(prompts)):
+        for pi, prompt in enumerate(tqdm(prompts)):
             trying_time = 0
             while trying_time < max_retry:
                 completion = client.chat.completions.create(
@@ -137,10 +147,13 @@ class Policy:
                     messages=[{"role": "user", "content": prompt}]
                 )
                 generations = completion.choices[0].message.content
+                generations = self.post_process(generations)
                 
-                generations_ed = self.__verify_output__([prompt], [generations])
-                if generations_ed[0] <= 1:
-                    outputs.append(generations)
+                generations_ed = self.__verify_output__([X[pi]] * len(generations), generations)
+                filtered_generations = [g for g, ed in zip(generations, generations_ed) if ed == 1]
+                
+                if len(filtered_generations) > 0:
+                    outputs.append(random.choice(filtered_generations))
                     break
                 else:
                     trying_time += 1

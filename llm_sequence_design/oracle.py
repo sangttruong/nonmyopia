@@ -43,8 +43,12 @@ class Oracle:
     def forward(self, X, batch_size = 32, **kwargs):
         total_X = len(X)
         outputs = []
-        
-        for i in tqdm(range((total_X//batch_size) + 1)):
+
+        total_steps = total_X // batch_size
+        if total_steps * batch_size < total_X:
+            total_steps += 1
+            
+        for i in tqdm(range(total_steps)):
             idx_start = i * batch_size
             idx_end = min((i+1) * batch_size, total_X)
 

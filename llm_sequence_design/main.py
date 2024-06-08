@@ -17,11 +17,8 @@ from src.llmtuner.data.utils import checksum, merge_dataset
 from oracle import Oracle
 from world_model import WorldModel
 from actor import Actor
-from configs import (
-    TRAINING_DATA_BUFFER,
-    TESTING_DATA_BUFFER,
-)
 from utils import (
+    set_seed,
     get_dataset_embedding,
     random_sampling,
     fix_oracle_model_args,
@@ -36,7 +33,9 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         wm_finetuning_args, policy_finetuning_args, generating_args, bo_args = get_bo_args(
             args)
     callbacks = [LogCallback()] if callbacks is None else callbacks
-
+    # Set seed
+    set_seed(training_args.seed)
+    
     # Fixing args
     fix_wm_model_args(wm_model_args)
     fix_oracle_model_args(oracle_model_args)
@@ -74,18 +73,30 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         )
 
     # Initializing training buffer
+    oracle.load()
+    
     # Randomly sample from training dataset
     initial_dataset = random_sampling(
         training_dataset, num_samples=bo_args.initinal_sequences)
+    # Query Oracle for y
+    initial_dataset_reward = oracle(initial_dataset["text"], batch_size=training_args.per_device_train_batch_size)
+    initial_dataset = initial_dataset.remove_columns("reward").add_column("reward", initial_dataset_reward).cast(initial_dataset.features)
+    
     # Random choose sequences with reward < 2.0 as inital sequence
     initial_sequences = random_sampling(
         testing_dataset, num_samples=bo_args.n_sequences, constrained_reward=2.0)
+    # Query Oracle for y
+    initial_sequences_reward = oracle(initial_sequences["text"], batch_size=training_args.per_device_train_batch_size)
+    initial_sequences = initial_sequences.remove_columns("reward").add_column("reward", initial_sequences_reward).cast(initial_sequences.features)
+    
+    # Merge initial_sequences to initial_dataset
+    initial_dataset = concatenate_datasets([initial_dataset, initial_sequences])
+    oracle.unload()
 
     buffer = {
         "dataset": initial_dataset,
         "x": [initial_sequences["text"]],
-        "y": [initial_sequences["reward"]],
-        "eval_rmse": [0]
+        "y": [initial_sequences["reward"]]
     }
     
     actor = Actor(bo_args, policy_model_args, policy_finetuning_args, 
@@ -110,7 +121,11 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
             actor.algo_lookahead_steps -= 1
 
         # Rollout training dataset for policy
-        rollout_dataset = actor.rollout(world_model, n_sequences=bo_args.rollout_sequences)
+        rollout_dataset = actor.rollout(
+            world_model, 
+            buffer["x"][-1],
+            n_sequences=bo_args.rollout_sequences
+        )
 
         # Unload LLM in world model
         world_model.unload()

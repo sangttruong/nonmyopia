@@ -30,6 +30,10 @@ class GeneratingArguments:
         default=1,
         metadata={"help": "Number of beams for beam search. 1 means no beam search."},
     )
+    min_length: int = field(
+        default=-1,
+        metadata={"help": "The minimum length the generated tokens can have."},
+    )
     max_length: int = field(
         default=512,
         metadata={"help": "The maximum length the generated tokens can have. It can be overridden by max_new_tokens."},

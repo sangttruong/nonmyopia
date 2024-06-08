@@ -100,10 +100,20 @@ class Actor:
     def rollout(
         self,
         reward_model,
+        sequences,
         n_sequences = 16,
         sequence_length = 237,
     ):
-        sequences = [[''.join(random.choices(ALLOWED_TOKENS, k=sequence_length)) for _ in range(n_sequences)]]
+        if len(sequences) <= n_sequences:
+            n_input_sequences = len(sequences)
+            sequences = [sequences*(n_sequences // n_input_sequences)]
+            n_sequences = len(sequences[0])
+        else:
+            sequences = [sequences[-n_sequences:]]
+        
+        # Deprecated
+        # sequences = [[''.join(random.choices(ALLOWED_TOKENS, k=sequence_length)) for _ in range(n_sequences)]]
+        
         for i in range(self.algo_lookahead_steps):
             step_sequences = []
             
@@ -137,7 +147,8 @@ class Actor:
             data_dict["response"].extend(
                 [[{"role": "assistant", "content": seq}] for seq in sequences[i+1]]
             )
-            data_dict["reward"].extend((rewards[i+1] - rewards[i]).float().detach().cpu().tolist())
+            rw = ((rewards[i+1] - rewards[i]).float().detach().cpu() + 5) / 10
+            data_dict["reward"].extend(rw.tolist())
             data_dict["system"].extend([""] * len(sequences[i]))
             data_dict["tools"].extend([""] * len(sequences[i]))
         
