@@ -8,9 +8,9 @@ This source code is used to deisgn sequence(s) to maximize/minimize a property. 
 
 ## Installization
 First of all, you might need a suitable envorinment to run the code.
-Pease refre to pakagess in [LLaLa-Factory](https://github.com/hiyouga/LLaMA-Factory).
+Pease refre to pakagess in [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory).
 
-You can also refer the file [here](llm_sequence_design/requirements.txt).
+You can also refer the file [here](requirements.txt).
 ```bash
 pip install -r requirements.txt
 ```
@@ -64,7 +64,7 @@ Currently, this code is only support HES-TS-AM acquision function. Some notes ar
 - Policy model can be different models with the above two models.
 - We would better finetuning Policy with LoRA to minimzing the catastrophic knowledge loss.
   
-To run full pipeline, please use script in [Pipeline Script](lllm_sequence_design/scripts/run_exp.sh)
+To run full pipeline, please use script in [Pipeline Script](scripts/run_exp.sh)
 
 ## Next steps
 - Re-adding the histories of sequence when optimizing with lookahead. See `configs.py` for designed prompt.
