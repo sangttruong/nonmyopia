@@ -36,6 +36,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         n_fantasy_at_action_pts: Optional[int] = 64,
         design_samplers: Optional[MCSampler] = None,
         action_sampler: Optional[MCSampler] = None,
+        **kwargs
     ) -> None:
         """Batch multip-step H-Entropy Search using one-shot optimization.
 

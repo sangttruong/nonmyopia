@@ -39,9 +39,10 @@ class qBOAcqf(MCAcquisitionFunction):
         cost_func_hypers: Dict[str, int],
         lookahead_steps: int,
         n_actions: int,
-        num_fantasies: Optional[List[int]] = 64,
+        n_fantasy_at_design_pts: Optional[List[int]] = [64],
         sampler: Optional[MCSampler] = None,
         best_f: Optional[float] = None,
+        **kwargs
     ) -> None:
         super().__init__(model=model)
         self.name = name
@@ -52,7 +53,11 @@ class qBOAcqf(MCAcquisitionFunction):
         self.loss_function = loss_function_class(**loss_func_hypers)
 
         if self.name == "qKG":
-            self.bo_acqf = qKnowledgeGradient(model=self.model, sampler=sampler)
+            self.bo_acqf = qKnowledgeGradient(
+                model=self.model, 
+                num_fantasies=n_fantasy_at_design_pts[0],
+                sampler=sampler
+            )
 
         elif self.name == "qEI":
             self.bo_acqf = qExpectedImprovement(
@@ -80,12 +85,12 @@ class qBOAcqf(MCAcquisitionFunction):
             self.bo_acqf = qMultiStepLookahead(
                 model=self.model,
                 batch_sizes=[1] * self.algo_lookahead_steps,
-                num_fantasies=num_fantasies,
+                num_fantasies=n_fantasy_at_design_pts,
             )
 
         elif self.name == "qNIPV":
             self.bo_acqf = qNegIntegratedPosteriorVariance(
-                model=self.model, mc_points=0, sampler=sampler  # TODO
+                model=self.model, mc_points=0, sampler=sampler
             )
 
     def forward(
@@ -110,7 +115,6 @@ class qBOAcqf(MCAcquisitionFunction):
             -1,
             x_dim,
         ]
-        
         actions = actions.reshape(*action_shape)
         acqf_loss =  - self.bo_acqf(actions)
         # >>> batch_size
@@ -129,16 +133,16 @@ class qBOAcqf(MCAcquisitionFunction):
         elif self.name == "qKG":
             cX = actions[..., :-self.bo_acqf.num_fantasies, :]
             acqf_cost = self.cost_function(
-                    prev_X=pX.expand_as(cX), current_X=cX, previous_cost=prev_cost
-                )
+                prev_X=pX.expand_as(cX), current_X=cX, previous_cost=prev_cost
+            )
             pX = cX
             cX = actions[..., -self.bo_acqf.num_fantasies:, :]
             acqf_cost = acqf_cost + self.cost_function(
-                    prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
-                )
+                prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
+            )
         else:
             acqf_cost = self.cost_function(
-                prev_X=pX, current_X=actions, previous_cost=prev_cost
+                prev_X=pX.expand_as(actions), current_X=actions, previous_cost=prev_cost
             )
         acqf_cost = acqf_cost.squeeze(dim=-1).sum(dim=-1)
         while len(acqf_cost.shape) > 1:

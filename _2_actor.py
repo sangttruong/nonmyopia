@@ -273,7 +273,7 @@ class Actor:
         gc.collect()
         torch.cuda.empty_cache()
         
-        if self.parms.algo == "HES":
+        if self.parms.algo != "BudgetedBO":
             if self.parms.algo_ts:
                 nf_design_pts = [1] * self.algo_lookahead_steps
             else:
@@ -291,43 +291,20 @@ class Actor:
                         self.algo_lookahead_steps - 4
                     )
 
+            if self.parms.algo != "HES":
+                sampler = SobolQMCNormalSampler(
+                    sample_shape=self.parms.n_samples, seed=0, resample=False
+                )
+            else:
+                sampler = None
+
             self.acqf = self.acqf_class(
+                name=self.parms.algo,
                 model=WM,
                 lookahead_steps=self.algo_lookahead_steps,
                 n_actions=self.parms.n_actions,
                 n_fantasy_at_design_pts=nf_design_pts,
                 n_fantasy_at_action_pts=self.parms.n_samples,
-                loss_function_class=self.parms.loss_function_class,
-                loss_func_hypers=self.parms.loss_func_hypers,
-                cost_function_class=self.parms.cost_function_class,
-                cost_func_hypers=self.parms.cost_func_hypers,
-            )
-
-        elif self.parms.algo in ["qKG", "qEI", "qPI", "qSR", "qUCB", "qMSL", "qNIPV"]:
-            sampler = SobolQMCNormalSampler(
-                sample_shape=self.parms.n_samples, seed=0, resample=False
-            )
-            
-            if self.algo_lookahead_steps == 0:
-                nf_design_pts = []
-            elif self.algo_lookahead_steps == 1:
-                nf_design_pts = [64]
-            elif self.algo_lookahead_steps == 2:
-                nf_design_pts = [64, 8]  # [64, 64]
-            elif self.algo_lookahead_steps == 3:
-                nf_design_pts = [64, 4, 2]  # [64, 32, 8]
-            elif self.algo_lookahead_steps >= 4:
-                nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
-                nf_design_pts = nf_design_pts + [1] * (
-                    self.algo_lookahead_steps - 4
-                )
-            
-            self.acqf = self.acqf_class(
-                name=self.parms.algo,
-                model=WM, 
-                lookahead_steps=self.algo_lookahead_steps,
-                n_actions=self.parms.n_actions,
-                num_fantasies=nf_design_pts,
                 loss_function_class=self.parms.loss_function_class,
                 loss_func_hypers=self.parms.loss_func_hypers,
                 cost_function_class=self.parms.cost_function_class,

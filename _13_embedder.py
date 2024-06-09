@@ -39,7 +39,7 @@ class DiscreteEmbbeder:
         assert torch.any(sentence <= self.bounds[..., 1])
         cat = (sentence - self.bounds[..., 0]) / self.range_size
         cat = cat.long()
-        cat[cat == self.num_categories] = self.num_categories - 1
+        cat[cat >= self.num_categories] = self.num_categories - 1
         cat[cat < 0] = 0
         return cat
 

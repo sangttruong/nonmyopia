@@ -14,8 +14,10 @@ from botorch.test_functions.synthetic import (
     StyblinskiTang,  # XD StyblinskiTang function - Minimum
 )
 from _0_main import Parameters, make_env
+from _4_bo_acqf import qBOAcqf
 from _7_utils import set_seed
 from _12_alpine import AlpineN1
+from _13_embedder import DiscreteEmbbeder
 from _15_syngp import SynGP
 from _16_env_wrapper import EnvWrapper
 import matplotlib.pyplot as plt
@@ -25,6 +27,7 @@ import torch
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.input import Normalize
 from botorch.models.transforms.outcome import Standardize
+from botorch.sampling.normal import SobolQMCNormalSampler
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch import fit_gpytorch_model
 from tqdm import tqdm
@@ -35,100 +38,19 @@ from pathlib import Path
 from argparse import ArgumentParser
 import wandb
 
-algos_name = [
-    "HES-TS-AM-1",
-    "HES-TS-AM-10",
-    "HES-TS-AM-20",
-    "HES-TS-1",
-    "HES-TS-2",
-    "HES-TS-3",
-    "HES-AM-1",
-    "HES-AM-2",
-    "HES-AM-3",
-    "HES-1",
-    "HES-2",
-    "HES-3",
-    "MSL-3",
-    "SR",
-    "EI",
-    "PI",
-    "UCB",
-    "KG",
-]
-
-algos = [
-    "HES-TS-AM-1",
-    "HES-TS-AM-10",
-    "HES-TS-AM-20",
-    "HES-TS-1",
-    "HES-TS-2",
-    "HES-TS-3",
-    "HES-AM-1",
-    "HES-AM-2",
-    "HES-AM-3",
-    "HES-1",
-    "HES-2",
-    "HES-3",
-    "qMSL",
-    "qSR",
-    "qEI",
-    "qPI",
-    "qUCB",
-    "qKG"
-]
-
-seeds = [
-    2,
-    3,
-    5,
-    7,
-    11
-]
-
-env_names = [
-    "Ackley",
-    "Alpine",
-    "Beale",
-    "Branin",
-    "Cosine8",
-    "EggHolder",
-    "Griewank",
-    "Hartmann",
-    "HolderTable",
-    "Levy",
-    "Powell",
-    "SixHumpCamel",
-    "StyblinskiTang",
-    "SynGP"
-]
-
-env_noises = [
-    0.0,
-    0.01,
-    0.1,
-]
-
-env_discretizeds = [
-    False,
-    True
-]
-
-cost_functions = [
-    "euclidean",
-    "manhattan",
-    "r-spotlight",
-    "non-markovian"
-]
-
 # Compute metrics
 def compute_metrics(
     env,
     parms,
     buffer,
+    embedder,
     device,
     WM_state_dicts=None,
 ):
     metrics = []
+    cost_fn = parms.cost_function_class(**parms.cost_func_hypers)
+    previous_cost = 0
+    
     for step in tqdm(range(parms.n_initial_points-1, parms.algo_n_iterations)):
         u_observed = torch.max(buffer["y"][:step+1]).item()
 
@@ -140,58 +62,163 @@ def compute_metrics(
             #     d=parms.x_dim, bounds=parms.bounds.T),
             # outcome_transform=Standardize(1),
         ).to(device)
+        
         if step == parms.algo_n_iterations - 1:
             # Fit GP
             mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
             fit_gpytorch_model(mll)
         else:
             WM.load_state_dict(WM_state_dicts[step - parms.n_initial_points + 1])
+
         # Set WM to eval mode
         WM.eval()
-
-        # Initialize A consistently across fantasies
-        A = torch.empty(
-            [parms.n_restarts, parms.n_actions, parms.x_dim],
-            device=device
-        )
-        A = buffer["x"][step].clone().repeat(
-            parms.n_restarts, parms.n_actions, 1)
-        A = A + torch.randn_like(A) * 0.01
-        A.requires_grad = True
-
-        # Initialize optimizer
-        optimizer = torch.optim.AdamW([A], lr=0.01)
-        loss_fn = parms.loss_function_class(**parms.loss_func_hypers)
-        cost_fn = parms.cost_function_class(**parms.cost_func_hypers)
-
-        for i in range(1000):
-            ppd = WM(A)
-            y_A = ppd.rsample()
-
-            losses = loss_fn(A=A, Y=y_A) + cost_fn(
-                prev_X=buffer["x"][step].expand_as(A), current_X=A, previous_cost=0
+        
+        if parms.algo.startswith("HES"):
+            # Initialize A consistently across fantasies
+            A = torch.empty(
+                [parms.n_restarts, parms.n_actions, parms.x_dim],
+                device=device
             )
-            # >>> n_fantasy x batch_size
+            A = buffer["x"][step].clone().repeat(
+                parms.n_restarts, parms.n_actions, 1)
+            A = A + torch.randn_like(A) * 0.01
+            if embedder is not None:
+                A = embedder.decode(A)
+                A = torch.nn.functional.one_hot(A, num_classes=parms.num_categories).float()
+            A.requires_grad = True
+    
+            # Initialize optimizer
+            optimizer = torch.optim.AdamW([A], lr=parms.acq_opt_lr)
+            loss_fn = parms.loss_function_class(**parms.loss_func_hypers)
+    
+            for i in range(1000):
+                if embedder is not None:
+                    actions = embedder.encode(A)
+                else:
+                    actions = A
+                ppd = WM(actions)
+                y_A = ppd.rsample()
+    
+                losses = loss_fn(A=actions, Y=y_A) + cost_fn(
+                    prev_X=buffer["x"][step].expand_as(actions), current_X=actions, previous_cost=previous_cost
+                )
+                # >>> n_fantasy x batch_size
+    
+                loss = losses.mean()
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad()
+    
+                if (i+1) % 200 == 0:
+                    print(f"Eval optim round: {i+1}, Loss: {loss.item():.2f}")
+    
+            aidx = losses.squeeze(-1).argmin()
+            
+        else:
+            # Construct acqf
+            sampler = SobolQMCNormalSampler(
+                sample_shape=1, seed=0, resample=False
+            )
+            nf_design_pts = [1]
+            
+            acqf = qBOAcqf(
+                name=parms.algo,
+                model=WM, 
+                lookahead_steps=0 if parms.algo_lookahead_steps == 0 else 1,
+                n_actions=parms.n_actions,
+                n_fantasy_at_design_pts=nf_design_pts,
+                loss_function_class=parms.loss_function_class,
+                loss_func_hypers=parms.loss_func_hypers,
+                cost_function_class=parms.cost_function_class,
+                cost_func_hypers=parms.cost_func_hypers,
+                sampler=sampler,
+                best_f=buffer["y"][:step+1].max(),
+            )
 
-            loss = losses.mean()
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad()
+            maps = []
+            if parms.algo_lookahead_steps > 0:
+                x = buffer["x"][step].clone().repeat(
+                    parms.n_restarts, 1)
+                if embedder is not None:
+                    x = embedder.decode(x)
+                    x = torch.nn.functional.one_hot(x, num_classes=parms.num_categories).float()
+                maps.append(x)
 
-            if (i+1) % 200 == 0:
-                print(f"Eval optim round: {i+1}, Loss: {loss.item():.2f}")
+            A = buffer["x"][step].clone().repeat(
+                parms.n_restarts * parms.n_actions, 1)
+            A = A + torch.randn_like(A) * 0.01
+            if embedder is not None:
+                A = embedder.decode(A)
+                A = torch.nn.functional.one_hot(A, num_classes=parms.num_categories).float()
+            A.requires_grad = True
+            maps.append(A)
+            
+            # Initialize optimizer
+            optimizer = torch.optim.AdamW([A], lr=parms.acq_opt_lr)
 
-        aidx = losses.squeeze(-1).argmin()
-        u_posterior = env(A[aidx]).item()
+            # Get prevX, prevY
+            prev_X = buffer["x"][step: step+1].expand(
+                parms.n_restarts, -1
+            )
+            if embedder is not None:
+                # Discretize: Continuous -> Discrete
+                prev_X = embedder.decode(prev_X)
+                prev_X = torch.nn.functional.one_hot(
+                    prev_X, num_classes=parms.num_categories
+                ).to(dtype=parms.torch_dtype)
+                # >>> n_restarts x x_dim x n_categories
+    
+            prev_y = buffer["y"][step: step+1].expand(
+                parms.n_restarts, -1
+            )
+
+            for i in range(1000):
+                return_dict = acqf.forward(
+                    prev_X=prev_X,
+                    prev_y=prev_y,
+                    prev_hid_state=None,
+                    maps=maps,
+                    embedder=embedder,
+                    prev_cost=previous_cost
+                )
+                
+                losses = (return_dict["acqf_loss"] + return_dict["acqf_cost"])
+                # >>> n_fantasy_at_design_pts x batch_size
+
+                loss = losses.mean()
+                grads = torch.autograd.grad(
+                    loss, [A], allow_unused=True)
+                for param, grad in zip([A], grads):
+                    param.grad = grad
+                optimizer.step()
+                optimizer.zero_grad()
+
+                if (i+1) % 200 == 0:
+                    print(f"Eval optim round: {i}, Loss: {loss.item():.2f}")
+
+            aidx = losses.squeeze(-1).argmin()
+            if embedder is not None:
+                A = A.reshape(parms.n_restarts, parms.n_actions, parms.x_dim, parms.num_categories)
+            else:
+                A = A.reshape(parms.n_restarts, parms.n_actions, parms.x_dim)
+        
+        if embedder is not None:
+            A_chosen = embedder.encode(A[aidx]).detach()
+        else:
+            A_chosen = A[aidx].detach()
+        u_posterior = env(A_chosen).item()
 
         ######################################################################
         regret = 1 - u_posterior
         if step >= parms.n_initial_points:
             regret += metrics[-1][-1] # Cummulative regret
 
+        previous_cost = cost_fn(
+            prev_X=buffer["x"][step:step+1], current_X=buffer["x"][step+1:step+2], previous_cost=previous_cost
+        )
         metrics.append([u_observed, u_posterior, regret])
-        # wandb.log({"u_observed": u_observed, "u_posterior": u_posterior, "c_regret": regret})
-        print({"u_observed": u_observed, "u_posterior": u_posterior, "c_regret": regret})
+        # print({"u_observed": u_observed, "u_posterior": u_posterior, "c_regret": regret})
+        wandb.log({"u_observed": u_observed, "u_posterior": u_posterior, "c_regret": regret})
 
     return np.array(metrics)
 
@@ -223,7 +250,6 @@ if __name__ == '__main__':
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=True)
-    parser.add_argument("--test_only", type=str2bool, default=False)
     args = parser.parse_args()
     
     set_seed(args.seed)
@@ -270,10 +296,19 @@ if __name__ == '__main__':
         if len(WM_state_dicts) != (local_parms.algo_n_iterations - local_parms.n_initial_points):
             raise RuntimeError
 
+        if local_parms.env_discretized:
+            embedder = DiscreteEmbbeder(
+                num_categories=local_parms.num_categories,
+                bounds=local_parms.bounds,
+            ).to(device=local_parms.device, dtype=local_parms.torch_dtype)
+        else:
+            embedder = None
+    
         metrics=compute_metrics(
             env,
             local_parms,
             buffer,
+            embedder,
             device,
             WM_state_dicts=WM_state_dicts,
         )
