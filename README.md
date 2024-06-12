@@ -17,44 +17,51 @@ There are two main experiments:
  or 
  conda env create -f environment.yml
  ```
-2. Run the experiments by bash script `scripts.sh`
+2. Run the experiments by bash script
 ```bash
-python _0_main.py [-h] [--seeds SEEDS [SEEDS ...]] [--task TASK] [--env_names ENV_NAMES [ENV_NAMES ...]] [--env_noise ENV_NOISE] [--env_discretized] [--algos ALGOS [ALGOS ...]]
-                  [--algo_ts] [--algo_n_iterations ALGO_N_ITERATIONS] [--algo_lookahead_steps ALGO_LOOKAHEAD_STEPS] [--cost_spotlight_k COST_SPOTLIGHT_K] [--cost_p_norm COST_P_NORM]
-                  [--cost_max_noise COST_MAX_NOISE] [--cost_discount COST_DISCOUNT] [--cost_discount_threshold COST_DISCOUNT_THRESHOLD] [--gpu_id GPU_ID [GPU_ID ...]]
-                  [--continue_once CONTINUE_ONCE] [--test_only]
+python main.py [-h] [--seed SEED] [--task TASK] [--env_name ENV_NAME] [--env_noise ENV_NOISE] [--env_discretized ENV_DISCRETIZED] [--algo ALGO]
+               [--cost_fn COST_FN] [--plot PLOT] [--gpu_id GPU_ID] [--cont CONT]
 
 options:
-  -h, --help            show this help message and exit
-  --seeds SEEDS [SEEDS ...]
+  --seed SEED
   --task TASK
-  --env_names ENV_NAMES [ENV_NAMES ...]
+  --env_name ENV_NAME
   --env_noise ENV_NOISE
-  --env_discretized
-  --algos ALGOS [ALGOS ...]
-  --algo_ts
-  --algo_n_iterations ALGO_N_ITERATIONS
-  --algo_lookahead_steps ALGO_LOOKAHEAD_STEPS
-  --cost_spotlight_k COST_SPOTLIGHT_K
-  --cost_p_norm COST_P_NORM
-  --cost_max_noise COST_MAX_NOISE
-  --cost_discount COST_DISCOUNT
-  --cost_discount_threshold COST_DISCOUNT_THRESHOLD
-  --gpu_id GPU_ID [GPU_ID ...]
-  --continue_once CONTINUE_ONCE
-  --test_only
+  --env_discretized ENV_DISCRETIZED
+  --algo ALGO
+  --cost_fn COST_FN
+  --plot PLOT
+  --gpu_id GPU_ID
+  --cont CONT
 ```
-3. Plot the results by command
+3. Compute metrics
 ```bash
-python draw_regrets.py [ENV_NAMES]
+python compute_metrics.py [-h] [--seed SEED] [--task TASK] [--env_name ENV_NAME] [--env_noise ENV_NOISE] [--env_discretized ENV_DISCRETIZED]
+                          [--algo ALGO] [--cost_fn COST_FN] [--plot PLOT] [--gpu_id GPU_ID] [--cont CONT]
+
+options:
+  --seed SEED
+  --task TASK
+  --env_name ENV_NAME
+  --env_noise ENV_NOISE
+  --env_discretized ENV_DISCRETIZED
+  --algo ALGO
+  --cost_fn COST_FN
+  --plot PLOT
+  --gpu_id GPU_ID
+  --cont CONT
+```
+4. Draw regrets
+```bash
+python draw_metrics.py
 ```
 
 ## Analyzing world models
 ```bash
-python _0_main_gp.py [-h] [--seeds SEEDS [SEEDS ...]] [--env_names ENV_NAMES [ENV_NAMES ...]] [--env_noise ENV_NOISE] [--env_discretized] [--gpu_id GPU_ID]
+python test_surrogate_convergence.py [-h] [--seeds SEEDS [SEEDS ...]] [--env_names ENV_NAMES [ENV_NAMES ...]] [--env_noise ENV_NOISE]
+                                     [--env_discretized] [--gpu_id GPU_ID]
 
 options:
-  -h, --help            show this help message and exit
   --seeds SEEDS [SEEDS ...]
   --env_names ENV_NAMES [ENV_NAMES ...]
   --env_noise ENV_NOISE
