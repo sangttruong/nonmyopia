@@ -7,8 +7,7 @@ __pycache__/
 *.zip
 *.pt
 .DS_Store
-results/*
-draw_script.py
-draw_mst_and_hes.py
-script_*.sh
-ckpts/
+results/
+gp_results/
+plots/
+wandb/

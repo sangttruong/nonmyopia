@@ -1,14 +1,12 @@
-program: main.py
-project: nonmyopia
+program: compute_metrics.py
+project: nonmyopia-metrics
 method: grid
 metric:
     goal: minimize
-    name: loss
+    name: c_regret
 parameters:
     seed: 
         values: [2, 3, 5, 7, 11]
-    task: 
-        values: [topk]
     env_name: 
         values: [Ackley, Alpine, Beale, Branin, Cosine8, EggHolder, Griewank, Hartmann, HolderTable, Levy, Powell, SixHumpCamel, StyblinskiTang, SynGP]
     env_noise:  
@@ -19,11 +17,3 @@ parameters:
         values: [HES-TS-AM-1, HES-TS-AM-10, HES-TS-AM-20, HES-TS-1, HES-TS-2, HES-TS-3, HES-AM-1, HES-AM-2, HES-AM-3, HES-1, HES-2, HES-3, qMSL, qSR, qEI, qPI, qUCB, qKG]
     cost_fn: 
         values: [euclidean, manhattan, r-spotlight, non-markovian]
-    plot:  
-        values: [True]
-    gpu_id:  
-        values: [0]
-    cont:  
-        values: [True]
-    test_only:  
-        values: [False]

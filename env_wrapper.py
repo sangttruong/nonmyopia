@@ -55,17 +55,3 @@ class EnvWrapper:
     def to(self, dtype, device):
         self.env = self.env.to(dtype=dtype, device=device)
         return self
-
-
-if __name__ == '__main__':
-    from _15_syngp import SynGP
-    from _12_alpine import AlpineN1
-    from _17_logcos import LogCos
-    env = AlpineN1(dim=2)
-    # env = SynGP(dim=2)
-    # env = LogCos(dim=2)
-    env.bounds[0, :] = torch.tensor(
-        [1, 0], device=env.bounds.device)
-    env.bounds[1, :] = torch.tensor(
-        [8, 3], device=env.bounds.device)
-    env = EnvWrapper(env)

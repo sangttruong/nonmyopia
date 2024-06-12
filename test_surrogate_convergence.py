@@ -1,7 +1,5 @@
 # This file is made for analyzing world models
-from _11_kernels import TransformedCategorical
-from _7_utils import set_seed
-from _0_main import make_env
+from utils import set_seed, make_env
 import matplotlib.pyplot as plt
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from gpytorch.constraints import Interval
@@ -126,23 +124,6 @@ class Parameters:
             self.bounds = [-1, 1]
             self.radius = 0.15
 
-        elif self.env_name == "logcos":
-            self.x_dim = 2
-            self.radius = 0.4
-            self.bounds = [[1, 8], [0, 3]]
-
-        elif self.env_name == "AntBO":
-            self.x_dim = 11
-            self.kernel = TransformedCategorical(
-                lengthscale_constraint=Interval(0.01, 0.5),
-                ard_num_dims=self.x_dim,
-            )
-
-        elif self.env_name == "Sequence":
-            self.x_dim = 8
-            self.radius = 1
-            self.kernel = TransformedCategorical()
-
         else:
             raise NotImplementedError
 
@@ -172,17 +153,12 @@ def eval(
 
     # Evaluate ###############################################################
     if data_x is None:
-        if cfg.env_name == "AntBO":
-            data_x = np.random.randint(0, 10, (n_points, 11))
-        elif cfg.env_name == "Sequence":
-            data_x = np.random.randint(0, 10, (n_points, 8))
-        else:
-            data_x = np.random.uniform(
-                low=cfg.bounds[..., 0].cpu(),
-                high=cfg.bounds[..., 1].cpu(),
-                size=[n_points, local_parms.x_dim]
-            )
-            data_x = torch.tensor(data_x, dtype=torch.float32, device=cfg.device)
+        data_x = np.random.uniform(
+            low=cfg.bounds[..., 0].cpu(),
+            high=cfg.bounds[..., 1].cpu(),
+            size=[n_points, local_parms.x_dim]
+        )
+        data_x = torch.tensor(data_x, dtype=torch.float32, device=cfg.device)
 
     data_y = func(data_x).reshape(-1)
     y_hat = wm.posterior(data_x).mean.detach()
