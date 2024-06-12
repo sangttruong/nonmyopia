@@ -13,9 +13,9 @@ from botorch.test_functions.synthetic import (
     SixHumpCamel,  # 2D SixHumpCamel function - Minimum
     StyblinskiTang,  # XD StyblinskiTang function - Minimum
 )
-from _12_alpine import AlpineN1
-from _15_syngp import SynGP
-from _16_env_wrapper import EnvWrapper
+# from synthetic_functions.alpine import AlpineN1
+# from synthetic_functions.syngp import SynGP
+from env_wrapper import EnvWrapper
 import matplotlib.pyplot as plt
 import numpy as np
 import pickle
@@ -86,25 +86,25 @@ seeds = [
 
 env_names = [
     "Ackley",
-    "Alpine",
-    "Beale",
-    "Branin",
-    "Cosine8",
-    "EggHolder",
-    "Griewank",
-    "Hartmann",
-    "HolderTable",
-    "Levy",
-    "Powell",
-    "SixHumpCamel",
-    "StyblinskiTang",
-    "SynGP"
+    # "Alpine",
+    # "Beale",
+    # "Branin",
+    # "Cosine8",
+    # "EggHolder",
+    # "Griewank",
+    # "Hartmann",
+    # "HolderTable",
+    # "Levy",
+    # "Powell",
+    # "SixHumpCamel",
+    # "StyblinskiTang",
+    # "SynGP"
 ]
 
 env_noises = [
     0.0,
-    0.01,
-    0.1,
+    # 0.01,
+    # 0.1,
 ]
 
 env_discretizeds = [
@@ -238,51 +238,7 @@ def get_env_info(env_name, device):
 
     return x_dim, bounds, radius, n_initial_points, algo_n_iterations
 
-
-def make_env(name, x_dim, bounds, noise_std=0.0):
-    r"""Make environment."""
-    if name == "Ackley":
-        f_ = Ackley(dim=x_dim, negate=True, noise_std=noise_std)
-    elif name == "Alpine":
-        f_ = AlpineN1(dim=x_dim, noise_std=noise_std)
-    elif name == "Beale":
-        f_ = Beale(negate=True, noise_std=noise_std)
-    elif name == "Branin":
-        f_ = Branin(negate=True, noise_std=noise_std)
-    elif name == "Cosine8":
-        f_ = Cosine8(noise_std=noise_std)
-    elif name == "EggHolder":
-        f_ = EggHolder(negate=True, noise_std=noise_std)
-    elif name == "Griewank":
-        f_ = Griewank(dim=x_dim, noise_std=noise_std)
-    elif name == "Hartmann":
-        f_ = Hartmann(dim=x_dim, negate=True, noise_std=noise_std)
-    elif name == "HolderTable":
-        f_ = HolderTable(negate=True, noise_std=noise_std)
-    elif name == "Levy":
-        f_ = Levy(dim=x_dim, negate=True, noise_std=noise_std)
-    elif name == "Powell":
-        f_ = Powell(dim=x_dim, negate=True, noise_std=noise_std)
-    elif name == "Rosenbrock":
-        f_ = Rosenbrock(dim=x_dim, negate=True, noise_std=noise_std)
-    elif name == "SixHumpCamel":
-        f_ = SixHumpCamel(negate=True, noise_std=noise_std)
-    elif name == "StyblinskiTang":
-        f_ = StyblinskiTang(dim=x_dim, negate=True, noise_std=noise_std)
-    elif name == "SynGP":
-        f_ = SynGP(dim=x_dim, noise_std=noise_std)
-    else:
-        raise NotImplementedError
-
-    if name != "AntBO":
-        f_.bounds[0, :] = bounds[..., 0]
-        f_.bounds[1, :] = bounds[..., 1]
-
-    return EnvWrapper(name, f_)
-
 # Draw metrics
-
-
 def draw_metric(
     metric_names,
     env_name,
@@ -304,20 +260,30 @@ def draw_metric(
             ax.fill_between(
                 np.arange(mean.shape[0]), mean[:, mid] - std[:, mid], mean[:, mid] + std[:, mid], alpha=0.1
             )
-            # for s in range(len(metrics)):
-            #     axs[mid].plot(np.arange(mean.shape[0]), metrics[s, ..., mid], alpha=0.2, color=mean_line[0].get_color())
-
+            
         ax.set_xlabel("Step")
         ax.set_ylabel(metric_name)
-        # if metric_name != "Time (s)":
-        #     ax.set_ylim(0, 1.05)
 
     handles, labels = ax.get_legend_handles_labels()
-    if metric_name != "Time (s)":
-        fig.legend(handles, labels, loc="outside lower center", ncol=9, bbox_to_anchor=(0.5, -0.08))
-    else:
-        fig.legend(handles, labels, loc="outside lower center", ncol=5, bbox_to_anchor=(0.5, -0.15))
+    fig.legend(handles, labels, loc="outside lower center", ncol=5, bbox_to_anchor=(0.5, -0.15))
     fig.suptitle(f"{env_name}", fontsize=11)
+    plt.savefig(save_file, dpi=300)
+    plt.close()
+
+def draw_time(
+    env_name,
+    dict_metrics,
+    save_file,
+):
+    fig = plt.figure(figsize=(4, 3))
+    
+    for idx, (algo, metrics) in enumerate(dict_metrics.items()):
+        mean = np.mean(metrics)
+        std = np.std(metrics)
+        mean_line = plt.bar(algo, mean, yerr=std, label=algo, fill=False, capsize=5, error_kw={"elinewidth": 0.75, "markeredgewidth": 0.75})
+        
+    plt.ylabel("Time (s)")
+    plt.title(f"{env_name}", fontsize=11)
     plt.savefig(save_file, dpi=300)
     plt.close()
 
@@ -335,56 +301,60 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+print("Drawing runtime...")
+for env_discretized in env_discretizeds:
+    dict_metrics = {}
+    for env_name in env_names:
+        x_dim, bounds, radius, n_initial_points, algo_n_iterations=get_env_info(
+            env_name, device)
+        for env_noise in env_noises:
+            for cost_fn in cost_functions:
+                for aid, algo in enumerate(algos):
+                    list_metrics = []
+                    for seed in seeds:
+                        buffer_file=f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/buffer.pt"
+                        if not os.path.exists(buffer_file) and not os.path.exists(f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"):
+                            continue
+                        try:
+                            buffer=torch.load(buffer_file, map_location=device)
+                        except:
+                            continue
+                        # >>> n_iterations x 1
+                        list_metrics.append(buffer["runtime"][n_initial_points:].cpu().unsqueeze(-1).tolist())
+        
+                    if len(list_metrics) == 0:
+                        continue
+                    # >>> n_seeds x n_iterations x 1
+    
+                    list_metrics = np.array(list_metrics).mean(keepdims=True)
+                    if np.isnan(np.sum(list_metrics)):
+                        continue
 
-# Create all triple (env_name, env_noise, env_discretized)
+                    if algos_name[aid] not in dict_metrics:
+                        dict_metrics[algos_name[aid]] = list_metrics
+                    else:
+                        dict_metrics[algos_name[aid]] = np.concatenate([dict_metrics[algos_name[aid]],list_metrics], axis=0)
+            
+    if len(dict_metrics) == 0:
+        continue
+        
+    save_dir = Path(
+        f"plots/runtime")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    draw_time(
+        "",
+        dict_metrics,
+        f"plots/runtime/runtime{'_discretized' if env_discretized else ''}.png",
+    )
+        
+
+# Create all triplet (env_name, env_noise, env_discretized)
 datasets = []
 for env_name in env_names:
     for env_noise in env_noises:
         for env_discretized in env_discretizeds:
             datasets.append((env_name, env_noise, env_discretized))
-
-for dataset in datasets:
-    print("Drawing for dataset", dataset)
-    env_name, env_noise, env_discretized = dataset
-    x_dim, bounds, radius, n_initial_points, algo_n_iterations=get_env_info(
-        env_name, device)
-    
-    for cost_fn in cost_functions:
-        dict_metrics = {}
-        for aid, algo in enumerate(algos):
-            list_metrics = []
-            for seed in seeds:
-                buffer_file=f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/buffer.pt"
-                if not os.path.exists(buffer_file) and not os.path.exists(f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"):
-                    continue
-                try:
-                    buffer=torch.load(buffer_file, map_location=device)
-                except:
-                    continue
-                # >>> n_iterations x 3
-                list_metrics.append(buffer["runtime"][n_initial_points:].cpu().unsqueeze(-1).tolist())
-
-            if len(list_metrics) == 0:
-                continue
-            # >>> n_seeds x n_iterations x 3
             
-            dict_metrics[algos_name[aid]] = np.array(list_metrics)
-
-        if len(dict_metrics) == 0:
-            continue
-
-        # >>> algo x n_seeds x n_iterations x 3
-        save_dir = Path(
-            f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}")
-        save_dir.mkdir(parents=True, exist_ok=True)
-        draw_metric(
-            ["Time (s)"],
-            f"{'Discretized ' if env_discretized else ''}{env_name} with $\sigma=${env_noise}\% and {cost_function_names[cost_fn]}",
-            dict_metrics,
-            f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{cost_fn}_runtime.png",
-        )
-        
-
 for dataset in datasets:
     print("Drawing for dataset", dataset)
     env_name, env_noise, env_discretized = dataset
@@ -407,7 +377,7 @@ for dataset in datasets:
                 continue
             # >>> n_seeds x n_iterations x 3
             
-            dict_metrics[algos_name[aid]] = np.array(list_metrics)
+            dict_metrics[algos_name[aid]] = np.array(list_metrics)[..., -1:] # Get the Regret value
 
         if len(dict_metrics) == 0:
             continue
@@ -417,7 +387,8 @@ for dataset in datasets:
             f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}")
         save_dir.mkdir(parents=True, exist_ok=True)
         draw_metric(
-            ["$u_{observed}$", "$u_{posterior}$", "Regret"],
+            # ["$u_{observed}$", "$u_{posterior}$", "Regret"],
+            ["Regret"],
             f"{'Discretized ' if env_discretized else ''}{env_name} with $\sigma=${env_noise}\% and {cost_function_names[cost_fn]}",
             dict_metrics,
             f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{cost_fn}.png",

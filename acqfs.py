@@ -6,20 +6,175 @@
 
 r"""Multi-step H-Entropy Search with one-shot optimization."""
 
+from __future__ import annotations
 from typing import Dict, List, Optional, Tuple, Type
 
 import copy
 import torch
 import torch.nn as nn
 from torch import Tensor
-from botorch.acquisition.monte_carlo import MCAcquisitionFunction
-from botorch.sampling.base import MCSampler
 from botorch import settings
+from botorch.acquisition import (
+    qExpectedImprovement,
+    qKnowledgeGradient,
+    qMultiStepLookahead,
+    qProbabilityOfImprovement,
+    qSimpleRegret,
+    qUpperConfidenceBound,
+    qNegIntegratedPosteriorVariance,
+)
+from botorch.acquisition.monte_carlo import MCAcquisitionFunction
+from botorch.exceptions import UnsupportedError
+from botorch.sampling.base import MCSampler
+from botorch.sampling.normal import NormalMCSampler
 from botorch.models.utils.assorted import fantasize as fantasize_flag
+from botorch.posteriors import Posterior
 from botorch.sampling.normal import SobolQMCNormalSampler
-from _6_samplers import PosteriorMeanSampler
+from botorch.sampling.pathwise.posterior_samplers import draw_matheron_paths
+from botorch.utils.sampling import draw_sobol_normal_samples
+from torch.quasirandom import SobolEngine
 
 
+class qBOAcqf(MCAcquisitionFunction):
+    """qMultiStep H-Entropy Search Class."""
+
+    def __init__(
+        self,
+        name,
+        model,
+        loss_function_class: Type[nn.Module],
+        loss_func_hypers: Dict[str, int],
+        cost_function_class: Type[nn.Module],
+        cost_func_hypers: Dict[str, int],
+        lookahead_steps: int,
+        n_actions: int,
+        n_fantasy_at_design_pts: Optional[List[int]] = [64],
+        sampler: Optional[MCSampler] = None,
+        best_f: Optional[float] = None,
+        **kwargs
+    ) -> None:
+        super().__init__(model=model)
+        self.name = name
+        self.model = model
+        self.algo_lookahead_steps = lookahead_steps
+        self.n_actions = n_actions
+        self.cost_function = cost_function_class(**cost_func_hypers)
+        self.loss_function = loss_function_class(**loss_func_hypers)
+
+        if self.name == "qKG":
+            self.bo_acqf = qKnowledgeGradient(
+                model=self.model, 
+                num_fantasies=n_fantasy_at_design_pts[0],
+                sampler=sampler
+            )
+
+        elif self.name == "qEI":
+            self.bo_acqf = qExpectedImprovement(
+                model=self.model,
+                best_f=best_f,
+                sampler=sampler,
+            )
+
+        elif self.name == "qPI":
+            self.bo_acqf = qProbabilityOfImprovement(
+                model=self.model,
+                best_f=best_f,
+                sampler=sampler,
+            )
+
+        elif self.name == "qSR":
+            self.bo_acqf = qSimpleRegret(model=self.model, sampler=sampler)
+
+        elif self.name == "qUCB":
+            self.bo_acqf = qUpperConfidenceBound(
+                model=self.model, beta=0.1, sampler=sampler
+            )
+
+        elif self.name == "qMSL":
+            self.bo_acqf = qMultiStepLookahead(
+                model=self.model,
+                batch_sizes=[1] * self.algo_lookahead_steps,
+                num_fantasies=n_fantasy_at_design_pts,
+            )
+
+        elif self.name == "qNIPV":
+            self.bo_acqf = qNegIntegratedPosteriorVariance(
+                model=self.model, mc_points=0, sampler=sampler
+            )
+            
+        else:
+            raise NotImplementedError
+
+    def forward(
+        self,
+        prev_X: Tensor,
+        prev_y: Tensor,
+        maps: List[nn.Module],
+        embedder: nn.Module = None,
+        prev_cost: float = 0.0,
+        **kwargs
+    ) -> Dict[str, Tensor]:
+        
+        n_restarts = prev_X.shape[0]
+        x_dim = prev_X.shape[1]
+        
+        actions = torch.concat(maps)
+        if embedder is not None:
+            actions = embedder.encode(actions)
+            
+        action_shape = [
+            n_restarts,
+            -1,
+            x_dim,
+        ]
+        actions = actions.reshape(*action_shape)
+        acqf_loss =  - self.bo_acqf(actions)
+        # >>> batch_size
+
+        pX = prev_X[:, None, ...]
+        if embedder is not None:
+            pX = embedder.encode(pX)
+            
+        if self.name == "qMSL":
+            acqf_cost = 0
+            for cX in self.bo_acqf.get_multi_step_tree_input_representation(actions):
+                acqf_cost = acqf_cost + self.cost_function(
+                    prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
+                )
+                pX = cX[None, ...]
+        elif self.name == "qKG":
+            cX = actions[..., :-self.bo_acqf.num_fantasies, :]
+            acqf_cost = self.cost_function(
+                prev_X=pX.expand_as(cX), current_X=cX, previous_cost=prev_cost
+            )
+            pX = cX
+            cX = actions[..., -self.bo_acqf.num_fantasies:, :]
+            acqf_cost = acqf_cost + self.cost_function(
+                prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
+            )
+        else:
+            acqf_cost = self.cost_function(
+                prev_X=pX.expand_as(actions), current_X=actions, previous_cost=prev_cost
+            )
+        acqf_cost = acqf_cost.squeeze(dim=-1).sum(dim=-1)
+        while len(acqf_cost.shape) > 1:
+            acqf_cost = acqf_cost.mean(dim=0)
+
+        if self.name == "qMSL":
+            X_returned = self.bo_acqf.get_multi_step_tree_input_representation(actions)
+        elif self.name == "qKG":
+            X_returned = [self.bo_acqf.extract_candidates(actions)]
+        else:
+            X_returned = [actions]
+            
+        return {
+            "acqf_loss": acqf_loss,
+            "acqf_cost": acqf_cost,
+            "X": X_returned,
+            "actions": actions,
+            "hidden_state": None
+        }
+        
 class qMultiStepHEntropySearch(MCAcquisitionFunction):
     """qMultiStep H-Entropy Search Class."""
 
@@ -36,6 +191,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         n_fantasy_at_action_pts: Optional[int] = 64,
         design_samplers: Optional[MCSampler] = None,
         action_sampler: Optional[MCSampler] = None,
+        enable_ts: Optinal[bool] = False,
         **kwargs
     ) -> None:
         """Batch multip-step H-Entropy Search using one-shot optimization.
@@ -74,6 +230,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         self.n_actions = n_actions
         self.cost_function = cost_function_class(**cost_func_hypers)
         self.loss_function = loss_function_class(**loss_func_hypers)
+        self.enable_ts = enable_ts
         self.design_samplers = []
         self.n_fantasy_at_design_pts = []
         for i in range(lookahead_steps):
@@ -134,15 +291,21 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         previous_X = prev_X
         previous_y = prev_y
         previous_cost = prev_cost
-        if self._model is None:
-            fantasized_model = self.model
-        else:
-            fantasized_model = self._model
+
+        if not self.enable_ts:
+            if self._model is None:
+                fantasized_model = self.model
+            else:
+                fantasized_model = self._model
 
         X_returned = []
         hidden_state_returned = []
         for step in range(self.algo_lookahead_steps):
-            # condition on X[step], then sample, then condition on (x, y)
+            if self.enable_ts:
+                # Draw new f ~ p(f|D)
+                self.f = draw_matheron_paths(self.model, torch.Size([1]))
+
+            # condition on X[step], then sample, then condition on (x,prev_X y)
             if use_amortized_map:
                 X, hidden_state = maps(
                     x=previous_X,
@@ -183,16 +346,19 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             hidden_state_returned.append(hidden_state)
 
             # Sample posterior
-            with fantasize_flag():
-                with settings.propagate_grads(False):
-                    ppd = fantasized_model.posterior(X)
-                ys = self.design_samplers[step](ppd).to(X)
-                # >>> n_samples * num_x_{step} * y_dim
-                
-                # Update conditions
-                fantasized_model = fantasized_model.condition_on_observations(
-                    X=fantasized_model.transform_inputs(X), Y=ys
-                )
+            if self.enable_ts:
+                ys = self.f(X.squeeze(dim=list(range(X.dim() - 3)))).unsqueeze(0)
+            else:
+                with fantasize_flag():
+                    with settings.propagate_grads(False):
+                        ppd = fantasized_model.posterior(X)
+                    ys = self.design_samplers[step](ppd).to(X)
+                    # >>> n_samples * num_x_{step} * y_dim
+                    
+                    # Update conditions
+                    fantasized_model = fantasized_model.condition_on_observations(
+                        X=fantasized_model.transform_inputs(X), Y=ys
+                    )
 
             # Update previous_Xy
             if num_categories > 0:
@@ -226,10 +392,10 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             x_dim,
         ]
         actions = actions.reshape(*action_shape)
-        action_yis = self.action_sampler(fantasized_model.posterior(actions))
-        # >> Tensor[*[n_samples]*i, n_restarts, n_actions, 1]
-
-        action_yis = action_yis.squeeze(dim=-1)
+        if self.enable_ts:
+            action_yis = self.f(actions.squeeze(dim=list(range(actions.dim() - 3)))).unsqueeze(0)
+        else:
+            action_yis = self.action_sampler(fantasized_model.posterior(actions)).squeeze(dim=-1)
         # >> Tensor[*[n_samples]*i, n_restarts, n_actions]
 
         # Calculate loss value
@@ -262,7 +428,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         while len(acqf_cost.shape) > 1:
             acqf_cost = acqf_cost.mean(dim=0)
         # >>> batch number of x_0
-        
+
         return {
             "acqf_loss": acqf_loss,
             "acqf_cost": acqf_cost,
@@ -270,6 +436,39 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             "actions": actions,
             "hidden_state": hidden_state_returned,
         }
+
+class PosteriorMeanSampler(NormalMCSampler):
+    r"""Sampler for MC base samples using iid N(0,1) samples.
+
+    Example:
+        >>> sampler = IIDNormalSampler(1000, seed=1234)
+        >>> posterior = model.posterior(test_X)
+        >>> samples = sampler(posterior)
+    """
+
+    def _construct_base_samples(self, posterior: Posterior) -> None:
+        r"""Generate iid `N(0,1)` base samples (if necessary).
+
+        This function will generate a new set of base samples and set the
+        `base_samples` buffer if one of the following is true:
+
+        - the MCSampler has no `base_samples` attribute.
+        - the output of `_get_collapsed_shape` does not agree with the shape of
+            `self.base_samples`.
+
+        Args:
+            posterior: The Posterior for which to generate base samples.
+        """
+        target_shape = self._get_collapsed_shape(posterior=posterior)
+        if self.base_samples is None or self.base_samples.shape != target_shape:
+            base_samples = torch.zeros(
+                target_shape, device=posterior.device, dtype=posterior.dtype
+            )
+            self.register_buffer("base_samples", base_samples)
+        if self.base_samples.device != posterior.device:
+            self.to(device=posterior.device)  # pragma: nocover
+        if self.base_samples.dtype != posterior.dtype:
+            self.to(dtype=posterior.dtype)
 
 
 def set_sampler_and_n_fantasy(
