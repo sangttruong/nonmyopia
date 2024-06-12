@@ -61,11 +61,11 @@ python draw_metrics.py
 ```bash
 wandb sweep wnb_configs/full.yaml
 ```
-The result will look like "wandb agent your_name/nonmyopia/17v0gzpx".
+The result will look like "wandb agent your_name/nonmyopia/some_text".
 
 2. Start a single sweep agent.
 ```bash
-CUDA_VISIBLE_DEVICES=0 wandb agent your_name/nonmyopia/17v0gzpx &
+CUDA_VISIBLE_DEVICES=0 wandb agent your_name/nonmyopia/some_text &
 ```
 If you want to start more agents, simply rerun above command of different terminals/servers/... You can start as many sweep agents as your server can handle.
 
