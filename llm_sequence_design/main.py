@@ -19,34 +19,20 @@ from world_model import WorldModel
 from actor import Actor
 from utils import (
     set_seed,
-    get_dataset_embedding,
     random_sampling,
-    fix_oracle_model_args,
-    fix_policy_model_args,
-    fix_wm_model_args,
-    fix_finetuning_policy_args,
-    fix_finetuning_wm_args,
 )
 
 
 def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["TrainerCallback"]] = None):
     wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
-        wm_finetuning_args, policy_finetuning_args, generating_args, bo_args = get_bo_args(
-            args)
+        finetuning_args, generating_args, bo_args = get_bo_args(args)
     callbacks = [LogCallback()] if callbacks is None else callbacks
     # Set seed
     set_seed(training_args.seed)
 
-    # Fixing args
-    fix_wm_model_args(wm_model_args)
-    fix_oracle_model_args(oracle_model_args)
-    fix_policy_model_args(policy_model_args)
-    fix_finetuning_wm_args(wm_finetuning_args)
-    fix_finetuning_policy_args(policy_finetuning_args)
-
     # Initializing models
-    oracle = Oracle(oracle_model_args, wm_finetuning_args)
-    world_model = WorldModel(wm_model_args, wm_finetuning_args)
+    oracle = Oracle(oracle_model_args, finetuning_args)
+    world_model = WorldModel(wm_model_args, finetuning_args)
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):
@@ -107,7 +93,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         "y": [initial_sequences["reward"]]
     }
 
-    actor = Actor(bo_args, policy_model_args, policy_finetuning_args,
+    actor = Actor(bo_args, policy_model_args, finetuning_args,
                   data_args, training_args, generating_args)
 
     # Startign BO loop
