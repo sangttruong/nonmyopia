@@ -1,3 +1,5 @@
+from typing import Dict, Sequence, Tuple, Union
+from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
 import random
 import torch
 import os
@@ -9,6 +11,7 @@ from torch.utils.data import DataLoader
 from datasets import Dataset
 import subprocess
 
+
 def set_seed(seed):
     random.seed(seed)
     # torch.backends.cudnn.deterministic=True
@@ -17,7 +20,17 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.cuda.manual_seed_all(seed)
-    
+
+
+def compute_regression_metrics(eval_preds: Sequence[Union[np.array, Tuple[np.array]]]) -> Dict[str, float]:
+    preds, labels = eval_preds
+    labels = labels.reshape(-1, 1)
+
+    return {"mae": mean_absolute_error(labels, preds),
+            "r2": r2_score(labels, preds),
+            "rmse": root_mean_squared_error(labels, preds)}
+
+
 def get_dataset_embedding(dataset, model, tokenizer, data_args):
     def tokenize_dataset(
         examples,
@@ -63,22 +76,23 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
         "inputs_embeds": [],
         "rewards": []
     }
-    
+
     for example in tqdm(tokenized_dataset):
         input_ids = torch.tensor(
-                [example['input_ids']], device= model.model.device).long()
+            [example['input_ids']], device=model.model.device).long()
         attention_mask = torch.tensor(
-                [example['attention_mask']], device= model.model.device).long()
+            [example['attention_mask']], device=model.model.device).long()
         embeds = model.model(
             input_ids=input_ids,
             attention_mask=attention_mask
         )
-        
+
         if tokenizer.pad_token_id is None:
             end_index = -1
         else:
-            end_index = (input_ids[0] != tokenizer.pad_token_id).nonzero()[-1].cpu()
-        
+            end_index = (input_ids[0] !=
+                         tokenizer.pad_token_id).nonzero()[-1].cpu()
+
         model_inputs['inputs_embeds'].append(
             embeds.last_hidden_state[0][end_index].squeeze().detach().cpu().tolist())
         model_inputs['rewards'].append(example['rewards'])
@@ -89,10 +103,12 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
 
 def random_sampling(dataset, num_samples, *args, **kwargs):
     if "constrained_reward" in kwargs:
-        dataset = dataset.filter(lambda sample: sample["reward"] < kwargs["constrained_reward"])
+        dataset = dataset.filter(
+            lambda sample: sample["reward"] < kwargs["constrained_reward"])
     total_samples = len(dataset)
     indices = random.sample(range(total_samples), num_samples)
     return dataset.select(indices)
+
 
 def run_server(cmd_string):
     try:
@@ -102,12 +118,14 @@ def run_server(cmd_string):
         print(f"Error starting server: {e}")
         return None
 
+
 def kill(proc_pid):
     process = psutil.Process(proc_pid)
     for proc in process.children(recursive=True):
         proc.kill()
     process.kill()
-    
+
+
 def shutdown_server(process):
     try:
         kill(process.pid)
@@ -116,9 +134,11 @@ def shutdown_server(process):
     except Exception as e:
         print(f"Error shutting down server: {e}")
 
+
 def start_process(command):
     os.system(command)
-    
+
+
 def kill_process(command):
     find_pid_command = f"""pgrep -af "{command}" """
     pid_output = subprocess.check_output(find_pid_command, shell=True)
