@@ -56,6 +56,19 @@ options:
 python draw_metrics.py
 ```
 
+## Running mass experiments with WandB Sweep
+1. Firstly, run below command to get the command to start sweep agent(s). 
+```bash
+wandb sweep wnb_configs/full.yaml
+```
+The result will look like "wandb agent your_name/nonmyopia/some_text".
+
+2. Start a single sweep agent.
+```bash
+CUDA_VISIBLE_DEVICES=0 wandb agent your_name/nonmyopia/some_text &
+```
+If you want to start more agents, simply rerun above command of different terminals/servers/... You can start as many sweep agents as your server can handle.
+
 ## Analyzing world models
 ```bash
 python test_surrogate_convergence.py [-h] [--seeds SEEDS [SEEDS ...]] [--env_names ENV_NAMES [ENV_NAMES ...]] [--env_noise ENV_NOISE]
