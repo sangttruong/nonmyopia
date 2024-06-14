@@ -37,7 +37,7 @@ CUDA_VISIBLE_DEVICES=0 accelerate launch \
 ```
 2. In this step, we simply train linear models using sklearn. Currently, three models are suppported: linear, ridge, bayesridge
 ```bash
-python src/train_bash.py \
+python oracle.py \
     --seed 2 \
     --stage oracle \
     --do_train \
