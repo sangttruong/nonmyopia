@@ -13,15 +13,20 @@ class BOModelArguments:
             "help": "Path to the model weight or identifier from huggingface.co/models or modelscope.cn/models."
         },
     )
-    wm_adapter_name_or_path: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "Path to the adapter weight or identifier from huggingface.co/models."},
-    )
     oracle_model_name_or_path: str = field(
         metadata={
             "help": "Path to the model weight or identifier from huggingface.co/models or modelscope.cn/models."
         },
+    )
+    policy_model_name_or_path: str = field(
+        metadata={
+            "help": "Path to the model weight or identifier from huggingface.co/models or modelscope.cn/models."
+        },
+    )
+    wm_adapter_name_or_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Path to the adapter weight or identifier from huggingface.co/models."},
     )
     oracle_linear_head_path: Optional[str] = field(
         default=None,
@@ -32,11 +37,6 @@ class BOModelArguments:
         default=None,
         metadata={
             "help": "Path to the adapter weight or identifier from huggingface.co/models."},
-    )
-    policy_model_name_or_path: str = field(
-        metadata={
-            "help": "Path to the model weight or identifier from huggingface.co/models or modelscope.cn/models."
-        },
     )
     policy_adapter_name_or_path: Optional[str] = field(
         default=None,
