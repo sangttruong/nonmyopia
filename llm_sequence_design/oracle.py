@@ -1,13 +1,20 @@
-from typing import Any
+from sklearn.linear_model import LinearRegression, Ridge, BayesianRidge
+from src.llmtuner.model import load_model, load_tokenizer
+from src.llmtuner.hparams import ModelArguments, get_train_args
+from src.llmtuner.data import get_dataset
+from tqdm import tqdm
+import numpy as np
+import joblib
+import torch
+from typing import Any, TYPE_CHECKING, Dict, List, Optional
 import os
 import gc
-import torch
-import joblib
-import numpy as np
-from tqdm import tqdm
-from src.llmtuner.hparams import ModelArguments
-from src.llmtuner.model import load_model, load_tokenizer
-from sklearn.linear_model import LinearRegression, Ridge, BayesianRidge
+import json
+from utils import compute_regression_metrics
+from src.llmtuner.extras.callbacks import LogCallback
+
+if TYPE_CHECKING:
+    from transformers import Seq2SeqTrainingArguments, TrainerCallback
 
 
 class Oracle:
@@ -17,9 +24,9 @@ class Oracle:
         self.model_args = model_args
         self.finetuning_args = finetuning_args
 
-        assert model_args.linear_head_path, "--linear_head_path must be defined!"
+        assert model_args.linear_head_path, "--oracle_linear_head_path must be defined!"
         self.linear_head = joblib.load(os.path.join(
-            model_args.linear_head_path, 'model.joblib'))
+            model_args.oracle_linear_head_path, 'model.joblib'))
 
     def load(self):
         self.tokenizer = load_tokenizer(self.model_args)
@@ -81,3 +88,102 @@ class Oracle:
             outputs.extend(y_mean.tolist())
 
         return outputs
+
+
+def run_oracle(
+    model_args: "ModelArguments",
+    data_args: "DataArguments",
+    training_args: "Seq2SeqTrainingArguments",
+    finetuning_args: "FinetuningArguments",
+    callbacks: Optional[List["TrainerCallback"]] = None,
+):
+    assert data_args.emb_enabled, "Oracle model only supports embedding enabled dataset"
+
+    if not os.path.exists(model_args.model_name_or_path):
+        if model_args.model_name_or_path.lower() == "linear":
+            model = LinearRegression()
+        elif model_args.model_name_or_path.lower() == "ridge":
+            model = Ridge(alpha=10.0)
+        elif model_args.model_name_or_path.lower() == "bayesridge":
+            model = BayesianRidge()
+        else:
+            raise ValueError(
+                f"model_name_or_path {model_args.model_name_or_path} is not supported"
+            )
+    else:
+        model = joblib.load(os.path.join(
+            model_args.model_name_or_path, 'model.joblib'))
+
+    # Training
+    if training_args.do_train:
+        print("Training oracle model...")
+        data_args.split = "train"
+        train_dataset = get_dataset(None, model_args,
+                                    data_args, training_args, stage="oracle")
+
+        X_train = np.stack(train_dataset["inputs_embeds"])
+        y_train = np.stack(train_dataset["rewards"])
+        model.fit(X_train, y_train)
+
+        # Save model
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        joblib.dump(model, os.path.join(
+            training_args.output_dir, 'model.joblib'))
+
+        # Save results
+        y_train_hat = model.predict(X_train)
+        train_metrics = compute_regression_metrics((y_train_hat, y_train))
+        train_metrics = {f"train_{k}": v for k, v in train_metrics.items()}
+        with open(os.path.join(training_args.output_dir, 'train_results.json'), 'w') as f:
+            json.dump(train_metrics, f)
+
+    # Evaluation
+    if training_args.do_eval:
+        print("Evaluating oracle model...")
+        data_args.split = "validation"
+        eval_dataset = get_dataset(None, model_args,
+                                   data_args, training_args, stage="oracle")
+
+        X_test = np.stack(eval_dataset["inputs_embeds"])
+        y_test = np.stack(eval_dataset["rewards"])
+
+        # Save results
+        y_test_hat = model.predict(X_test)
+        eval_metrics = compute_regression_metrics((y_test_hat, y_test))
+        eval_metrics = {f"eval_{k}": v for k, v in eval_metrics.items()}
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        with open(os.path.join(training_args.output_dir, 'eval_results.json'), 'w') as f:
+            json.dump(eval_metrics, f)
+
+    # Predict
+    if training_args.do_predict:
+        print("Predicting oracle model...")
+        data_args.split = "validation"
+        eval_dataset = get_dataset(None, model_args,
+                                   data_args, training_args, stage="oracle")
+
+        X_test = np.array(eval_dataset.data["inputs_embeds"])
+        y_test = np.array(eval_dataset.data["rewards"])
+
+        # Save to jsonl file
+        y_test_hat = model.predict(X_test)
+        with open(os.path.join(training_args.output_dir, 'predictions.jsonl'), 'w') as f:
+            for i in range(len(y_test)):
+                json.dump({"inputs_embeds": X_test[i].tolist(
+                ), "rewards": y_test[i], "rewards_hat": y_test_hat[i]}, f)
+
+
+def run_exp(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["TrainerCallback"]] = None):
+    model_args, data_args, training_args, finetuning_args, generating_args = get_train_args(
+        args)
+    callbacks = [LogCallback()] if callbacks is None else callbacks
+
+    if finetuning_args.stage == "oracle":
+        run_oracle(model_args, data_args, training_args,
+                   finetuning_args, callbacks)
+    else:
+        raise ValueError("Unknown task.")
+
+
+if __name__ == "__main__":
+    run_exp()
