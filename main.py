@@ -6,34 +6,31 @@
 
 r"""Run the main experiments."""
 
+from utils import set_seed, make_env, str2bool, make_save_dir, eval_and_plot
+from env_embedder import DiscreteEmbbeder
+from acqfs import qCostFunction, qLossFunctionTopK, qCostFunctionEditDistance
+from actor import Actor
+from gpytorch.constraints import Interval
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from botorch.models.transforms.outcome import Standardize
+from botorch.models.transforms.input import Normalize
+from botorch.models import SingleTaskGP
+from botorch import fit_gpytorch_model
+from tensordict import TensorDict
+from tqdm import tqdm
+from argparse import ArgumentParser
+import numpy as np
+import random
+import wandb
+import torch
+import time
+import copy
 import os
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["OPENBLAS_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
 os.environ["NUMEXPR_NUM_THREADS"] = "2"
-
-import copy
-import time
-import torch
-import wandb
-import random
-import numpy as np
-from argparse import ArgumentParser
-
-from tqdm import tqdm
-from tensordict import TensorDict
-from botorch import fit_gpytorch_model
-from botorch.models import SingleTaskGP
-from botorch.models.transforms.input import Normalize
-from botorch.models.transforms.outcome import Standardize
-from gpytorch.mlls import ExactMarginalLogLikelihood
-from gpytorch.constraints import Interval
-
-from actor import Actor
-from acqfs import qCostFunction, qLossFunctionTopK, qCostFunctionEditDistance
-from env_embedder import DiscreteEmbbeder
-from utils import set_seed, make_env, str2bool, make_save_dir, eval_and_plot
 
 
 class Parameters:
@@ -62,7 +59,7 @@ class Parameters:
         self.y_dim = 1
         self.algo_n_iterations = None
 
-        self.n_samples = 64 # 1
+        self.n_samples = 64  # 1
         self.amortized = False
         self.hidden_dim = 32
         self.acq_opt_lr = 0.001 if self.amortized else 1e-3
@@ -78,7 +75,7 @@ class Parameters:
         elif self.algo == "qMSL":
             self.n_restarts = 4
             self.n_samples = 4
-            self.algo_lookahead_steps = 3 # Equivalent 4 in HES
+            self.algo_lookahead_steps = 3  # Equivalent 4 in HES
         elif self.algo == "qKG":
             self.algo_lookahead_steps = 1
         else:
@@ -208,7 +205,7 @@ class Parameters:
             self.cost_discount_threshold = 5 * self.radius
         else:
             raise NotImplementedError
-        
+
         # Random select initial points
         self.bounds = np.array(self.bounds)
         if self.bounds.ndim < 2 or self.bounds.shape[0] < self.x_dim:
@@ -239,20 +236,22 @@ class Parameters:
             ),
             axis=0,
         )
-        
-        self.env_noise = args.env_noise # * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
-        self.bounds = torch.tensor(self.bounds, dtype=self.torch_dtype, device=self.device)
+
+        # * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
+        self.env_noise = args.env_noise
+        self.bounds = torch.tensor(
+            self.bounds, dtype=self.torch_dtype, device=self.device)
         self.save_dir = (
             f"./results/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{self.seed}"
         )
-            
+
         if args.env_discretized:
             self.env_discretized = True
             self.num_categories = 20
         else:
             self.env_discretized = False
             self.num_categories = None
-            
+
         self.task = args.task
         self.set_task_parms()
 
@@ -344,7 +343,7 @@ def run_exp(parms, env) -> None:
         batch_size=[parms.algo_n_iterations],
         device=parms.device,
     )
-    
+
     if parms.env_discretized:
         embedder = DiscreteEmbbeder(
             num_categories=parms.num_categories,
@@ -375,9 +374,9 @@ def run_exp(parms, env) -> None:
 
     # Set start iteration
     continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
-    
+
     # Warm-up parameters
-    WM = SingleTaskGP(
+    surr_model = SingleTaskGP(
         buffer["x"][: continue_iter],
         buffer["y"][: continue_iter],
         # input_transform=Normalize(
@@ -385,15 +384,15 @@ def run_exp(parms, env) -> None:
         # outcome_transform=Standardize(1),
         covar_module=parms.kernel,
     ).to(parms.device)
-    mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+    mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
     fit_gpytorch_model(mll)
-    actor.construct_acqf(WM=WM, buffer=buffer[:continue_iter])
+    actor.construct_acqf(surr_model=surr_model, buffer=buffer[:continue_iter])
     actor.reset_parameters(buffer=buffer[:continue_iter], embedder=embedder)
-    
+
     # Run BO loop
     for i in range(continue_iter, parms.algo_n_iterations):
         # Initialize model (which is the GP in this case)
-        WM = SingleTaskGP(
+        surr_model = SingleTaskGP(
             buffer["x"][:i],
             buffer["y"][:i],
             # input_transform=Normalize(
@@ -401,7 +400,7 @@ def run_exp(parms, env) -> None:
             # outcome_transform=Standardize(1),
             covar_module=parms.kernel,
         ).to(parms.device)
-        mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+        mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
         fit_gpytorch_model(mll)
 
         # Adjust lookahead steps
@@ -413,13 +412,13 @@ def run_exp(parms, env) -> None:
                 actor.reset_parameters(buffer=buffer[:i], embedder=embedder)
 
         # Construct acqf
-        actor.construct_acqf(WM=WM, buffer=buffer[:i])
+        actor.construct_acqf(surr_model=surr_model, buffer=buffer[:i])
 
         # Query and observe next point
         query_start_time = time.time()
         output = actor.query(
-            buffer=buffer, 
-            iteration=i, 
+            buffer=buffer,
+            iteration=i,
             embedder=embedder
         )
         query_end_time = time.time()
@@ -436,7 +435,7 @@ def run_exp(parms, env) -> None:
         ## Separated ##
         # eval_and_plot(
         #     env=env,
-        #     wm=WM,
+        #     model=surr_model,
         #     parms=parms,
         #     buffer=buffer,
         #     next_x=output["next_X"],
@@ -450,12 +449,13 @@ def run_exp(parms, env) -> None:
         print("Buffer saved to file.")
 
         # Save model to file after each iteration
-        torch.save(WM.state_dict(), f"{parms.save_dir}/world_model_{i}.pt")
+        torch.save(surr_model.state_dict(),
+                   f"{parms.save_dir}/surr_model_{i}.pt")
         print("Model saved to file.")
 
         # Report to wandb
         wandb.log({
-            "x": buffer["x"][i], 
+            "x": buffer["x"][i],
             "y": buffer["y"][i],
             "cost": buffer["cost"][i],
             "runtime": buffer["runtime"][i]
@@ -477,7 +477,7 @@ if __name__ == "__main__":
     }
     # WandB start
     wandb.init(project="nonmyopia", config=default_config)
-    
+
     # Parse args
     parser = ArgumentParser()
     parser.add_argument("--seed", type=int, default=2)
@@ -491,7 +491,7 @@ if __name__ == "__main__":
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
     args = parser.parse_args()
-    
+
     set_seed(args.seed)
 
     local_parms = Parameters(args)

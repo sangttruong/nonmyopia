@@ -125,22 +125,22 @@ def make_save_dir(config):
         file_handle.write(config_dict)
 
 
-def eval_and_plot(env, wm, parms, *args, **kwargs):
+def eval_and_plot(env, model, parms, *args, **kwargs):
     r"""Draw the posterior of the model."""
     if parms.plot:
         if parms.x_dim == 1:
-            return eval_and_plot_1D(env, wm, parms, *args, **kwargs)
+            return eval_and_plot_1D(env, model, parms, *args, **kwargs)
         elif parms.x_dim == 2:
-            return eval_and_plot_2D(env, wm, parms, *args, **kwargs)
+            return eval_and_plot_2D(env, model, parms, *args, **kwargs)
         else:
             print("NOTICE: Plotting is only done when x_dim is 1 or 2.")
-            return eval_func(env, wm, parms, *args, **kwargs)
+            return eval_func(env, model, parms, *args, **kwargs)
     else:
-        return eval_func(env, wm, parms, *args, **kwargs)
+        return eval_func(env, model, parms, *args, **kwargs)
 
 
 def eval_func(
-    env, wm, parms, buffer, iteration, embedder=None, *args, **kwargs
+    env, model, parms, buffer, iteration, embedder=None, *args, **kwargs
 ):
     # Quality of the best decision from the current posterior distribution ###
     cost_fn = parms.cost_function_class(**parms.cost_func_hypers)
@@ -169,7 +169,7 @@ def eval_func(
                 actions = embedder.encode(A)
             else:
                 actions = A
-            ppd = wm(actions)
+            ppd = model(actions)
             y_A = ppd.rsample()
 
             losses = loss_fn(A=actions, Y=y_A) + cost_fn(
@@ -196,7 +196,7 @@ def eval_func(
         
         acqf = qBOAcqf(
             name=parms.algo,
-            model=wm, 
+            model=model, 
             lookahead_steps=0 if parms.algo_lookahead_steps == 0 else 1,
             n_actions=parms.n_actions,
             n_fantasy_at_design_pts=nf_design_pts,
@@ -289,7 +289,7 @@ def eval_func(
 
 def eval_and_plot_2D(
     env,
-    wm,
+    model,
     parms,
     next_x,
     buffer,
@@ -301,7 +301,7 @@ def eval_and_plot_2D(
 ):
     r"""Evaluate and plot 2D function."""
     real_loss, bayes_action = eval_func(
-        env, wm, parms, buffer, iteration, embedder=embedder
+        env, model, parms, buffer, iteration, embedder=embedder
     )
 
     data_x = buffer["x"].cpu().detach()
@@ -340,7 +340,7 @@ def eval_and_plot_2D(
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
     Z = env(XY.reshape(2, -1).T).reshape(X.shape)
 
-    Z_post = wm.posterior(
+    Z_post = model.posterior(
         XY.to(parms.device, parms.torch_dtype).permute(1, 2, 0)).mean
     Z_post = Z_post.squeeze(-1).cpu().detach()
     # >> 100 x 100 x 1
@@ -462,7 +462,7 @@ def eval_and_plot_2D(
 
 def eval_and_plot_1D(
     env,
-    wm,
+    model,
     parms,
     next_x,
     buffer,
@@ -474,7 +474,7 @@ def eval_and_plot_1D(
 ):
     r"""Evaluate and plot 1D function."""
     real_loss, bayes_action = eval_func(
-        env, wm, parms, buffer, iteration, embedder=embedder
+        env, model, parms, buffer, iteration, embedder=embedder
     )
     data_x = buffer["x"].cpu().detach().numpy()
     data_y = buffer["y"].cpu().detach().numpy()
@@ -490,7 +490,7 @@ def eval_and_plot_1D(
 
     # Plot function and posterior in 1D #######################################
     x = torch.linspace(-1, 1, 100).reshape(-1, 1)
-    posterior = wm.posterior(x)
+    posterior = model.posterior(x)
     test_y = posterior.mean
     lower, upper = posterior.mvn.confidence_region()
     x = x.cpu().detach().numpy()
