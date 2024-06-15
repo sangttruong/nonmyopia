@@ -17,7 +17,7 @@ from utils import get_dataset_embedding, compute_regression_metrics
 logger = get_logger(__name__)
 
 
-class WorldModel:
+class SurrModel:
     def __init__(self, model_args, finetuning_args):
         self.tokenizer = None
         self.model = None

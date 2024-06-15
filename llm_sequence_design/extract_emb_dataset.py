@@ -13,7 +13,7 @@ from src.llmtuner.data.loader import load_single_dataset
 from src.llmtuner.data.parser import get_dataset_list
 from src.llmtuner.data.utils import merge_dataset
 
-from world_model import WorldModel
+from llm_sequence_design.surr_model import SurrModel
 from utils import (
     get_dataset_embedding,
 )
@@ -30,7 +30,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         args)
     callbacks = [LogCallback()] if callbacks is None else callbacks
 
-    world_model = WorldModel(model_args, finetuning_args)
+    world_model = SurrModel(model_args, finetuning_args)
     world_model.load()
 
     # Initializing full dataset

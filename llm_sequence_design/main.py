@@ -11,7 +11,7 @@ from src.llmtuner.data.parser import get_dataset_list
 from src.llmtuner.data.utils import merge_dataset
 
 from oracle import Oracle
-from world_model import WorldModel
+from llm_sequence_design.surr_model import SurrModel
 from actor import Actor
 from utils import (
     set_seed,
@@ -28,7 +28,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
     # Initializing models
     oracle = Oracle(oracle_model_args, finetuning_args)
-    world_model = WorldModel(wm_model_args, finetuning_args)
+    world_model = SurrModel(wm_model_args, finetuning_args)
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):

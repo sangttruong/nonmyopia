@@ -3,7 +3,7 @@
 ## Description
 This source code is used to deisgn sequence(s) to maximize/minimize a property. It includes three main models:
 - **Oracle** is used as groundtruth to replace wet-lab experiments
-- **WorldModel** is the reward model trained with current observed data
+- **SurrModel** is the surrogate model trained with current observed data
 - **Policy** is the amortized network with ability to generate better sequence(s)
 
 ## Installization
@@ -13,6 +13,13 @@ Pease refre to pakagess in [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Fact
 You can also refer the file [here](requirements.txt).
 ```bash
 pip install -r requirements.txt
+```
+
+Next ,you need to clone LLaMa-Factory submodules and install it
+```bash
+git submodule update --remote
+cd LLaMA-Factory
+pip install -e .
 ```
 
 ## Building Oracle
