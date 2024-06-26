@@ -19,3 +19,5 @@ packaging
 pyyaml
 gpytorch
 botorch
+deepspeed
+gradio==4.21.0
