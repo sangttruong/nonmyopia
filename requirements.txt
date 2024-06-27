@@ -26,3 +26,5 @@ packaging
 pyyaml
 deepspeed
 gradio==4.21.0
+appdirs
+wandb
