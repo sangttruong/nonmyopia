@@ -14,9 +14,7 @@ There are two main experiments:
 1. Install the requirements
 ```bash
  pip install -r requirements.txt
- or 
- conda env create -f environment.yml
- ```
+```
 2. Run the experiments by bash script
 ```bash
 python main.py [-h] [--seed SEED] [--task TASK] [--env_name ENV_NAME] [--env_noise ENV_NOISE] [--env_discretized ENV_DISCRETIZED] [--algo ALGO]
