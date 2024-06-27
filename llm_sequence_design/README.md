@@ -6,15 +6,6 @@ This source code is used to deisgn sequence(s) to maximize/minimize a property. 
 - **WorldModel** is the reward model trained with current observed data
 - **Policy** is the amortized network with ability to generate better sequence(s)
 
-## Installization
-First of all, you might need a suitable envorinment to run the code.
-Pease refre to pakagess in [LLaMA-Factory](https://github.com/hiyouga/LLaMA-Factory).
-
-You can also refer the file [here](requirements.txt).
-```bash
-pip install -r requirements.txt
-```
-
 ## Building Oracle
 ### Training
 This is a two-step process.
