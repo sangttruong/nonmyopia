@@ -109,7 +109,3 @@ accelerate launch --main_process_port 29505 src/train_bash.py \
     --report_to none \
     --plot_loss True
 ```
-2. Running the experiments
-```bash
-```
-# nonmyopia_anonymous
