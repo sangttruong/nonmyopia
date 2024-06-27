@@ -121,7 +121,7 @@ This is a two-step process.
 1. Data preprocessing and embedding. Example with ESM2 model and Proteina Fluorescence dataset.
 ```bash
 CUDA_VISIBLE_DEVICES=0 accelerate launch \
-    --config_file examples/accelerate/single_config.yaml \
+    --config_file single_config.yaml \
     extract_emb_dataset.py \
     --oracle_model_name_or_path "" \
     --wm_model_name_or_path facebook/esm2_t33_650M_UR50D \
