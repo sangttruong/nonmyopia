@@ -14,7 +14,7 @@ There are two main experiments:
 1. Install the requirements
 ```bash
  pip install -r requirements.txt
- pip install git+https://github.com/hiyouga/LLaMA-Factory.git@<commit-hash>
+ pip install git+https://github.com/hiyouga/LLaMA-Factory.git@942362d0087345e468e0ae541dcca9b684d74d1a
 ```
 2. Run the experiments by bash script
 ```bash
