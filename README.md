@@ -80,49 +80,49 @@ options:
   --env_discretized
   --gpu_id GPU_ID
 ```
-
-## Running the real-world experiments
-1. Train the oracle model
-```bash
-accelerate launch --main_process_port 29505 src/train_bash.py \
-    --stage oracle \
-    --do_train \
-    --template default \
-    --model_name_or_path facebook/esm2_t36_3B_UR50D \
-    --use_fast_tokenizer True \
-    --finetuning_type freeze \
-    --flash_attn False \
-    --dataset proteinea/fluorescence \
-    --preprocessing_num_workers 32 \
-    --num_train_epochs 10.0 \
-    --bf16 False \
-    --tf32 False \
-    --per_device_train_batch_size 4 \
-    --gradient_accumulation_steps 8 \
-    --learning_rate 5e-05 \
-    --lr_scheduler_type cosine \
-    --max_grad_norm 1.0 \
-    --logging_steps 1 \
-    --warmup_ratio 0.01 \
-    --save_steps 1000 \
-    --output_dir ckpts/oracle2_test \
-    --save_total_limit 5 \
-    --report_to none \
-    --plot_loss True
-```
+# Real World Experiment: LLM Sequence Design
 
 This source code is used to deisgn sequence(s) to maximize/minimize a property. It includes three main models:
 - **Oracle** is used as groundtruth to replace wet-lab experiments
 - **WorldModel** is the reward model trained with current observed data
 - **Policy** is the amortized network with ability to generate better sequence(s)
 
-## Building Oracle
-### Training
-This is a two-step process.
-1. Data preprocessing and embedding. Example with ESM2 model and Proteina Fluorescence dataset.
+
+>[!INFO] Variables marked with "<  ...  >" are user-specific and have to be adapted before running the code.
+
+# SETUP
+## 1 Preparation
+
+Download this GITHUB into your DFS - file system (<GIT_PATH>).
+
+Before installation, please download and install miniconda and python ([Setup Instructions](https://docs.google.com/document/d/1PSTLJdtG3AymDGKPO-bHtzSnDyPmJPpJWXLmnJKzdfU/edit#heading=h.4tch43r93szq)). Then, create and activate a new conda environment by running the following code. Please choose your own < USERNAME> and any preferred name for "<ENV_NAME>".
+
+```bash
+source /dfs/scratch0/<USERNAME>/miniconda3/bin/activate
+conda create -n <ENV_NAME> python=3.10 -y
+conda activate <ENV_NAME>
+```
+
+All required packages are listed in the [requirements](requirements.txt) file, so install all requirements:
+>FIRST CD INTO...?
+```bash
+pip install -r requirements.txt
+```
+This might take a while, but we can use that time by creating a huggingface (HF) account on https://huggingface.co. After that, create a new model repository https://huggingface.co/new with your Username (<HF_USER>) and any Model (<HF_MODEL>) name you prefer. This Repo is used later to store modified models and datasets. Now create a new Access Token on Huggingface (Settings -> Access Tokens -> New token). It is crucial to copy paste that token (<hf_token>) into a safe space, since you will need it later and can't access it again. Now go to your freshly created Token and click on Manage -> Edit permissions. Make sure, to enable all the Repository permissions of <HF_MODEL> as well as all User permissions that are listed under "Repos".
+
+
+
+## 2 Building Oracle
+
+First, cd into the llm_sequence_design folder <GIT_PATH>/nonmyopia/llm_sequence.
+Make sure, your conda environment is activated.
+
+### 2.1 Data preprocessing and embedding
+Example with ESM2 model and Proteina Fluorescence dataset. 
+>Adapt the '--wm_export_hub_model_id' and '--wm_hf_hub_token' arguments with your personal variable names.
 ```bash
 CUDA_VISIBLE_DEVICES=0 accelerate launch \
-    --config_file single_config.yaml \
+    --config_file examples/accelerate/single_config.yaml \
     extract_emb_dataset.py \
     --oracle_model_name_or_path "" \
     --wm_model_name_or_path facebook/esm2_t33_650M_UR50D \
@@ -132,11 +132,24 @@ CUDA_VISIBLE_DEVICES=0 accelerate launch \
     --overwrite_cache False \
     --preprocessing_num_workers 8 \
     --num_train_epochs 0 \
-    --wm_export_hub_model_id <saving_hf_repo> \
+    --wm_export_hub_model_id <HF_USER>/<HF_MODEL> \
     --wm_hf_hub_token <hf_token> \
     --output_dir ckpts/embedding
 ```
-2. In this step, we simply train linear models using sklearn. Currently, three models are suppported: linear, ridge, bayesridge
+
+Now, the newly created dataset needs to be added into the dataset_info.json file under <GIT_PATH>/nonmyopia/llm_sequence_design/data/dataset_info.json. Open the file and insert:
+```bash
+  "<HF_USER>/<HF_MODEL>": {
+    "hf_hub_url": "<HF_USER>/<HF_MODEL>",
+    "formatting": "oracle"
+  }
+```
+
+### 2.2 Training
+
+In this step, we simply train linear models using sklearn. Currently, three models are suppported: linear, ridge, bayesridge. 
+
+>Adapt the '--dataset' argument with the same personal variables as in '--wm_export_hub_model_id'. Automaticly, a huggingface dataset will be created with the same RepoID as your model's.
 ```bash
 python src/train_bash.py \
     --seed 2 \
@@ -145,7 +158,7 @@ python src/train_bash.py \
     --do_eval \
     --template default \
     --model_name_or_path bayesridge \
-    --dataset <saving_hf_repo> \
+    --dataset <HF_USER>/<HF_MODEL> \
     --emb_enabled True \
     --label_names rewards \
     --val_size 0.0 \
@@ -153,13 +166,13 @@ python src/train_bash.py \
     --output_dir ckpts/oracle_bayesridge-seed2
 ```
 
-### Embedding model selection
+### 2.3 Embedding model selection
 To selecct the most suited embedding model for next steps, we tested various well-known LLMs. To do this, firstly, we embedd our dataset by various models, then run below script. Note: This script is designed to work with bayesridge and upto 7 embedding models, feel free to edit it by `hf_embedding_names` variable. 
 ```bash
 python test_oracle.py
 ```
 
-## Runing full pipeline code
+## 3 Runing full pipeline code
 Currently, this code is only support HES-TS-AM acquision function. Some notes are: 
 - The world model should has the same embedding model with oracle.
 - Policy model can be different models with the above two models.
@@ -167,7 +180,7 @@ Currently, this code is only support HES-TS-AM acquision function. Some notes ar
   
 To run full pipeline, please use script in [Pipeline Script](scripts/run_exp.sh)
 
-## Next steps
+## 4 Next steps
 - Re-adding the histories of sequence when optimizing with lookahead. See `configs.py` for designed prompt.
 - Verify the correctness of modified PPO pipeline.
 - Implement more acquisition functions.
