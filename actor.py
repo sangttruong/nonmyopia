@@ -6,7 +6,7 @@
 
 r"""Implement an actor."""
 import gc
-import math 
+import math
 import torch
 from torch import Tensor
 from tqdm import tqdm
@@ -16,6 +16,7 @@ from botorch.sampling.normal import SobolQMCNormalSampler
 from amortized_network import AmortizedNetwork, Project2Range
 from acqfs import qBOAcqf, qMultiStepHEntropySearch
 from utils import draw_loss_and_cost
+
 
 class Actor:
     r"""Actor class."""
@@ -30,7 +31,7 @@ class Actor:
 
         if self.parms.algo == "HES":
             self.acqf_class = qMultiStepHEntropySearch
-                
+
             if self.parms.amortized:
                 self.maps = AmortizedNetwork(
                     input_dim=self.parms.x_dim + self.parms.y_dim,
@@ -197,7 +198,7 @@ class Actor:
                     nf_design_pts = nf_design_pts + [1] * (
                         self.algo_lookahead_steps - 4
                     )
-                    
+
             for s in range(self.algo_lookahead_steps):
                 x = torch.rand(
                     math.prod(nf_design_pts[:s]) * self.parms.n_restarts,
@@ -208,7 +209,8 @@ class Actor:
                 x = project2range(x)
                 if embedder is not None:
                     x = embedder.decode(x)
-                    x = torch.nn.functional.one_hot(x, num_classes=self.parms.num_categories).to(parms.torch_dtype)
+                    x = torch.nn.functional.one_hot(
+                        x, num_classes=self.parms.num_categories).to(parms.torch_dtype)
                 self.maps.append(x.requires_grad_(True))
 
             a = torch.rand(
@@ -222,15 +224,16 @@ class Actor:
             a = project2range(a)
             if embedder is not None:
                 a = embedder.decode(a)
-                a = torch.nn.functional.one_hot(a, num_classes=self.parms.num_categories).to(parms.torch_dtype)
+                a = torch.nn.functional.one_hot(
+                    a, num_classes=self.parms.num_categories).to(parms.torch_dtype)
             self.maps.append(a.requires_grad_(True))
             self._parameters = self.maps
 
-    def construct_acqf(self, WM, buffer, **kwargs):
+    def construct_acqf(self, surr_model, buffer, **kwargs):
         """Contruct aquisition function.
 
         Args:
-            WM: World model.
+            surr_model: Surrogate model.
             buffer: A ReplayBuffer object containing the data.
 
         Raises:
@@ -242,7 +245,7 @@ class Actor:
         del self.acqf
         gc.collect()
         torch.cuda.empty_cache()
-        
+
         if self.parms.algo_ts:
             nf_design_pts = [1] * self.algo_lookahead_steps
         else:
@@ -269,7 +272,7 @@ class Actor:
 
         self.acqf = self.acqf_class(
             name=self.parms.algo,
-            model=WM,
+            model=surr_model,
             lookahead_steps=self.algo_lookahead_steps,
             n_actions=self.parms.n_actions,
             n_fantasy_at_design_pts=nf_design_pts,
@@ -312,7 +315,8 @@ class Actor:
         prev_hid_state = buffer["h"][iteration - 1: iteration].expand(
             self.parms.n_restarts, -1
         )
-        prev_cost = buffer["cost"][self.parms.n_initial_points:iteration].sum() if iteration > self.parms.n_initial_points else 0.0
+        prev_cost = buffer["cost"][self.parms.n_initial_points:iteration].sum(
+        ) if iteration > self.parms.n_initial_points else 0.0
 
         # Optimize the acquisition function
         optimizer = torch.optim.AdamW(
@@ -332,7 +336,7 @@ class Actor:
 
         if self.parms.algo == "HES":
             self.acqf.dump_model()
-            
+
         for ep in range(self.parms.acq_opt_iter):
             return_dict = self.acqf.forward(
                 prev_X=prev_X,
@@ -346,7 +350,7 @@ class Actor:
             acqf_loss = return_dict["acqf_loss"].mean()
             acqf_cost = return_dict["acqf_cost"].mean()
             # >> n_restart
-            
+
             losses.append(acqf_loss.item())
             costs.append(acqf_cost.item())
             loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
@@ -356,14 +360,15 @@ class Actor:
                 best_cost = return_dict["acqf_cost"].detach()
                 best_next_X = [x.detach() for x in return_dict["X"]]
                 best_actions = return_dict["actions"].detach()
-                best_hidden_state = [x.detach() for x in return_dict["hidden_state"]] if return_dict["hidden_state"] else None
+                best_hidden_state = [x.detach(
+                ) for x in return_dict["hidden_state"]] if return_dict["hidden_state"] else None
                 if self.parms.amortized:
                     best_map = self.maps.state_dict()
                 early_stop = 0
             else:
                 if iteration > self.parms.n_initial_points or ep >= 200:
                     early_stop += 1
-                    
+
             grads = torch.autograd.grad(
                 loss, self._parameters, allow_unused=True)
             for param, grad in zip(self._parameters, grads):
@@ -374,20 +379,20 @@ class Actor:
 
             if ep % 50 == 0:
                 print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}")
-                
+
             if early_stop > 50:
                 break
-                
+
         if self.parms.algo == "HES":
             self.acqf.clean_dump_model()
 
         # Choose which restart produce the lowest loss
         idx = torch.argmin(best_loss + best_cost)
-        
+
         # Best acqf loss
         acqf_loss = best_loss[idx]
         # >>> n_actions * 1
-        
+
         # Get next X as X_0 at idx
         next_X = best_next_X[0][idx].reshape(1, -1)
 
@@ -403,12 +408,13 @@ class Actor:
             hidden_state = None
 
         # Compute acqf loss
-        acqf_cost = self.acqf.cost_function(prev_X=buffer["x"][iteration - 1: iteration], current_X=next_X, previous_cost=prev_cost).detach()
+        acqf_cost = self.acqf.cost_function(
+            prev_X=buffer["x"][iteration - 1: iteration], current_X=next_X, previous_cost=prev_cost).detach()
 
         # Draw losses by acq_opt_iter
         if self.parms.plot:
             draw_loss_and_cost(self.parms.save_dir, losses, costs, iteration)
-                
+
         return {
             "cost": acqf_cost,
             "next_X": next_X,

@@ -13,34 +13,24 @@ from llmtuner.data.parser import get_dataset_list
 from llmtuner.data.utils import merge_dataset
 from llmtuner.data.aligner import align_dataset
 
-from world_model import WorldModel
+from llm_sequence_design.surr_model import SurrModel
 from utils import (
     get_dataset_embedding,
-    fix_oracle_model_args,
-    fix_policy_model_args,
-    fix_wm_model_args,
-    fix_finetuning_policy_args,
-    fix_finetuning_wm_args,
 )
+
 
 def save_to_pkl(data, name):
     pklFile = open(name, "wb")
     pickle.dump(data, pklFile)
     pklFile.close()
 
+
 def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["TrainerCallback"]] = None):
     wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
         wm_finetuning_args, policy_finetuning_args, generating_args, bo_args = get_bo_args(
             args)
 
-    # Fixing args
-    fix_wm_model_args(wm_model_args)
-    fix_oracle_model_args(oracle_model_args)
-    fix_policy_model_args(policy_model_args)
-    fix_finetuning_wm_args(wm_finetuning_args)
-    fix_finetuning_policy_args(policy_finetuning_args)
-
-    world_model = WorldModel(wm_model_args, wm_finetuning_args)
+    world_model = SurrModel(model_args, finetuning_args)
     world_model.load()
 
     # Initializing full dataset
@@ -70,10 +60,12 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     emb_training_dataset = get_dataset_embedding(training_dataset, world_model.model, world_model.tokenizer, data_args)
     save_to_pkl(emb_training_dataset.data, f"data/{data_args.dataset.replace('/', '_')}-{wm_model_args.wm_model_name_or_path.split('/')[-1]}-embedding-train.pkl")
 
-    full_ds = DatasetDict({"train": emb_training_dataset, "validation": emb_testing_dataset})
-    full_ds.push_to_hub(wm_model_args.export_hub_model_id,
-                        token=wm_model_args.hf_hub_token,
+    full_ds = DatasetDict({"train": emb_training_dataset,
+                          "validation": emb_testing_dataset})
+    full_ds.push_to_hub(model_args.export_hub_model_id,
+                        token=model_args.hf_hub_token,
                         commit_message="Upload data")
-    
+
+
 if __name__ == '__main__':
     main()
