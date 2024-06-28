@@ -8,6 +8,7 @@ from functools import partial
 from torch.utils.data import DataLoader
 from datasets import Dataset
 import subprocess
+from llmtuner.data.parser import get_dataset_list
 
 def set_seed(seed):
     random.seed(seed)
@@ -17,35 +18,36 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.cuda.manual_seed_all(seed)
-    
+
+def tokenize_dataset(
+    examples,
+    tokenizer,
+    data_args
+):
+    # build inputs with format `<bos> X1 Y1 <eos> <bos> X2 Y2 <eos>`
+    # and labels with format `<ignore> ... <ignore> Y1 <eos> <ignore> ... <ignore> Y2 <eos>`
+    model_inputs = {
+        "input_ids": [],
+        "attention_mask": [],
+        "rewards": []
+    }
+
+    for i in range(len(examples["text"])):
+        input_ids = tokenizer.encode(
+            examples["text"][i], add_special_tokens=False,
+            # padding='max_length', truncation=True,
+            # max_length=data_args.cutoff_len
+        )
+        attention_mask = [1] * len(input_ids)
+        labels = examples["reward"][i]
+
+        model_inputs["input_ids"].append(input_ids)
+        model_inputs["attention_mask"].append(attention_mask)
+        model_inputs["rewards"].append(labels)
+
+    return model_inputs
+
 def get_dataset_embedding(dataset, model, tokenizer, data_args):
-    def tokenize_dataset(
-        examples,
-        tokenizer,
-        data_args
-    ):
-        # build inputs with format `<bos> X1 Y1 <eos> <bos> X2 Y2 <eos>`
-        # and labels with format `<ignore> ... <ignore> Y1 <eos> <ignore> ... <ignore> Y2 <eos>`
-        model_inputs = {
-            "input_ids": [],
-            "attention_mask": [],
-            "rewards": []
-        }
-
-        for i in range(len(examples["text"])):
-            input_ids = tokenizer.encode(
-                examples["text"][i], add_special_tokens=False,
-                # padding='max_length', truncation=True,
-                # max_length=data_args.cutoff_len
-            )
-            attention_mask = [1] * len(input_ids)
-            labels = examples["reward"][i]
-
-            model_inputs["input_ids"].append(input_ids)
-            model_inputs["attention_mask"].append(attention_mask)
-            model_inputs["rewards"].append(labels)
-
-        return model_inputs
 
     preprocess_func = partial(
         tokenize_dataset, tokenizer=tokenizer, data_args=data_args
@@ -55,6 +57,8 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
         load_from_cache_file=(not data_args.overwrite_cache),
         desc="Running tokenizer on dataset",
     )
+    breakpoint()
+
     column_names = list(next(iter(dataset)).keys())
     tokenized_dataset = dataset.map(preprocess_func, batched=True,
                                     remove_columns=column_names, **kwargs)
