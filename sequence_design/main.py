@@ -3,12 +3,12 @@ import pickle
 from typing import Any, Dict, List, Optional
 from datasets import concatenate_datasets, Dataset, Features, Value
 
-from src.llmtuner.hparams import get_bo_args
-from src.llmtuner.extras.callbacks import LogCallback
+from llmtuner.hparams import get_bo_args
+from llmtuner.extras.callbacks import LogCallback
 
-from src.llmtuner.data.loader import load_single_dataset
-from src.llmtuner.data.parser import get_dataset_list
-from src.llmtuner.data.utils import merge_dataset
+from llmtuner.data.loader import load_single_dataset
+from llmtuner.data.parser import get_dataset_list
+from llmtuner.data.utils import merge_dataset
 
 from oracle import Oracle
 from llm_sequence_design.surr_model import SurrModel

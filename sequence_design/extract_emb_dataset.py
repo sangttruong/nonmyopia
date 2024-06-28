@@ -4,10 +4,10 @@ import pickle
 from functools import partial
 from typing import Any, Dict, Optional
 from datasets import DatasetDict, load_dataset, Features
-from src.llmtuner.hparams import get_train_args
-from src.llmtuner.data.parser import get_dataset_list
-from src.llmtuner.data.utils import merge_dataset
-from src.llmtuner.extras.constants import DATA_CONFIG
+from llmtuner.hparams import get_train_args
+from llmtuner.data.parser import get_dataset_list
+from llmtuner.data.utils import merge_dataset
+from llmtuner.extras.constants import DATA_CONFIG
 from surr_model import SurrModel
 from utils import get_dataset_embedding
 
@@ -41,6 +41,7 @@ def custom_load_dataset(dataset_attr, data_args, model_args):
         cache_dir=model_args.cache_dir,
         token=model_args.hf_hub_token
     )
+    dataset = dataset.select(range(200))
     column_names = list(next(iter(dataset)).keys())
     features = Features.from_dict(
         {
@@ -93,17 +94,17 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks=None):
 
     emb_testing_dataset = get_dataset_embedding(
         testing_dataset, surr_model.model, surr_model.tokenizer, data_args)
-    save_to_pkl(emb_testing_dataset.data,
-                f"data/{data_args.dataset.replace('/', '_')}-"
-                f"{model_args.model_name_or_path.split('/')[-1]}-"
-                "embedding-test.pkl")
+    # save_to_pkl(emb_testing_dataset.data,
+    #             f"data/{data_args.dataset.replace('/', '_')}-"
+    #             f"{model_args.model_name_or_path.split('/')[-1]}-"
+    #             "embedding-test.pkl")
 
     emb_training_dataset = get_dataset_embedding(
         training_dataset, surr_model.model, surr_model.tokenizer, data_args)
-    save_to_pkl(emb_training_dataset.data,
-                f"data/{data_args.dataset.replace('/', '_')}-"
-                f"{model_args.model_name_or_path.split('/')[-1]}-"
-                "embedding-train.pkl")
+    # save_to_pkl(emb_training_dataset.data,
+    #             f"data/{data_args.dataset.replace('/', '_')}-"
+    #             f"{model_args.model_name_or_path.split('/')[-1]}-"
+    #             "embedding-train.pkl")
 
     full_ds = DatasetDict({"train": emb_training_dataset,
                           "validation": emb_testing_dataset})

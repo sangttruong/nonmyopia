@@ -1,7 +1,7 @@
 from sklearn.linear_model import LinearRegression, Ridge, BayesianRidge
-from src.llmtuner.model import load_model, load_tokenizer
-from src.llmtuner.hparams import ModelArguments, get_train_args
-from src.llmtuner.data import get_dataset
+from llmtuner.model import load_model, load_tokenizer
+from llmtuner.hparams import ModelArguments, get_train_args
+from llmtuner.data import get_dataset
 from tqdm import tqdm
 import numpy as np
 import joblib
@@ -11,7 +11,7 @@ import os
 import gc
 import json
 from utils import compute_regression_metrics
-from src.llmtuner.extras.callbacks import LogCallback
+from llmtuner.extras.callbacks import LogCallback
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback

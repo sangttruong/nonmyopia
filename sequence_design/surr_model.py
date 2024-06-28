@@ -8,8 +8,8 @@ from typing import List, Optional, Any
 
 import torch
 
-from src.llmtuner.model import load_model, load_tokenizer
-from src.llmtuner.extras.logging import get_logger
+from llmtuner.model import load_model, load_tokenizer
+from llmtuner.extras.logging import get_logger
 
 from bayesian_ridge import BayesianRidgeModel
 from utils import get_dataset_embedding, compute_regression_metrics

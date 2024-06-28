@@ -137,9 +137,9 @@ Example with ESM2 model and Proteina Fluorescence dataset.
 >Adapt the '--wm_export_hub_model_id' and '--wm_hf_hub_token' arguments with your personal variable names.
 ```bash
 CUDA_VISIBLE_DEVICES=0 accelerate launch \
-    --config_file examples/accelerate/single_config.yaml \
+    --config_file single_config.yaml \
     extract_emb_dataset.py \
-    --model_name_or_path facebook/esm2_t33_650M_UR50D \
+    --model_name_or_path meta-llama/Llama-2-7b-hf \
     --dataset_dir ./ \
     --template default \
     --dataset proteinea/fluorescence \
