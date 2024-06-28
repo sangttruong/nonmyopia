@@ -139,16 +139,15 @@ Example with ESM2 model and Proteina Fluorescence dataset.
 CUDA_VISIBLE_DEVICES=0 accelerate launch \
     --config_file examples/accelerate/single_config.yaml \
     extract_emb_dataset.py \
-    --oracle_model_name_or_path "" \
-    --wm_model_name_or_path facebook/esm2_t33_650M_UR50D \
-    --policy_model_name_or_path "" \
+    --model_name_or_path facebook/esm2_t33_650M_UR50D \
+    --dataset_dir ./ \
     --template default \
     --dataset proteinea/fluorescence \
     --overwrite_cache False \
     --preprocessing_num_workers 8 \
     --num_train_epochs 0 \
-    --wm_export_hub_model_id <HF_USER>/<HF_MODEL> \
-    --wm_hf_hub_token <hf_token> \
+    --export_hub_model_id <HF_USER>/<HF_MODEL> \
+    --hf_hub_token <hf_token> \
     --output_dir ckpts/embedding
 ```
 

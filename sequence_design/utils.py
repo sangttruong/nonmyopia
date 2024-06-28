@@ -7,10 +7,8 @@ import psutil
 import numpy as np
 from tqdm import tqdm
 from functools import partial
-from torch.utils.data import DataLoader
 from datasets import Dataset
 import subprocess
-from llmtuner.data.parser import get_dataset_list
 
 
 def set_seed(seed):
@@ -21,6 +19,7 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.cuda.manual_seed_all(seed)
+
 
 def tokenize_dataset(
     examples,
@@ -50,6 +49,7 @@ def tokenize_dataset(
 
     return model_inputs
 
+
 def compute_regression_metrics(eval_preds: Sequence[Union[np.array, Tuple[np.array]]]) -> Dict[str, float]:
     preds, labels = eval_preds
     labels = labels.reshape(-1, 1)
@@ -57,6 +57,7 @@ def compute_regression_metrics(eval_preds: Sequence[Union[np.array, Tuple[np.arr
     return {"mae": mean_absolute_error(labels, preds),
             "r2": r2_score(labels, preds),
             "rmse": root_mean_squared_error(labels, preds)}
+
 
 def get_dataset_embedding(dataset, model, tokenizer, data_args):
 
@@ -68,8 +69,6 @@ def get_dataset_embedding(dataset, model, tokenizer, data_args):
         load_from_cache_file=(not data_args.overwrite_cache),
         desc="Running tokenizer on dataset",
     )
-    breakpoint()
-
     column_names = list(next(iter(dataset)).keys())
     tokenized_dataset = dataset.map(preprocess_func, batched=True,
                                     remove_columns=column_names, **kwargs)
