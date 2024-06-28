@@ -40,48 +40,52 @@ from argparse import ArgumentParser
 import wandb
 
 # Compute metrics
+
+
 def compute_metrics(
     env,
     parms,
     buffer,
     embedder,
     device,
-    WM_state_dicts=None,
+    surr_model_state_dicts=None,
 ):
     metrics = []
-    
+
     for iteration in tqdm(range(parms.n_initial_points-1, parms.algo_n_iterations)):
-        WM = SingleTaskGP(
+        surr_model = SingleTaskGP(
             buffer["x"][:iteration+1],
             buffer["y"][:iteration+1],
             # input_transform=Normalize(
             #     d=parms.x_dim, bounds=parms.bounds.T),
             # outcome_transform=Standardize(1),
         ).to(device, dtype=parms.torch_dtype)
-        
+
         if iteration == parms.algo_n_iterations - 1:
             # Fit GP
-            mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+            mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
             fit_gpytorch_model(mll)
         else:
-            WM.load_state_dict(WM_state_dicts[iteration - parms.n_initial_points + 1])
-    
-        # Set WM to eval mode
-        WM.eval()
+            surr_model.load_state_dict(
+                surr_model_state_dicts[iteration - parms.n_initial_points + 1])
 
-        (u_observed, u_posterior, regret), A_chosen = eval_func(env, WM, parms, buffer, iteration, embedder)
-    
+        # Set surr_model to eval mode
+        surr_model.eval()
+
+        (u_observed, u_posterior, regret), A_chosen = eval_func(
+            env, surr_model, parms, buffer, iteration, embedder)
+
         if iteration >= parms.n_initial_points:
-            regret += metrics[-1][-1] # Cummulative regret
+            regret += metrics[-1][-1]  # Cummulative regret
 
         metrics.append([u_observed, u_posterior, regret])
-        print({"u_observed": u_observed, "u_posterior": u_posterior, "c_regret": regret})
+        print({"u_observed": u_observed,
+              "u_posterior": u_posterior, "c_regret": regret})
         # wandb.log({"u_observed": u_observed, "u_posterior": u_posterior, "c_regret": regret})
 
     return np.array(metrics)
 
 
-        
 if __name__ == '__main__':
     # wandb.init(project="nonmyopia-metrics")
 
@@ -98,7 +102,7 @@ if __name__ == '__main__':
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=True)
     args = parser.parse_args()
-    
+
     set_seed(args.seed)
 
     local_parms = Parameters(args)
@@ -109,7 +113,7 @@ if __name__ == '__main__':
     env_discretized = args.env_discretized
     algo = args.algo
     cost_fn = args.cost_fn
-    
+
     # Init environment
     env = make_env(
         name=local_parms.env_name,
@@ -121,26 +125,30 @@ if __name__ == '__main__':
         dtype=local_parms.torch_dtype,
         device=local_parms.device,
     )
-    
+
     print(f"Computing metrics for {algo}, {cost_fn}, seed{seed}")
-    if False: # os.path.exists(f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"):
+    # os.path.exists(f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"):
+    if False:
         metrics = np.load(
             f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy")
     else:
-        buffer_file=f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/buffer.pt"
+        buffer_file = f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/buffer.pt"
         if not os.path.exists(buffer_file):
             raise RuntimeError(f"File {buffer_file} does not exist")
-        buffer=torch.load(buffer_file, map_location=local_parms.device).to(dtype=local_parms.torch_dtype)
-        
-        WM_state_dicts=[]
-        for step in range(local_parms.n_initial_points, local_parms.algo_n_iterations):
-            WM_state_dict_file=f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/world_model_{step}.pt"
-            if not os.path.exists(WM_state_dict_file):
-                raise RuntimeError(f"File {WM_state_dict_file} does not exist")
-                
-            WM_state_dicts.append(torch.load(WM_state_dict_file, map_location=local_parms.device))
+        buffer = torch.load(buffer_file, map_location=local_parms.device).to(
+            dtype=local_parms.torch_dtype)
 
-        if len(WM_state_dicts) != (local_parms.algo_n_iterations - local_parms.n_initial_points):
+        surr_model_state_dicts = []
+        for step in range(local_parms.n_initial_points, local_parms.algo_n_iterations):
+            surr_model_state_dict_file = f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/surr_model_{step}.pt"
+            if not os.path.exists(surr_model_state_dict_file):
+                raise RuntimeError(
+                    f"File {surr_model_state_dict_file} does not exist")
+
+            surr_model_state_dicts.append(torch.load(
+                surr_model_state_dict_file, map_location=local_parms.device))
+
+        if len(surr_model_state_dicts) != (local_parms.algo_n_iterations - local_parms.n_initial_points):
             raise RuntimeError
 
         if local_parms.env_discretized:
@@ -150,16 +158,16 @@ if __name__ == '__main__':
             ).to(device=local_parms.device, dtype=local_parms.torch_dtype)
         else:
             embedder = None
-    
-        metrics=compute_metrics(
+
+        metrics = compute_metrics(
             env,
             local_parms,
             buffer,
             embedder,
             local_parms.device,
-            WM_state_dicts=WM_state_dicts,
+            surr_model_state_dicts=surr_model_state_dicts,
         )
         with open(f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy", "wb") as f:
             np.save(f, metrics)
-            
+
     # wandb.finish()

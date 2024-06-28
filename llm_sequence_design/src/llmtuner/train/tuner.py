@@ -13,7 +13,6 @@ from .orpo import run_orpo
 from .ppo import run_ppo
 from .pt import run_pt
 from .rm import run_rm
-from .oracle import run_oracle
 from .sft import run_sft
 
 
@@ -38,9 +37,6 @@ def run_exp(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Tra
     elif finetuning_args.stage == "rm":
         run_rm(model_args, data_args, training_args,
                finetuning_args, callbacks)
-    elif finetuning_args.stage == "oracle":
-        run_oracle(model_args, data_args, training_args,
-                   finetuning_args, callbacks)
     elif finetuning_args.stage == "ppo":
         run_ppo(model_args, data_args, training_args,
                 finetuning_args, generating_args, callbacks)

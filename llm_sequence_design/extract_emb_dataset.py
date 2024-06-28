@@ -14,14 +14,9 @@ from llmtuner.data.parser import get_dataset_list
 from llmtuner.data.utils import merge_dataset
 from llmtuner.extras.constants import DATA_CONFIG
 
-from world_model import WorldModel
+from llm_sequence_design.surr_model import SurrModel
 from utils import (
     get_dataset_embedding,
-    fix_oracle_model_args,
-    fix_policy_model_args,
-    fix_wm_model_args,
-    fix_finetuning_policy_args,
-    fix_finetuning_wm_args,
 )
 from functools import partial
 from datasets import Dataset, DatasetDict, load_dataset, Features
@@ -33,6 +28,7 @@ def convert_oracle(examples, dataset_attr):
         outputs["text"].append(messages)
         outputs["reward"].append(float(examples[dataset_attr.reward][i]))
     return outputs
+
 
 
 def save_to_pkl(data, name):
@@ -62,15 +58,8 @@ def main(
         generating_args,
         bo_args,
     ) = get_bo_args(args)
-
-    # Fixing args
-    fix_wm_model_args(wm_model_args)
-    fix_oracle_model_args(oracle_model_args)
-    fix_policy_model_args(policy_model_args)
-    fix_finetuning_wm_args(wm_finetuning_args)
-    fix_finetuning_policy_args(policy_finetuning_args)
-
-    world_model = WorldModel(wm_model_args, wm_finetuning_args)
+    
+    world_model = SurrModel(model_args, finetuning_args)
     world_model.load()
 
     # Initializing full dataset

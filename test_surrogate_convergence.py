@@ -143,7 +143,7 @@ class Parameters:
 
 def eval(
     func,
-    wm,
+    model,
     cfg,
     eval_fns,
     data_x=None,
@@ -161,7 +161,7 @@ def eval(
         data_x = torch.tensor(data_x, dtype=torch.float32, device=cfg.device)
 
     data_y = func(data_x).reshape(-1)
-    y_hat = wm.posterior(data_x).mean.detach()
+    y_hat = model.posterior(data_x).mean.detach()
     y_hat = y_hat.reshape(-1)
 
     # Evaluate functions #####################################################
@@ -175,7 +175,7 @@ def eval(
 
 def plot(
     func,
-    wm,
+    model,
     cfg,
     data_x,
     n_space=100,
@@ -205,7 +205,7 @@ def plot(
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
     Z = func(XY.reshape(2, -1).T).reshape(X.shape)
 
-    Z_post = wm.posterior(
+    Z_post = model.posterior(
         XY.to(cfg.device, cfg.torch_dtype).permute(1, 2, 0)).mean
     # >> 100 x 100 x 1
     Z_post = Z_post.squeeze(-1).cpu().detach()
@@ -291,13 +291,13 @@ def main(env, local_parms):
     train_X = torch.tensor(
         train_X, dtype=local_parms.torch_dtype, device=local_parms.device)
     train_y = env(train_X).reshape(-1, 1)
-    
-    WM = SingleTaskGP(
+
+    surr_model = SingleTaskGP(
         train_X=train_X,
         train_Y=train_y,
     )
-    
-    mll = ExactMarginalLogLikelihood(WM.likelihood, WM)
+
+    mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
     fit_gpytorch_model(mll)
 
     def rmse_fn(y, yhat):
@@ -317,7 +317,7 @@ def main(env, local_parms):
 
     train_eval_vals = eval(
         func=env,
-        wm=WM,
+        model=surr_model,
         cfg=local_parms,
         eval_fns=[rmse_fn, rsquare_fn],
         data_x=train_X,
@@ -325,7 +325,7 @@ def main(env, local_parms):
 
     test_eval_vals = eval(
         func=env,
-        wm=WM,
+        model=surr_model,
         cfg=local_parms,
         eval_fns=[rmse_fn, rsquare_fn],
     )
@@ -333,7 +333,7 @@ def main(env, local_parms):
     if local_parms.x_dim == 2:
         plot(
             func=env,
-            wm=WM,
+            wm=surr_model,
             cfg=local_parms,
             data_x=train_X.cpu(),
         )
@@ -438,7 +438,7 @@ if __name__ == "__main__":
                 test_df["n_points"].values, test_df["rmse_std"].values, test_df["rsquare_std"].values)}
         else:
             for n_points in tqdm([1, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]):
-            # for n_points in tqdm([100, 500]):
+                # for n_points in tqdm([100, 500]):
                 list_train_vals = []
                 list_test_vals = []
                 for i, seed in enumerate(args.seeds):
