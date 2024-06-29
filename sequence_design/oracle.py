@@ -26,7 +26,7 @@ class Oracle:
 
         assert model_args.linear_head_path, "--oracle_linear_head_path must be defined!"
         self.linear_head = joblib.load(
-            os.path.join(model_args.oracle_linear_head_path, "model.joblib")
+            os.path.join(model_args.linear_head_path, "model.joblib")
         )
 
     def load(self):
@@ -67,7 +67,8 @@ class Oracle:
             model_inputs = self.tokenizer(
                 batch_X, add_special_tokens=False, return_tensors="pt", padding=True
             )
-            model_inputs = {k: v.to(self.model.device) for k, v in model_inputs.items()}
+            model_inputs = {k: v.to(self.model.device)
+                            for k, v in model_inputs.items()}
             embeds = self.model.model(**model_inputs, **kwargs)
 
             last_idxs = []
@@ -113,7 +114,8 @@ def run_oracle(
                 f"model_name_or_path {model_args.model_name_or_path} is not supported"
             )
     else:
-        model = joblib.load(os.path.join(model_args.model_name_or_path, "model.joblib"))
+        model = joblib.load(os.path.join(
+            model_args.model_name_or_path, "model.joblib"))
 
     # Training
     if training_args.do_train:
@@ -129,7 +131,8 @@ def run_oracle(
 
         # Save model
         os.makedirs(training_args.output_dir, exist_ok=True)
-        joblib.dump(model, os.path.join(training_args.output_dir, "model.joblib"))
+        joblib.dump(model, os.path.join(
+            training_args.output_dir, "model.joblib"))
 
         # Save results
         y_train_hat = model.predict(X_train)
@@ -192,7 +195,8 @@ def run_exp(
         get_train_args(args)
     )
     callbacks = [LogCallback()] if callbacks is None else callbacks
-    run_oracle(model_args, data_args, training_args, finetuning_args, callbacks)
+    run_oracle(model_args, data_args, training_args,
+               finetuning_args, callbacks)
 
 
 if __name__ == "__main__":
