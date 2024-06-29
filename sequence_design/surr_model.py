@@ -1,18 +1,23 @@
 import os
 import gc
 import copy
+import json
+import torch
 import joblib
 import numpy as np
 from tqdm import tqdm
-from typing import List, Optional, Any
-
-import torch
+from datasets import load_dataset
+from typing import Any, TYPE_CHECKING, Dict, List, Optional
 
 from llmtuner.model import load_model, load_tokenizer
+from llmtuner.hparams import ModelArguments, get_train_args
 from llmtuner.extras.logging import get_logger
+from llmtuner.extras.callbacks import LogCallback
 
 from bayesian_ridge import BayesianRidgeModel
 from utils import get_dataset_embedding, compute_regression_metrics
+if TYPE_CHECKING:
+    from transformers import Seq2SeqTrainingArguments, TrainerCallback
 
 logger = get_logger(__name__)
 
@@ -24,6 +29,10 @@ class SurrModel:
         self.linear_head = None
         self.model_args = model_args
         self.finetuning_args = finetuning_args
+
+        if model_args.linear_head_path:
+            print("Loading linear head of surrogate model...")
+            self.linear_head = joblib.load(model_args.linear_head_path)
 
     def load(self):
         self.tokenizer = load_tokenizer(self.model_args)
@@ -103,9 +112,9 @@ class SurrModel:
         iteration=0,
         **kwargs
     ):
-        wm_training_args = copy.deepcopy(training_args)
-        wm_training_args.output_dir = os.path.join(
-            training_args.output_dir, "world_model")
+        surr_training_args = copy.deepcopy(training_args)
+        surr_training_args.output_dir = os.path.join(
+            training_args.output_dir, "surr_model")
 
         dataset_emb = get_dataset_embedding(
             dataset, self.model, self.tokenizer, data_args)
@@ -117,9 +126,9 @@ class SurrModel:
 
         self.linear_head = BayesianRidgeModel(X_train, y_train)
 
-        os.makedirs(wm_training_args.output_dir, exist_ok=True)
+        os.makedirs(surr_training_args.output_dir, exist_ok=True)
         joblib.dump(self.linear_head, os.path.join(
-            wm_training_args.output_dir, f"model_{iteration}.joblib"))
+            surr_training_args.output_dir, f"model_{iteration}.joblib"))
 
     def eval(
         self,
@@ -134,3 +143,111 @@ class SurrModel:
         eval_metrics = {f"eval_{k}": v for k, v in eval_metrics.items()}
 
         return eval_metrics
+
+
+def run_surrogate(
+    model_args: "ModelArguments",
+    data_args: "DataArguments",
+    training_args: "Seq2SeqTrainingArguments",
+    finetuning_args: "FinetuningArguments",
+    callbacks: Optional[List["TrainerCallback"]] = None,
+):
+    model = None
+    if model_args.model_name_or_path.lower() != "bayesridge":
+        raise ValueError(
+            f"model_name_or_path {model_args.model_name_or_path} is not supported"
+        )
+
+    # Training
+    if training_args.do_train:
+        print("Training surrogate model...")
+        data_args.split = "train"
+        train_dataset = load_dataset(data_args.dataset)[data_args.split]
+
+        X_train = torch.tensor(train_dataset["inputs_embeds"])
+        y_train = torch.tensor(train_dataset["rewards"]).reshape(-1, 1)
+        model = BayesianRidgeModel(X_train, y_train)
+
+        # Save model
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        joblib.dump(model, os.path.join(
+            training_args.output_dir, "model.joblib"))
+
+        # Save results
+        y_train_dist = model.posterior(X_train)
+        y_train_hat = y_train_dist.sample(
+            sample_shape=torch.Size([1])).mean(dim=0).numpy()
+
+        train_metrics = compute_regression_metrics(
+            (y_train_hat, y_train.numpy()))
+        train_metrics = {f"train_{k}": float(v)
+                         for k, v in train_metrics.items()}
+        with open(
+            os.path.join(training_args.output_dir, "train_results.json"), "w"
+        ) as f:
+            json.dump(train_metrics, f)
+
+    # Evaluation
+    if training_args.do_eval:
+        print("Evaluating oracle model...")
+        data_args.split = "validation"
+        eval_dataset = load_dataset(data_args.dataset)[data_args.split]
+
+        X_test = torch.tensor(eval_dataset["inputs_embeds"])
+        y_test = torch.tensor(eval_dataset["rewards"]).reshape(-1, 1)
+
+        # Save results
+        y_test_dist = model.posterior(X_test)
+        y_test_hat = y_test_dist.sample(
+            sample_shape=torch.Size([1])).mean(dim=0).numpy()
+
+        eval_metrics = compute_regression_metrics((y_test_hat, y_test.numpy()))
+        eval_metrics = {f"eval_{k}": float(v) for k, v in eval_metrics.items()}
+        os.makedirs(training_args.output_dir, exist_ok=True)
+        with open(
+            os.path.join(training_args.output_dir, "eval_results.json"), "w"
+        ) as f:
+            json.dump(eval_metrics, f)
+
+    # Predict
+    if training_args.do_predict:
+        print("Predicting oracle model...")
+        data_args.split = "validation"
+        eval_dataset = load_dataset(data_args.dataset)[data_args.split]
+
+        X_test = torch.tensor(eval_dataset["inputs_embeds"])
+        y_test = torch.tensor(eval_dataset["rewards"]).reshape(-1, 1)
+
+        # Save to jsonl file
+        y_test_dist = model.posterior(X_test)
+        y_test_hat = y_test_dist.sample(
+            sample_shape=torch.Size([1])).squeeze(-1)
+
+        with open(
+            os.path.join(training_args.output_dir, "predictions.jsonl"), "w"
+        ) as f:
+            for i in range(len(y_test)):
+                json.dump(
+                    {
+                        "inputs_embeds": X_test[i].tolist(),
+                        "rewards": y_test[i],
+                        "rewards_hat": y_test_hat[:, i],
+                    },
+                    f,
+                )
+
+
+def run_exp(
+    args: Optional[Dict[str, Any]] = None,
+    callbacks: Optional[List["TrainerCallback"]] = None,
+):
+    model_args, data_args, training_args, finetuning_args, _ = (
+        get_train_args(args)
+    )
+    callbacks = [LogCallback()] if callbacks is None else callbacks
+    run_surrogate(model_args, data_args, training_args,
+                  finetuning_args, callbacks)
+
+
+if __name__ == "__main__":
+    run_exp()

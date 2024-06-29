@@ -194,6 +194,21 @@ python test_oracle_convergence.py \
     --output_dir results
 ```
 
+### 2.4 Surrogate model testing
+To test the performance of the surrogate model, we can run below script. This script will output the performance of the surrogate model on the test set. The dataset used in this script is the same as the one used in the oracle training step.
+```bash
+python surr_model.py \
+    --seed 2 \
+    --do_train \
+    --do_eval \
+    --template default \
+    --model_name_or_path bayesridge \
+    --dataset_dir data \
+    --dataset <HF_USER>/<HF_MODEL> \
+    --preprocessing_num_workers 32 \
+    --output_dir ckpts/surr_model-seed2
+```
+
 ## 3 Runing full pipeline code
 Currently, this code is only support HES-TS-AM acquision function. Some notes are: 
 - The world model should has the same embedding model with oracle.
