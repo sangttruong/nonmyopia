@@ -3,16 +3,15 @@ import pickle
 from typing import Any, Dict, List, Optional
 from datasets import concatenate_datasets, Dataset, Features, Value
 
-from llmtuner.hparams import get_bo_args
 from llmtuner.extras.callbacks import LogCallback
-
 from llmtuner.data.loader import load_single_dataset
 from llmtuner.data.parser import get_dataset_list
 from llmtuner.data.utils import merge_dataset
 
-from oracle import Oracle
-from llm_sequence_design.surr_model import SurrModel
 from actor import Actor
+from hparams import get_bo_args
+from oracle import Oracle
+from surr_model import SurrModel
 from utils import (
     set_seed,
     random_sampling,
@@ -20,7 +19,7 @@ from utils import (
 
 
 def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["TrainerCallback"]] = None):
-    wm_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
+    surr_model_args, oracle_model_args, policy_model_args, data_args, training_args, \
         finetuning_args, generating_args, bo_args = get_bo_args(args)
     callbacks = [LogCallback()] if callbacks is None else callbacks
     # Set seed
@@ -28,7 +27,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
     # Initializing models
     oracle = Oracle(oracle_model_args, finetuning_args)
-    world_model = SurrModel(wm_model_args, finetuning_args)
+    surr_model = SurrModel(surr_model_args, finetuning_args)
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):
@@ -95,8 +94,8 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     # Startign BO loop
     for i in range(bo_args.algo_n_iterations):
         # Warming up reward models
-        world_model.load()
-        world_model.train(
+        surr_model.load()
+        surr_model.train(
             dataset=buffer["dataset"],
             training_args=training_args,
             data_args=data_args,
@@ -112,13 +111,13 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
         # Rollout training dataset for policy
         rollout_dataset = actor.rollout(
-            world_model,
+            surr_model,
             buffer["x"][-1],
             n_sequences=bo_args.rollout_sequences
         )
 
         # Unload LLM in world model
-        world_model.unload()
+        surr_model.unload()
 
         # Train new policy with rolled out dataset
         actor.load_policy(iteration=i)
@@ -127,18 +126,18 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
         # Get the next X
         server_process = actor.load_policy_inference()
-        world_model.load()
+        surr_model.load()
         iter_start_time = time.time()
 
         next_X = actor.query(
             prevX=buffer["x"],
             prevY=buffer["y"],
-            reward_model=world_model,
+            reward_model=surr_model,
             n_restarts=bo_args.n_restarts
         )
 
         iter_end_time = time.time()
-        world_model.unload()
+        surr_model.unload()
         actor.unload_policy_inference(server_process)
         print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
 
@@ -153,7 +152,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         print("Next X", next_X)
         print("Next y", next_y)
 
-        # Merge dataset for world_model
+        # Merge dataset for surr_model
         observed = Dataset.from_dict({"text": next_X, "reward": next_y})
         observed = observed.cast(
             Features({'text': Value(dtype='string'),
