@@ -151,9 +151,9 @@ CUDA_VISIBLE_DEVICES=0 accelerate launch \
     --output_dir ckpts/embedding
 ```
 
-Now, the newly created dataset needs to be added into the dataset_info.json file under <GIT_PATH>/nonmyopia/llm_sequence_design/data/dataset_info.json. Open the file and insert:
+Now, the newly created dataset needs to be added into the dataset_info.json file under <GIT_PATH>/nonmyopia/llm_sequence_design/data/dataset_info.json. Open the file and insert (make sure to separate it from other models with a comma(,)):
 ```bash
-  "<HF_USER>/<HF_MODEL>": {
+    "<HF_USER>/<HF_MODEL>": {
     "hf_hub_url": "<HF_USER>/<HF_MODEL>",
     "formatting": "oracle"
   }
@@ -165,15 +165,13 @@ In this step, we simply train linear models using sklearn. Currently, three mode
 
 >Adapt the '--dataset' argument with the same personal variables as in '--wm_export_hub_model_id'. Automaticly, a huggingface dataset will be created with the same RepoID as your model's.
 ```bash
-python src/train_bash.py \
+python oracle.py \
     --seed 2 \
-    --stage oracle \
     --do_train \
     --do_eval \
     --template default \
     --model_name_or_path bayesridge \
     --dataset <HF_USER>/<HF_MODEL> \
-    --emb_enabled True \
     --label_names rewards \
     --val_size 0.0 \
     --preprocessing_num_workers 32 \
@@ -185,6 +183,9 @@ To selecct the most suited embedding model for next steps, we tested various wel
 ```bash
 python test_oracle.py
 ```
+
+### 2.4 Optimizing the reward model 
+,,,, 
 
 ## 3 Runing full pipeline code
 Currently, this code is only support HES-TS-AM acquision function. Some notes are: 

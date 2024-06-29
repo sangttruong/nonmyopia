@@ -12,6 +12,7 @@ import gc
 import json
 from utils import compute_regression_metrics
 from llmtuner.extras.callbacks import LogCallback
+from datasets import load_dataset
 
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
@@ -97,8 +98,6 @@ def run_oracle(
     finetuning_args: "FinetuningArguments",
     callbacks: Optional[List["TrainerCallback"]] = None,
 ):
-    assert data_args.emb_enabled, "Oracle model only supports embedding enabled dataset"
-
     if not os.path.exists(model_args.model_name_or_path):
         if model_args.model_name_or_path.lower() == "linear":
             model = LinearRegression()
@@ -118,8 +117,9 @@ def run_oracle(
     if training_args.do_train:
         print("Training oracle model...")
         data_args.split = "train"
-        train_dataset = get_dataset(None, model_args,
-                                    data_args, training_args, stage="oracle")
+        train_dataset = load_dataset(data_args.dataset)[data_args.split]
+        # train_dataset = load_dataset(
+        #     None, model_args, data_args, training_args, stage="oracle",)
 
         X_train = np.stack(train_dataset["inputs_embeds"])
         y_train = np.stack(train_dataset["rewards"])
@@ -141,8 +141,7 @@ def run_oracle(
     if training_args.do_eval:
         print("Evaluating oracle model...")
         data_args.split = "validation"
-        eval_dataset = get_dataset(None, model_args,
-                                   data_args, training_args, stage="oracle")
+        eval_dataset = load_dataset(data_args.dataset)[data_args.split]
 
         X_test = np.stack(eval_dataset["inputs_embeds"])
         y_test = np.stack(eval_dataset["rewards"])
@@ -159,8 +158,7 @@ def run_oracle(
     if training_args.do_predict:
         print("Predicting oracle model...")
         data_args.split = "validation"
-        eval_dataset = get_dataset(None, model_args,
-                                   data_args, training_args, stage="oracle")
+        eval_dataset = load_dataset(data_args.dataset)[data_args.split]
 
         X_test = np.array(eval_dataset.data["inputs_embeds"])
         y_test = np.array(eval_dataset.data["rewards"])
@@ -174,16 +172,9 @@ def run_oracle(
 
 
 def run_exp(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["TrainerCallback"]] = None):
-    model_args, data_args, training_args, finetuning_args, generating_args = get_train_args(
-        args)
+    model_args, data_args, training_args, finetuning_args, generating_args = get_train_args(args)
     callbacks = [LogCallback()] if callbacks is None else callbacks
-
-    if finetuning_args.stage == "oracle":
-        run_oracle(model_args, data_args, training_args,
-                   finetuning_args, callbacks)
-    else:
-        raise ValueError("Unknown task.")
-
+    run_oracle(model_args, data_args, training_args, finetuning_args, callbacks)
 
 if __name__ == "__main__":
     run_exp()
