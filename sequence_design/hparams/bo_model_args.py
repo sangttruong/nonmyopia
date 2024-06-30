@@ -8,7 +8,7 @@ class BOModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune or infer.
     """
 
-    wm_model_name_or_path: str = field(
+    surr_model_name_or_path: str = field(
         metadata={
             "help": "Path to the model weight or identifier from huggingface.co/models or modelscope.cn/models."
         },
@@ -23,7 +23,12 @@ class BOModelArguments:
             "help": "Path to the model weight or identifier from huggingface.co/models or modelscope.cn/models."
         },
     )
-    wm_adapter_name_or_path: Optional[str] = field(
+    surr_linear_head_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "Path to the linear head of surrogate model."},
+    )
+    surr_adapter_name_or_path: Optional[str] = field(
         default=None,
         metadata={
             "help": "Path to the adapter weight or identifier from huggingface.co/models."},
@@ -31,7 +36,7 @@ class BOModelArguments:
     oracle_linear_head_path: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Path to the linear head."},
+            "help": "Path to the linear head of the oracle."},
     )
     oracle_adapter_name_or_path: Optional[str] = field(
         default=None,
@@ -219,9 +224,9 @@ class BOModelArguments:
             raise ValueError(
                 "`split_special_tokens` is only supported for slow tokenizers.")
 
-        if self.wm_adapter_name_or_path is not None:  # support merging multiple lora weights
-            self.wm_adapter_name_or_path = [
-                path.strip() for path in self.wm_adapter_name_or_path.split(",")]
+        if self.surr_adapter_name_or_path is not None:  # support merging multiple lora weights
+            self.surr_adapter_name_or_path = [
+                path.strip() for path in self.surr_adapter_name_or_path.split(",")]
 
         if self.oracle_adapter_name_or_path is not None:  # support merging multiple lora weights
             self.oracle_adapter_name_or_path = [

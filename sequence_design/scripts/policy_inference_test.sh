@@ -1,7 +1,7 @@
 #### BELOW CODE IS USED TO TEST INFERENCE OF FINETUNED POLICY MODEL ####
 
 # Start the server
-CUDA_VISIBLE_DEVICES=2 API_PORT=1338 python src/api_demo.py \
+CUDA_VISIBLE_DEVICES=2 API_PORT=1338 python -m llmtunner.api_demo \
     --model_name_or_path meta-llama/Meta-Llama-3-8B-Instruct \
     --adapter_name_or_path ckpts/policy \
     --template llama3 \

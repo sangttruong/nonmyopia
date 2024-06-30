@@ -129,62 +129,84 @@ This might take a while, but we can use that time by creating a huggingface (HF)
 
 ## 2 Building Oracle
 
-First, cd into the llm_sequence_design folder <GIT_PATH>/nonmyopia/llm_sequence.
+First, cd into the sequence_design folder <GIT_PATH>/nonmyopia/sequence_design.
 Make sure, your conda environment is activated.
 
 ### 2.1 Data preprocessing and embedding
-Example with ESM2 model and Proteina Fluorescence dataset. 
->Adapt the '--wm_export_hub_model_id' and '--wm_hf_hub_token' arguments with your personal variable names.
+Example with LLaMa-2 model and Proteina Fluorescence dataset. 
+>Adapt the '--export_hub_model_id' and '--hf_hub_token' arguments with your personal variable names.
 ```bash
 CUDA_VISIBLE_DEVICES=0 accelerate launch \
-    --config_file examples/accelerate/single_config.yaml \
+    --config_file configs/single_config.yaml \
     extract_emb_dataset.py \
-    --oracle_model_name_or_path "" \
-    --wm_model_name_or_path facebook/esm2_t33_650M_UR50D \
-    --policy_model_name_or_path "" \
+    --model_name_or_path meta-llama/Llama-2-7b-hf \
+    --dataset_dir data \
     --template default \
     --dataset proteinea/fluorescence \
     --overwrite_cache False \
     --preprocessing_num_workers 8 \
     --num_train_epochs 0 \
-    --wm_export_hub_model_id <HF_USER>/<HF_MODEL> \
-    --wm_hf_hub_token <hf_token> \
+    --export_hub_model_id <HF_USER>/<HF_MODEL> \
+    --hf_hub_token <hf_token> \
     --output_dir ckpts/embedding
 ```
 
-Now, the newly created dataset needs to be added into the dataset_info.json file under <GIT_PATH>/nonmyopia/llm_sequence_design/data/dataset_info.json. Open the file and insert:
+Now, the newly created dataset needs to be added into the dataset_info.json file under <GIT_PATH>/nonmyopia/sequence_design/data/dataset_info.json. Open the file and insert (make sure to separate it from other models with a comma(,)):
 ```bash
   "<HF_USER>/<HF_MODEL>": {
-    "hf_hub_url": "<HF_USER>/<HF_MODEL>",
-    "formatting": "oracle"
+    "hf_hub_url": "<HF_USER>/<HF_MODEL>"
   }
 ```
+
+### List of supporting embedding models
+- meta-llama/Llama-2-7b-hf
+- meta-llama/Meta-Llama-3-8B
+- mistralai/Mistral-7B-v0.1
+- google/gemma-7b
+- zjunlp/llama-molinst-protein-7b
 
 ### 2.2 Training
 
 In this step, we simply train linear models using sklearn. Currently, three models are suppported: linear, ridge, bayesridge. 
 
->Adapt the '--dataset' argument with the same personal variables as in '--wm_export_hub_model_id'. Automaticly, a huggingface dataset will be created with the same RepoID as your model's.
+>Adapt the '--dataset' argument with the same personal variables as in '--export_hub_model_id'. Automaticly, a huggingface dataset will be created with the same RepoID as your model's.
+
 ```bash
-python src/train_bash.py \
+python oracle.py \
     --seed 2 \
-    --stage oracle \
     --do_train \
     --do_eval \
     --template default \
     --model_name_or_path bayesridge \
+    --dataset_dir data \
     --dataset <HF_USER>/<HF_MODEL> \
-    --emb_enabled True \
-    --label_names rewards \
-    --val_size 0.0 \
     --preprocessing_num_workers 32 \
     --output_dir ckpts/oracle_bayesridge-seed2
 ```
 
 ### 2.3 Embedding model selection
-To selecct the most suited embedding model for next steps, we tested various well-known LLMs. To do this, firstly, we embedd our dataset by various models, then run below script. Note: This script is designed to work with bayesridge and upto 7 embedding models, feel free to edit it by `hf_embedding_names` variable. 
+To selecct the most suited embedding model for next steps, we tested various well-known LLMs. To do this, firstly, we embedd our dataset by various models, then run below script. Note: Below script is an example of comparing 3 embedding models including LLaMa-2, Mistral, and LLaMa-3.
 ```bash
-python test_oracle.py
+python test_oracle_convergence.py \
+    --seed 2 \
+    --datasets ura-hcmut/proteinea_fluorescence-Llama-2-7b-hf-embedding ura-hcmut/proteinea_fluorescence-Mistral-7B-v0.1-embedding ura-hcmut/proteinea_fluorescence-Meta-Llama-3-8B-embedding \
+    --models LLaMa-2 Mistral LLaMa-3 \
+    --output_dir results
+```
+
+### 2.4 Surrogate model testing
+To test the performance of the surrogate model, we can run below script. This script will output the performance of the surrogate model on the test set. The dataset used in this script is the same as the one used in the oracle training step.
+```bash
+python surr_model.py \
+    --seed 2 \
+    --do_train \
+    --do_eval \
+    --template default \
+    --model_name_or_path bayesridge \
+    --dataset_dir data \
+    --dataset <HF_USER>/<HF_MODEL> \
+    --preprocessing_num_workers 32 \
+    --output_dir ckpts/surr_model-seed2
 ```
 
 ## 3 Runing full pipeline code

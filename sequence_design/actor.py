@@ -7,13 +7,13 @@ from functools import partial
 from transformers import DataCollatorWithPadding
 from typing import TYPE_CHECKING, List, Optional
 
-from src.llmtuner.extras.callbacks import FixValueHeadModelCallback
-from src.llmtuner.extras.callbacks import LogCallback
-from src.llmtuner.extras.misc import fix_valuehead_checkpoint
-from src.llmtuner.extras.ploting import plot_loss
-from src.llmtuner.train.utils import create_ref_model
-from src.llmtuner.data.preprocess import preprocess_unsupervised_dataset
-from src.llmtuner.data.template import get_template_and_fix_tokenizer
+from llmtuner.extras.callbacks import FixValueHeadModelCallback
+from llmtuner.extras.callbacks import LogCallback
+from llmtuner.extras.misc import fix_valuehead_checkpoint
+from llmtuner.extras.ploting import plot_loss
+from llmtuner.train.utils import create_ref_model
+from llmtuner.data.preprocess import preprocess_unsupervised_dataset
+from llmtuner.data.template import get_template_and_fix_tokenizer
 from acqfs import (
     acqf_random,
 )

@@ -21,13 +21,13 @@ from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
 from trl import PPOConfig, PPOTrainer
 from trl.core import PPODecorators, logprobs_from_logits
 
-from src.llmtuner.extras.callbacks import FixValueHeadModelCallback, LogCallback
-from src.llmtuner.extras.logging import get_logger
-from src.llmtuner.model import load_model, load_tokenizer
-from src.llmtuner.extras.misc import AverageMeter, count_parameters, get_current_device, get_logits_processor
-from src.llmtuner.train.utils import create_custom_optimzer, create_custom_scheduler
-from src.llmtuner.train.ppo.utils import dump_layernorm, get_rewards_from_server, replace_model, restore_layernorm
-from src.llmtuner.hparams import ModelArguments
+from llmtuner.extras.callbacks import FixValueHeadModelCallback, LogCallback
+from llmtuner.extras.logging import get_logger
+from llmtuner.model import load_model, load_tokenizer
+from llmtuner.extras.misc import AverageMeter, count_parameters, get_current_device, get_logits_processor
+from llmtuner.train.utils import create_custom_optimzer, create_custom_scheduler
+from llmtuner.train.ppo.utils import dump_layernorm, get_rewards_from_server, replace_model, restore_layernorm
+from llmtuner.hparams import ModelArguments
 
 from openai import OpenAI
 from configs import HISTORY_FORMAT, POLICY_PROMPT
