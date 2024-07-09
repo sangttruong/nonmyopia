@@ -3,7 +3,7 @@ from datasets import DatasetDict
 from llmtuner.hparams import get_train_args
 from llmtuner.data.parser import get_dataset_list
 from llmtuner.data.utils import merge_dataset
-from surr_model import SurrModel
+from llmtuner.model import load_model, load_tokenizer
 from utils import custom_load_dataset, get_dataset_embedding, save_to_pkl
 
 
@@ -11,8 +11,14 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks=None):
     model_args, data_args, training_args, finetuning_args, _ = get_train_args(
         args)
 
-    surr_model = SurrModel(model_args, finetuning_args)
-    surr_model.load()
+    tokenizer = load_tokenizer(model_args)
+    model = load_model(
+        tokenizer,
+        model_args,
+        finetuning_args,
+        is_trainable=False,
+        add_valuehead=False
+    )
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):
@@ -36,14 +42,14 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks=None):
             all_datasets, data_args, training_args)
 
     emb_testing_dataset = get_dataset_embedding(
-        testing_dataset, surr_model.model, surr_model.tokenizer, data_args)
+        testing_dataset, model, tokenizer, data_args)
     # save_to_pkl(emb_testing_dataset.data,
     #             f"data/{data_args.dataset.replace('/', '_')}-"
     #             f"{model_args.model_name_or_path.split('/')[-1]}-"
     #             "embedding-test.pkl")
 
     emb_training_dataset = get_dataset_embedding(
-        training_dataset, surr_model.model, surr_model.tokenizer, data_args)
+        training_dataset, model, tokenizer, data_args)
     # save_to_pkl(emb_training_dataset.data,
     #             f"data/{data_args.dataset.replace('/', '_')}-"
     #             f"{model_args.model_name_or_path.split('/')[-1]}-"
