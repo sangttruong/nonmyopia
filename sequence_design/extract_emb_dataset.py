@@ -11,6 +11,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks=None):
     model_args, data_args, training_args, finetuning_args, _ = get_train_args(
         args)
 
+    # Load (pre-trained) Tokenizer (according to model) and model via Llama-Factory functions
     tokenizer = load_tokenizer(model_args)
     model = load_model(
         tokenizer,
@@ -21,6 +22,8 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks=None):
     )
 
     # Initializing full dataset
+    # Just loading of dataset here. What are the different dataset_attr ??
+
     with training_args.main_process_first(desc="load training dataset"):
         all_datasets = []
         data_args.split = "train"
@@ -41,6 +44,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks=None):
         testing_dataset = merge_dataset(
             all_datasets, data_args, training_args)
 
+    # That's essentially the main part here: Getting the embeddings.
     emb_testing_dataset = get_dataset_embedding(
         testing_dataset, model, tokenizer, data_args)
     # save_to_pkl(emb_testing_dataset.data,
