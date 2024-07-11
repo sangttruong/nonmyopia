@@ -194,7 +194,20 @@ python test_oracle_convergence.py \
     --output_dir results
 ```
 
-### 2.4 Surrogate model testing
+### 2.4 Bayesian Ridge testing
+To test the Bayesian ridge implementation with BoTorch acquisition functions, please use the command below:
+```bash
+python test_bayesian_ridge.py
+```
+This script will use the ExpectedImprovement and ProbabilityOfImprovement acquisition functions from BoTorch. If you see the results of BoTorch (qEI, qPI) similar to manually computing (MC-EI, MC-PI), the implementation is correct. Below is an example:
+```
+qEI: tensor([0.0362])
+qPI: tensor([0.0815])
+MC-EI: tensor([[[0.0351]]])
+MC-PI: tensor([[[0.0828]]])
+```
+
+### 2.5 Surrogate model testing
 To test the performance of the surrogate model, we can run below script. This script will output the performance of the surrogate model on the test set. The dataset used in this script is the same as the one used in the oracle training step.
 ```bash
 python surr_model.py \
