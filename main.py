@@ -15,7 +15,7 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.models.transforms.outcome import Standardize
 from botorch.models.transforms.input import Normalize
 from botorch.models import SingleTaskGP
-from botorch import fit_gpytorch_model
+from botorch.fit import fit_gpytorch_mll
 from tensordict import TensorDict
 from tqdm import tqdm
 from argparse import ArgumentParser
@@ -385,7 +385,7 @@ def run_exp(parms, env) -> None:
         covar_module=parms.kernel,
     ).to(parms.device)
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
-    fit_gpytorch_model(mll)
+    fit_gpytorch_mll(mll)
     actor.construct_acqf(surr_model=surr_model, buffer=buffer[:continue_iter])
     actor.reset_parameters(buffer=buffer[:continue_iter], embedder=embedder)
 
@@ -401,7 +401,7 @@ def run_exp(parms, env) -> None:
             covar_module=parms.kernel,
         ).to(parms.device)
         mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
-        fit_gpytorch_model(mll)
+        fit_gpytorch_mll(mll)
 
         # Adjust lookahead steps
         if actor.algo_lookahead_steps > 1 and (
