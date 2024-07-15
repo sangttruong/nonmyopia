@@ -164,61 +164,6 @@ def compute_regression_metrics(eval_preds: Sequence[Union[np.array, Tuple[np.arr
     return emb_batches
 
 
-def get_dataset_embedding(dataset, model, tokenizer, data_args):
-
-    preprocess_func = partial(
-        tokenize_dataset, tokenizer=tokenizer, data_args=data_args
-    )
-    kwargs = dict(
-        num_proc=data_args.preprocessing_num_workers,
-        load_from_cache_file=(not data_args.overwrite_cache),
-        desc="Running tokenizer on dataset",
-    )
-    column_names = list(next(iter(dataset)).keys())
-
-    # Do the tokenization:
-    tokenized_dataset = dataset.map(preprocess_func, batched=True,
-                                    remove_columns=column_names, **kwargs)
-
-    # Now do some preparation for the embedding:
-    model_inputs = {
-        "inputs_embeds": [],
-        "rewards": []
-    }
-
-    for example in tqdm(tokenized_dataset):
-        input_ids = torch.tensor(
-            [example['input_ids']], device=model.model.device).long()
-        attention_mask = torch.tensor(
-            [example['attention_mask']], device=model.model.device).long()
-        #create an embedding model
-        embeds = model.model(
-            input_ids=input_ids,
-            attention_mask=attention_mask
-        )
-        # Find out the correct end_index 
-        #// Why do we define an end_index..? 
-        #// Wouldn't this just cut off the embedding vector later?
-    
-        if tokenizer.pad_token_id is None:
-            end_index = -1
-        else:
-            end_index = (input_ids[0] !=
-                         tokenizer.pad_token_id).nonzero()[-1].cpu()
-
-        # This is essentially where the embedding is drawn.
-        model_inputs['inputs_embeds'].append(
-            embeds.last_hidden_state[0][end_index].squeeze().detach().cpu().tolist())
-
-        # It seems that the tokenization yields sth like a reward...? What is this..?
-        model_inputs['rewards'].append(example['rewards'])
-
-    # Format the dictionary into an object of form "Dataset"
-    embeded_dataset = Dataset.from_dict(model_inputs)
-
-    return embeded_dataset
-
-
 def random_sampling(dataset, num_samples, *args, **kwargs):
     if "constrained_reward" in kwargs:
         dataset = dataset.filter(
