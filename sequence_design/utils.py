@@ -114,7 +114,6 @@ def compute_regression_metrics(eval_preds: Sequence[Union[np.array, Tuple[np.arr
             "rmse": root_mean_squared_error(labels, preds)}
 
 
-def get_embeddings(sentence_batches: list, model, tokenizer):
     """
     Function converts sentences into tokens and passes tokens
     through model to get the sentence embedding. Designed to take
@@ -139,9 +138,9 @@ def get_embeddings(sentence_batches: list, model, tokenizer):
     # Maybe tokenizer class is "Autotokenizer" (from transformer)
 
     emb_batches = []
-    batch_emb = []
 
-    for batch in sentence_batches:
+    for batch in tqdm(sentence_batches):
+        batch_emb = []
         for sentence in batch:
             # 1) Get Tokens of sentence
             sentence_tokens = tokenizer(sentence)["input_ids"]
@@ -163,6 +162,7 @@ def get_embeddings(sentence_batches: list, model, tokenizer):
             batch_emb.append(sentence_emb)
         emb_batches.append(batch_emb)
     return emb_batches
+
 
 def get_dataset_embedding(dataset, model, tokenizer, data_args):
 
