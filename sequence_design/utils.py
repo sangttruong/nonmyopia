@@ -114,39 +114,55 @@ def compute_regression_metrics(eval_preds: Sequence[Union[np.array, Tuple[np.arr
             "rmse": root_mean_squared_error(labels, preds)}
 
 
-def get_embeddings(SentenceBatches,model,tokenizer):
-    # Input:    - SentenceBathes: A list of batches of sentences as list(list(str))
-    #             one sentence is one string str.
-    #           - model: as defined in llmtuner.model
-    #           - tokenizer: as defined in llmtuner.model
-    # Output:   - EmbeddingBatches: Embeddings of each Sentence 
-    #             according to SentenceBatches structure: list(list(embeddings))
-    # Explanation: Function converts sentences into tokens and gets their embedding.
-    #             Can be called with multiple batches containing multiple sentences.
-    
-    EmbeddingBatches = []
-    BatchEmbedding = []
+def get_embeddings(sentence_batches: list, model, tokenizer):
+    """
+    Function converts sentences into tokens and passes tokens
+    through model to get the sentence embedding. Designed to take
+    multiple batches containing multiple sentences as input.
+    Here, one sentence is defined in one string (str)
 
-    for batch in SentenceBatches:
+    :param sentence_batches: A list of lists (batches) of sentences
+    :type sentence_batches: list(list(string))
+    :param model: LLM-style model consisting of model.model ("main model")
+        that transforms tokens & attention mask to embeddings and model.lm_head
+        ("linear adapter") that embeddings to next-word prediction
+    :type model: tbd
+    :param tokenizer: Tokenizer mapping strings to key-values
+    :type tokenizer: tbd
+
+    :return: Embeddings of each Sentence
+    :rtype: list(list(sentence_emb))
+    """
+
+    # for model and tokenizer class, I am not sure.
+    # I think model class is LlamaForCausalLM
+    # Maybe tokenizer class is "Autotokenizer" (from transformer)
+
+    emb_batches = []
+    batch_emb = []
+
+    for batch in sentence_batches:
         for sentence in batch:
-            ## Get Tokens of sentence
-            SentenceTokens = tokenizer(sentence)["input_ids"]
+            # 1) Get Tokens of sentence
+            sentence_tokens = tokenizer(sentence)["input_ids"]
 
-            ## Get Embeddings (hiddenstate of last input)
-            # make sure, model inputs are on same device as model 
-            # Attention mask is just a vector of ones, since we want attention on all tokens
-            InpIds=torch.tensor([SentenceTokens],device=model.model.device)
-            AttMask=torch.tensor([[1] * len(SentenceTokens)],device=model.model.device)
+            # 2) Get Embeddings (hiddenstate of last input)
+            # Generate model inputs on same device as model
+            # att_mask is vector of ones: we want attention on all tokens
+            tokens = torch.tensor([sentence_tokens], device=model.model.device)
+            att_mask = torch.tensor([[1] * len(sentence_tokens)],
+                                    device=model.model.device)
 
-            # get the actual embedding by calling the forward function of the main model. 
-            # Model consists of model.model("main model") and model.lm_head ("linear adapter")
-            SentenceEmbedding = model.model.forward(input_ids=InpIds,attention_mask=AttMask)\
-                                .last_hidden_state[0][-1].squeeze().detach().cpu().tolist()
+            # get embedding by calling forward function of main model.
+            sentence_emb = model.model.forward(
+                input_ids=tokens,
+                attention_mask=att_mask).last_hidden_state[0][-1]\
+                .squeeze().detach().cpu().tolist()
 
             # Now just handle list structure.
-            BatchEmbedding.append(SentenceEmbedding)
-        EmbeddingBatches.append(BatchEmbedding)
-    return EmbeddingBatches
+            batch_emb.append(sentence_emb)
+        emb_batches.append(batch_emb)
+    return emb_batches
 
 def get_dataset_embedding(dataset, model, tokenizer, data_args):
 
