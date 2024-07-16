@@ -16,6 +16,7 @@ from llmtuner.extras.callbacks import LogCallback
 
 from bayesian_ridge import BayesianRidgeModel
 from utils import get_dataset_embedding, compute_regression_metrics
+from embed_text_package import embed_text
 if TYPE_CHECKING:
     from transformers import Seq2SeqTrainingArguments, TrainerCallback
 
@@ -102,53 +103,28 @@ class MainModel:
 
     def predict(self, X, batch_size=32, **kwargs):
         # former Oracle forward
-        total_X = len(X)
-        outputs = []
+        sentence_batches = []
 
-        total_steps = total_X // batch_size
-        if total_steps * batch_size < total_X:
-            total_steps += 1
+        # Does it make sense to batch ??? getting embeddings could be one-liner
+        # Create batches
+        for i in tqdm(range(0, len(X), batch_size)):
+            batch_X = X[i:i + batch_size]
+            sentence_batches.append(batch_X)
 
-        for i in tqdm(range(total_steps)):
-            idx_start = i * batch_size
-            idx_end = min((i + 1) * batch_size, total_X)
+        # get embeddings
+        emb_batches = embed_text.get_embeddings(sentence_batches,
+                                                self.model,self.tokenizer)
 
-            batch_X = X[idx_start:idx_end]
+        # Un-batch
+        emb_all = [item for sublist in emb_batches for item in sublist]
 
-            model_inputs = self.tokenizer(
-                batch_X,
-                add_special_tokens=False,
-                return_tensors="pt",
-                padding=True
-            )
-            model_inputs = {k: v.to(self.model.device)
-                            for k, v in model_inputs.items()}
-            embeds = self.model.model(**model_inputs, **kwargs)
-
-            last_idxs = []
-            for i in range(embeds.last_hidden_state.size(0)):
-                if self.tokenizer.pad_token_id is None:
-                    end_index = -1
-                else:
-                    end_indexes = (
-                        model_inputs["input_ids"][i] != self.
-                        tokenizer.pad_token_id
-                    ).nonzero()
-                    end_index = end_indexes[-1].item() \
-                        if len(end_indexes) else 0
-
-                last_idxs.append(end_index)
-
-            embed_last_token = embeds.last_hidden_state[
-                list(range(len(last_idxs))), last_idxs
-            ]
-
-            y_mean = self.linear_head.predict(
-                embed_last_token.float().cpu().detach().numpy()
-            )
-            outputs.extend(y_mean.tolist())
-
-        return outputs
+        # Does this have to be done in batches ???
+        # pass embeddings through linear head
+        y_mean = self.linear_head.predict(
+            emb_all.float().cpu().detach().numpy()
+        )
+        return y_mean.tolist()
+        
 
     def sample(self, X, sample_size=1, **kwargs):
         posteriors = self.posterior_predictive(X=X, **kwargs)
@@ -172,6 +148,7 @@ class MainModel:
         surr_training_args.output_dir = os.path.join(
             training_args.output_dir, "surr_model")
 
+        # This can be replaced by the more efficient method in ext_emb
         dataset_emb = get_dataset_embedding(
             dataset, self.model, self.tokenizer, data_args)
 
