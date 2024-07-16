@@ -8,23 +8,17 @@ r"""Run the main experiments."""
 
 from utils import set_seed, make_env, str2bool, make_save_dir
 from env_embedder import DiscreteEmbbeder
-from acqfs import qCostFunction, qLossFunctionTopK, qCostFunctionEditDistance
+from acqfs import qCostFunction, qLossFunctionTopK
 from actor import Actor
-from gpytorch.constraints import Interval
 from gpytorch.mlls import ExactMarginalLogLikelihood
-from botorch.models.transforms.outcome import Standardize
-from botorch.models.transforms.input import Normalize
 from botorch.models import SingleTaskGP
 from botorch.fit import fit_gpytorch_mll
 from tensordict import TensorDict
-from tqdm import tqdm
 from argparse import ArgumentParser
 import numpy as np
-import random
 import wandb
 import torch
 import time
-import copy
 import os
 
 os.environ["OMP_NUM_THREADS"] = "2"

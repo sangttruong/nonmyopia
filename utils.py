@@ -1,9 +1,9 @@
 import os
 import torch
 import random
+import argparse
 import itertools
 import numpy as np
-import dill as pickle
 from tueplots import bundles
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -27,11 +27,13 @@ from botorch.test_functions.synthetic import (
 from botorch.sampling.normal import SobolQMCNormalSampler
 
 from acqfs import qBOAcqf
+
 # from synthetic_functions.alpine import AlpineN1
 # from synthetic_functions.syngp import SynGP
 from env_wrapper import EnvWrapper
 
 plt.rcParams.update(bundles.iclr2023())
+
 
 def set_seed(seed):
     random.seed(seed)
@@ -61,7 +63,7 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
         f_ = Griewank(dim=x_dim, negate=True, noise_std=noise_std)
     elif name == "Hartmann":
         f_ = Hartmann(dim=x_dim, negate=True, noise_std=noise_std)
-    elif name == "HolderTable": 
+    elif name == "HolderTable":
         f_ = HolderTable(negate=True, noise_std=noise_std)
     elif name == "Levy":
         f_ = Levy(dim=x_dim, negate=True, noise_std=noise_std)
@@ -84,20 +86,20 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
 
     # Wrapper for normalizing output
     f = EnvWrapper(name, f_)
-    f.noise_std = noise_std * (f.range_y[1] - f.range_y[0]) /  100
-    
+    f.noise_std = noise_std * (f.range_y[1] - f.range_y[0]) / 100
+
     return f
 
 
 def str2bool(v):
     if isinstance(v, bool):
         return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+    if v.lower() in ("yes", "true", "t", "y", "1"):
         return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+    elif v.lower() in ("no", "false", "f", "n", "0"):
         return False
     else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
+        raise argparse.ArgumentTypeError("Boolean value expected.")
 
 
 def make_save_dir(config):
@@ -107,15 +109,17 @@ def make_save_dir(config):
 
     if not os.path.exists(os.path.join(config.save_dir, "buffer.pt")):
         config.cont = False
-    
+
     if not config.cont and not os.path.exists(config.save_dir):
         dir_path.mkdir(parents=True, exist_ok=False)
     elif not config.cont and os.path.exists(config.save_dir):
         config.save_dir = str(dir_path)
     elif config.cont and not os.path.exists(config.save_dir):
-        print(f"WARNING: save_dir={config.save_dir} does not exist. Rerun from scratch.")
+        print(
+            f"WARNING: save_dir={config.save_dir} does not exist. Rerun from scratch."
+        )
         dir_path.mkdir(parents=True, exist_ok=False)
-        
+
     print(f"Created save_dir: {config.save_dir}")
 
     # Save config to save_dir as parameters.json
@@ -124,25 +128,29 @@ def make_save_dir(config):
         config_dict = str(config)
         file_handle.write(config_dict)
 
-def eval_func(
-    env, model, parms, buffer, iteration, embedder=None, *args, **kwargs
-):
+
+def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwargs):
     # Quality of the best decision from the current posterior distribution ###
     cost_fn = parms.cost_function_class(**parms.cost_func_hypers)
-    previous_cost = buffer["cost"][:iteration+1].sum() if iteration+1 > parms.n_initial_points else 0.0
-        
-    u_observed = torch.max(buffer["y"][:iteration+1]).item()
-    
+    previous_cost = (
+        buffer["cost"][: iteration + 1].sum()
+        if iteration + 1 > parms.n_initial_points
+        else 0.0
+    )
+
+    u_observed = torch.max(buffer["y"][: iteration + 1]).item()
+
     ######################################################################
-    
+
     if parms.algo.startswith("HES"):
         # Initialize A consistently across fantasies
-        A = buffer["x"][iteration].clone().repeat(
-            parms.n_restarts, parms.n_actions, 1)
+        A = buffer["x"][iteration].clone().repeat(parms.n_restarts, parms.n_actions, 1)
         A = A + torch.randn_like(A) * 0.01
         if embedder is not None:
             A = embedder.decode(A)
-            A = torch.nn.functional.one_hot(A, num_classes=parms.num_categories).to(parms.torch_dtype)
+            A = torch.nn.functional.one_hot(A, num_classes=parms.num_categories).to(
+                parms.torch_dtype
+            )
         A.requires_grad = True
 
         # Initialize optimizer
@@ -158,7 +166,9 @@ def eval_func(
             y_A = ppd.rsample()
 
             losses = loss_fn(A=actions, Y=y_A) + cost_fn(
-                prev_X=buffer["x"][iteration].expand_as(actions), current_X=actions, previous_cost=previous_cost
+                prev_X=buffer["x"][iteration].expand_as(actions),
+                current_X=actions,
+                previous_cost=previous_cost,
             )
             # >>> n_fantasy x batch_size
 
@@ -167,21 +177,19 @@ def eval_func(
             optimizer.step()
             optimizer.zero_grad()
 
-            if (i+1) % 200 == 0:
+            if (i + 1) % 200 == 0:
                 print(f"Eval optim round: {i+1}, Loss: {loss.item():.2f}")
 
         aidx = losses.squeeze(-1).argmin()
-        
+
     else:
         # Construct acqf
-        sampler = SobolQMCNormalSampler(
-            sample_shape=1, seed=0, resample=False
-        )
+        sampler = SobolQMCNormalSampler(sample_shape=1, seed=0, resample=False)
         nf_design_pts = [1]
-        
+
         acqf = qBOAcqf(
             name=parms.algo,
-            model=model, 
+            model=model,
             lookahead_steps=0 if parms.algo_lookahead_steps == 0 else 1,
             n_actions=parms.n_actions,
             n_fantasy_at_design_pts=nf_design_pts,
@@ -190,34 +198,34 @@ def eval_func(
             cost_function_class=parms.cost_function_class,
             cost_func_hypers=parms.cost_func_hypers,
             sampler=sampler,
-            best_f=buffer["y"][:iteration+1].max(),
+            best_f=buffer["y"][: iteration + 1].max(),
         )
 
         maps = []
         if parms.algo_lookahead_steps > 0:
-            x = buffer["x"][iteration].clone().repeat(
-                parms.n_restarts, 1)
+            x = buffer["x"][iteration].clone().repeat(parms.n_restarts, 1)
             if embedder is not None:
                 x = embedder.decode(x)
-                x = torch.nn.functional.one_hot(x, num_classes=parms.num_categories).to(parms.torch_dtype)
+                x = torch.nn.functional.one_hot(x, num_classes=parms.num_categories).to(
+                    parms.torch_dtype
+                )
             maps.append(x)
 
-        A = buffer["x"][iteration].clone().repeat(
-            parms.n_restarts * parms.n_actions, 1)
+        A = buffer["x"][iteration].clone().repeat(parms.n_restarts * parms.n_actions, 1)
         A = A + torch.randn_like(A) * 0.01
         if embedder is not None:
             A = embedder.decode(A)
-            A = torch.nn.functional.one_hot(A, num_classes=parms.num_categories).to(parms.torch_dtype)
+            A = torch.nn.functional.one_hot(A, num_classes=parms.num_categories).to(
+                parms.torch_dtype
+            )
         A.requires_grad = True
         maps.append(A)
-        
+
         # Initialize optimizer
         optimizer = torch.optim.AdamW([A], lr=parms.acq_opt_lr)
 
         # Get prevX, prevY
-        prev_X = buffer["x"][iteration: iteration+1].expand(
-            parms.n_restarts, -1
-        )
+        prev_X = buffer["x"][iteration:iteration + 1].expand(parms.n_restarts, -1)
         if embedder is not None:
             # Discretize: Continuous -> Discrete
             prev_X = embedder.decode(prev_X)
@@ -226,9 +234,11 @@ def eval_func(
             ).to(dtype=parms.torch_dtype)
             # >>> n_restarts x x_dim x n_categories
 
-        prev_y = buffer["y"][iteration: iteration+1].expand(
-            parms.n_restarts, -1
-        ).to(dtype=parms.torch_dtype)
+        prev_y = (
+            buffer["y"][iteration:iteration + 1]
+            .expand(parms.n_restarts, -1)
+            .to(dtype=parms.torch_dtype)
+        )
 
         for i in range(1000):
             return_dict = acqf.forward(
@@ -237,29 +247,30 @@ def eval_func(
                 prev_hid_state=None,
                 maps=maps,
                 embedder=embedder,
-                prev_cost=previous_cost
+                prev_cost=previous_cost,
             )
-            
-            losses = (return_dict["acqf_loss"] + return_dict["acqf_cost"])
+
+            losses = return_dict["acqf_loss"] + return_dict["acqf_cost"]
             # >>> n_fantasy_at_design_pts x batch_size
 
             loss = losses.mean()
-            grads = torch.autograd.grad(
-                loss, [A], allow_unused=True)
+            grads = torch.autograd.grad(loss, [A], allow_unused=True)
             for param, grad in zip([A], grads):
                 param.grad = grad
             optimizer.step()
             optimizer.zero_grad()
 
-            if (i+1) % 200 == 0:
+            if (i + 1) % 200 == 0:
                 print(f"Eval optim round: {i}, Loss: {loss.item():.2f}")
 
         aidx = losses.squeeze(-1).argmin()
         if embedder is not None:
-            A = A.reshape(parms.n_restarts, parms.n_actions, parms.x_dim, parms.num_categories)
+            A = A.reshape(
+                parms.n_restarts, parms.n_actions, parms.x_dim, parms.num_categories
+            )
         else:
             A = A.reshape(parms.n_restarts, parms.n_actions, parms.x_dim)
-    
+
     if embedder is not None:
         A_chosen = embedder.encode(A[aidx]).detach()
     else:
@@ -273,8 +284,8 @@ def eval_func(
 
 
 def draw_loss_and_cost(save_dir, losses, costs, iteration):
-    plt.plot(losses, label=f"Loss value")
-    plt.plot(costs, label=f"Cost value")
+    plt.plot(losses, label="Loss value")
+    plt.plot(costs, label="Cost value")
     plt.xlabel("Epoch")
     plt.ylabel("Value")
     plt.title(f"Loss and cost value at iteration {iteration}")
@@ -286,7 +297,7 @@ def draw_loss_and_cost(save_dir, losses, costs, iteration):
 def unif_random_sample_domain(domain, n=1):
     """Draws a sample uniformly at random from domain (a list of tuple bounds)."""
     list_of_arr_per_dim = [np.random.uniform(dom[0], dom[1], n) for dom in domain]
-    list_of_list_per_sample = [list(l) for l in np.array(list_of_arr_per_dim).T]
+    list_of_list_per_sample = [list(la) for la in np.array(list_of_arr_per_dim).T]
     return list_of_list_per_sample
 
 
@@ -391,7 +402,7 @@ def simple_list_distmat(xlist1, xlist2, weight=1.0, additive=False):
     len2 = len(xlist2)
     try:
         binary_mat = np.array([x[0] != x[1] for x in prod_list]).astype(int)
-    except:
+    except RuntimeWarning:
         # For cases where comparison returns iterable of bools
         binary_mat = np.array([all(x[0] != x[1]) for x in prod_list]).astype(int)
 
