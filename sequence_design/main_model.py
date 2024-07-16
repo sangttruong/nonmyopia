@@ -231,8 +231,8 @@ def run_model(
             training_args.output_dir, "model.joblib"))
 
         # Save results
-        y_test_dist = model.posterior(X_test)
-        y_test_hat = y_test_dist.sample(
+        y_train_dist = model.posterior(X_train)
+        y_train_hat = y_train_dist.sample(
             sample_shape=torch.Size([1])).mean(dim=0).numpy()
 
         train_metrics = compute_regression_metrics(
