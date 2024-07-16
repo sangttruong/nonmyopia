@@ -3,7 +3,7 @@ from datasets import DatasetDict
 from llmtuner.hparams import get_train_args
 from llmtuner.data.parser import get_dataset_list
 from llmtuner.data.utils import merge_dataset
-from surr_model import SurrModel
+from main_model import MainModel
 from utils import custom_load_dataset, get_dataset_embedding, save_to_pkl
 
 
@@ -11,7 +11,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks=None):
     model_args, data_args, training_args, finetuning_args, _ = get_train_args(
         args)
 
-    surr_model = SurrModel(model_args, finetuning_args)
+    surr_model = MainModel(model_args, finetuning_args)
     surr_model.load()
 
     # Initializing full dataset

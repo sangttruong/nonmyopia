@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-class SurrModel:
+class MainModel:
     def __init__(self, model_args, finetuning_args):
         self.tokenizer = None
         self.model = None
@@ -31,7 +31,7 @@ class SurrModel:
         self.finetuning_args = finetuning_args
 
         if model_args.linear_head_path:
-            print("Loading linear head of surrogate model...")
+            print("Loading linear head of model...")
             self.linear_head = joblib.load(model_args.linear_head_path)
 
     def load(self):
@@ -52,9 +52,12 @@ class SurrModel:
         torch.cuda.empty_cache()
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        return self.forward(*args, **kwargs)
+        # Changed to self.predict, instead of self.forward, which is now
+        # self.posterior_predictive
+        return self.predict(*args, **kwargs)
 
-    def forward(self, X, batch_size=32, **kwargs):
+    def posterior_predictive(self, X, batch_size=32, **kwargs):
+        # former surr_model forward
         total_X = len(X)
         posteriors = []
 
@@ -69,7 +72,8 @@ class SurrModel:
             batch_X = X[idx_start:idx_end]
 
             model_inputs = self.tokenizer(
-                batch_X, add_special_tokens=False, return_tensors="pt", padding=True)
+                batch_X, add_special_tokens=False,
+                return_tensors="pt", padding=True)
             model_inputs = {
                 k: v.to(self.model.device) for k, v in model_inputs.items()
             }
@@ -81,8 +85,10 @@ class SurrModel:
                     end_index = -1
                 else:
                     end_indexes = (
-                        model_inputs["input_ids"][i] != self.tokenizer.pad_token_id).nonzero()
-                    end_index = end_indexes[-1].item() if len(end_indexes) else 0
+                        model_inputs["input_ids"][i] != self.
+                        tokenizer.pad_token_id).nonzero()
+                    end_index = end_indexes[-1].item()\
+                        if len(end_indexes) else 0
 
                 last_idxs.append(end_index)
 
@@ -94,8 +100,58 @@ class SurrModel:
 
         return posteriors
 
+    def predict(self, X, batch_size=32, **kwargs):
+        # former Oracle forward
+        total_X = len(X)
+        outputs = []
+
+        total_steps = total_X // batch_size
+        if total_steps * batch_size < total_X:
+            total_steps += 1
+
+        for i in tqdm(range(total_steps)):
+            idx_start = i * batch_size
+            idx_end = min((i + 1) * batch_size, total_X)
+
+            batch_X = X[idx_start:idx_end]
+
+            model_inputs = self.tokenizer(
+                batch_X,
+                add_special_tokens=False,
+                return_tensors="pt",
+                padding=True
+            )
+            model_inputs = {k: v.to(self.model.device)
+                            for k, v in model_inputs.items()}
+            embeds = self.model.model(**model_inputs, **kwargs)
+
+            last_idxs = []
+            for i in range(embeds.last_hidden_state.size(0)):
+                if self.tokenizer.pad_token_id is None:
+                    end_index = -1
+                else:
+                    end_indexes = (
+                        model_inputs["input_ids"][i] != self.
+                        tokenizer.pad_token_id
+                    ).nonzero()
+                    end_index = end_indexes[-1].item() \
+                        if len(end_indexes) else 0
+
+                last_idxs.append(end_index)
+
+            embed_last_token = embeds.last_hidden_state[
+                list(range(len(last_idxs))), last_idxs
+            ]
+
+            y_mean = self.linear_head.predict(
+                embed_last_token.float().cpu().detach().numpy()
+            )
+            outputs.extend(y_mean.tolist())
+
+        return outputs
+
     def sample(self, X, sample_size=1, **kwargs):
-        posteriors = self.forward(X=X, **kwargs)
+        posteriors = self.o(X=X, **kwargs)
         posterior_preds = []
         for batch_posterior in posteriors:
             posterior_pred = batch_posterior.sample(
@@ -145,7 +201,7 @@ class SurrModel:
         return eval_metrics
 
 
-def run_surrogate(
+def run_model(
     model_args: "ModelArguments",
     data_args: "DataArguments",
     training_args: "Seq2SeqTrainingArguments",
@@ -155,12 +211,13 @@ def run_surrogate(
     model = None
     if model_args.model_name_or_path.lower() != "bayesridge":
         raise ValueError(
-            f"model_name_or_path {model_args.model_name_or_path} is not supported"
+            f"model_name_or_path {model_args.model_name_or_path} \
+            is not supported"
         )
 
     # Training
     if training_args.do_train:
-        print("Training surrogate model...")
+        print("Training model...")
         data_args.split = "train"
         train_dataset = load_dataset(data_args.dataset)[data_args.split]
 
@@ -174,9 +231,7 @@ def run_surrogate(
             training_args.output_dir, "model.joblib"))
 
         # Save results
-        y_train_dist = model.posterior(X_train)
-        y_train_hat = y_train_dist.sample(
-            sample_shape=torch.Size([1])).mean(dim=0).numpy()
+        y_train_hat = model.predict(X_train)
 
         train_metrics = compute_regression_metrics(
             (y_train_hat, y_train.numpy()))
@@ -197,6 +252,7 @@ def run_surrogate(
         y_test = torch.tensor(eval_dataset["rewards"]).reshape(-1, 1)
 
         # Save results
+        y_test_hat = model.predict(X_test)
         y_test_dist = model.posterior(X_test)
         y_test_hat = y_test_dist.sample(
             sample_shape=torch.Size([1])).mean(dim=0).numpy()
@@ -219,9 +275,7 @@ def run_surrogate(
         y_test = torch.tensor(eval_dataset["rewards"]).reshape(-1, 1)
 
         # Save to jsonl file
-        y_test_dist = model.posterior(X_test)
-        y_test_hat = y_test_dist.sample(
-            sample_shape=torch.Size([1])).squeeze(-1)
+        y_test_hat = model.predict(X_test)
 
         with open(
             os.path.join(training_args.output_dir, "predictions.jsonl"), "w"
@@ -245,8 +299,8 @@ def run_exp(
         get_train_args(args)
     )
     callbacks = [LogCallback()] if callbacks is None else callbacks
-    run_surrogate(model_args, data_args, training_args,
-                  finetuning_args, callbacks)
+    run_model(model_args, data_args, training_args,
+              finetuning_args, callbacks)
 
 
 if __name__ == "__main__":

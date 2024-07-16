@@ -10,8 +10,7 @@ from llmtuner.data.utils import merge_dataset
 
 from actor import Actor
 from hparams import get_bo_args
-from oracle import Oracle
-from surr_model import SurrModel
+from main_model import MainModel
 from utils import (
     set_seed,
     random_sampling,
@@ -26,8 +25,8 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     set_seed(training_args.seed)
 
     # Initializing models
-    oracle = Oracle(oracle_model_args, finetuning_args)
-    surr_model = SurrModel(surr_model_args, finetuning_args)
+    oracle = MainModel(oracle_model_args, finetuning_args)
+    surr_model = MainModel(surr_model_args, finetuning_args)
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):
@@ -63,7 +62,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     initial_dataset = random_sampling(
         training_dataset, num_samples=bo_args.initinal_sequences)
     # Query Oracle for y
-    initial_dataset_reward = oracle(
+    initial_dataset_reward = oracle.predict(
         initial_dataset["text"], batch_size=training_args.per_device_train_batch_size)
     initial_dataset = initial_dataset.remove_columns("reward").add_column(
         "reward", initial_dataset_reward).cast(initial_dataset.features)
@@ -72,7 +71,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     initial_sequences = random_sampling(
         testing_dataset, num_samples=bo_args.n_sequences, constrained_reward=2.0)
     # Query Oracle for y
-    initial_sequences_reward = oracle(
+    initial_sequences_reward = oracle.predict(
         initial_sequences["text"], batch_size=training_args.per_device_train_batch_size)
     initial_sequences = initial_sequences.remove_columns("reward").add_column(
         "reward", initial_sequences_reward).cast(initial_sequences.features)
@@ -143,7 +142,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
         # Query Oracle for y
         oracle.load()
-        next_y = oracle(
+        next_y = oracle.predict(
             next_X, batch_size=training_args.per_device_train_batch_size)
         oracle.unload()
 
