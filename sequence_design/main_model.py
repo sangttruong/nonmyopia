@@ -151,7 +151,7 @@ class MainModel:
         return outputs
 
     def sample(self, X, sample_size=1, **kwargs):
-        posteriors = self.o(X=X, **kwargs)
+        posteriors = self.posterior_predictive(X=X, **kwargs)
         posterior_preds = []
         for batch_posterior in posteriors:
             posterior_pred = batch_posterior.sample(
