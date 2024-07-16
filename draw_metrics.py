@@ -2,7 +2,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import os
-import argparse
 from pathlib import Path
 from tueplots import bundles
 
@@ -262,125 +261,113 @@ def draw_time(
     plt.close()
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
-
-
-print("Drawing runtime...")
-for env_discretized in env_discretizeds:
-    dict_metrics = {}
-    for env_name in env_names:
-        x_dim, bounds, radius, n_initial_points, algo_n_iterations = get_env_info(
-            env_name, device
-        )
-        for env_noise in env_noises:
-            for cost_fn in cost_functions:
-                for aid, algo in enumerate(algos):
-                    list_metrics = []
-                    for seed in seeds:
-                        buffer_file = f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/buffer.pt"
-                        if not os.path.exists(buffer_file) and not os.path.exists(
-                            f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
-                        ):
-                            continue
-                        try:
-                            buffer = torch.load(buffer_file, map_location=device)
-                        except RuntimeWarning:
-                            print(f"Ignore {buffer_file}")
-                            continue
-                        # >>> n_iterations x 1
-                        list_metrics.append(
-                            buffer["runtime"][n_initial_points:]
-                            .cpu()
-                            .unsqueeze(-1)
-                            .tolist()
-                        )
-
-                    if len(list_metrics) == 0:
-                        continue
-                    # >>> n_seeds x n_iterations x 1
-
-                    list_metrics = np.array(list_metrics).mean(keepdims=True)
-                    if np.isnan(np.sum(list_metrics)):
-                        continue
-
-                    if algos_name[aid] not in dict_metrics:
-                        dict_metrics[algos_name[aid]] = list_metrics
-                    else:
-                        dict_metrics[algos_name[aid]] = np.concatenate(
-                            [dict_metrics[algos_name[aid]], list_metrics], axis=0
-                        )
-
-    if len(dict_metrics) == 0:
-        continue
-
-    save_dir = Path("plots/runtime")
-    save_dir.mkdir(parents=True, exist_ok=True)
-    draw_time(
-        "",
-        dict_metrics,
-        f"plots/runtime/runtime{'_discretized' if env_discretized else ''}.png",
-    )
-
-
-# Create all triplet (env_name, env_noise, env_discretized)
-datasets = []
-for env_name in env_names:
-    for env_noise in env_noises:
-        for env_discretized in env_discretizeds:
-            datasets.append((env_name, env_noise, env_discretized))
-
-for dataset in datasets:
-    print("Drawing for dataset", dataset)
-    env_name, env_noise, env_discretized = dataset
-
-    for cost_fn in cost_functions:
+    print("Drawing runtime...")
+    for env_discretized in env_discretizeds:
         dict_metrics = {}
-        for aid, algo in enumerate(algos):
-            list_metrics = []
-            for seed in seeds:
-                if os.path.exists(
-                    f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
-                ):
-                    metrics = np.load(
-                        f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
-                    )
-                else:
-                    continue
+        for env_name in env_names:
+            x_dim, bounds, radius, n_initial_points, algo_n_iterations = get_env_info(
+                env_name, device
+            )
+            for env_noise in env_noises:
+                for cost_fn in cost_functions:
+                    for aid, algo in enumerate(algos):
+                        list_metrics = []
+                        for seed in seeds:
+                            buffer_file = f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/buffer.pt"
+                            if not os.path.exists(buffer_file) and not os.path.exists(
+                                f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
+                            ):
+                                continue
+                            try:
+                                buffer = torch.load(buffer_file, map_location=device)
+                            except RuntimeWarning:
+                                print(f"Ignore {buffer_file}")
+                                continue
+                            # >>> n_iterations x 1
+                            list_metrics.append(
+                                buffer["runtime"][n_initial_points:]
+                                .cpu()
+                                .unsqueeze(-1)
+                                .tolist()
+                            )
 
-                # >>> n_iterations x 3
-                list_metrics.append(metrics)
+                        if len(list_metrics) == 0:
+                            continue
+                        # >>> n_seeds x n_iterations x 1
 
-            if len(list_metrics) == 0:
-                continue
-            # >>> n_seeds x n_iterations x 3
+                        list_metrics = np.array(list_metrics).mean(keepdims=True)
+                        if np.isnan(np.sum(list_metrics)):
+                            continue
 
-            dict_metrics[algos_name[aid]] = np.array(list_metrics)[
-                ..., -1:
-            ]  # Get the Regret value
+                        if algos_name[aid] not in dict_metrics:
+                            dict_metrics[algos_name[aid]] = list_metrics
+                        else:
+                            dict_metrics[algos_name[aid]] = np.concatenate(
+                                [dict_metrics[algos_name[aid]], list_metrics], axis=0
+                            )
 
         if len(dict_metrics) == 0:
             continue
 
-        # >>> algo x n_seeds x n_iterations x 3
-        save_dir = Path(
-            f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}"
-        )
+        save_dir = Path("plots/runtime")
         save_dir.mkdir(parents=True, exist_ok=True)
-        draw_metric(
-            # ["$u_{observed}$", "$u_{posterior}$", "Regret"],
-            ["Regret"],
-            f"{'Discretized ' if env_discretized else ''}{env_name} with $\sigma=${env_noise}\% and {cost_function_names[cost_fn]}",
+        draw_time(
+            "",
             dict_metrics,
-            f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{cost_fn}.png",
+            f"plots/runtime/runtime{'_discretized' if env_discretized else ''}.png",
         )
+
+    # Create all triplet (env_name, env_noise, env_discretized)
+    datasets = []
+    for env_name in env_names:
+        for env_noise in env_noises:
+            for env_discretized in env_discretizeds:
+                datasets.append((env_name, env_noise, env_discretized))
+
+    for dataset in datasets:
+        print("Drawing for dataset", dataset)
+        env_name, env_noise, env_discretized = dataset
+
+        for cost_fn in cost_functions:
+            dict_metrics = {}
+            for aid, algo in enumerate(algos):
+                list_metrics = []
+                for seed in seeds:
+                    if os.path.exists(
+                        f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
+                    ):
+                        metrics = np.load(
+                            f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
+                        )
+                    else:
+                        continue
+
+                    # >>> n_iterations x 3
+                    list_metrics.append(metrics)
+
+                if len(list_metrics) == 0:
+                    continue
+                # >>> n_seeds x n_iterations x 3
+
+                dict_metrics[algos_name[aid]] = np.array(list_metrics)[
+                    ..., -1:
+                ]  # Get the Regret value
+
+            if len(dict_metrics) == 0:
+                continue
+
+            # >>> algo x n_seeds x n_iterations x 3
+            save_dir = Path(
+                f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}"
+            )
+            save_dir.mkdir(parents=True, exist_ok=True)
+            draw_metric(
+                # ["$u_{observed}$", "$u_{posterior}$", "Regret"],
+                ["Regret"],
+                f"{'Discretized ' if env_discretized else ''}{env_name} with $\sigma=${env_noise}\% and {cost_function_names[cost_fn]}",
+                dict_metrics,
+                f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{cost_fn}.png",
+            )
