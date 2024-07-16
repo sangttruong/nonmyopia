@@ -231,7 +231,9 @@ def run_model(
             training_args.output_dir, "model.joblib"))
 
         # Save results
-        y_train_hat = model.predict(X_train)
+        y_test_dist = model.posterior(X_test)
+        y_test_hat = y_test_dist.sample(
+            sample_shape=torch.Size([1])).mean(dim=0).numpy()
 
         train_metrics = compute_regression_metrics(
             (y_train_hat, y_train.numpy()))
@@ -252,7 +254,6 @@ def run_model(
         y_test = torch.tensor(eval_dataset["rewards"]).reshape(-1, 1)
 
         # Save results
-        y_test_hat = model.predict(X_test)
         y_test_dist = model.posterior(X_test)
         y_test_hat = y_test_dist.sample(
             sample_shape=torch.Size([1])).mean(dim=0).numpy()
@@ -275,7 +276,9 @@ def run_model(
         y_test = torch.tensor(eval_dataset["rewards"]).reshape(-1, 1)
 
         # Save to jsonl file
-        y_test_hat = model.predict(X_test)
+        y_test_dist = model.posterior(X_test)
+        y_test_hat = y_test_dist.sample(
+            sample_shape=torch.Size([1])).mean(dim=0).numpy()
 
         with open(
             os.path.join(training_args.output_dir, "predictions.jsonl"), "w"
