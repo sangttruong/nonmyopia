@@ -58,50 +58,60 @@ class MainModel:
         return self.predict(*args, **kwargs)
 
     def posterior_predictive(self, X, batch_size=32, **kwargs):
+        """
+        Generate posterior predictions for a given input dataset.
+
+        This method processes the input data in batches, generates embeddings,
+        and computes the posterior predictions using a linear head model.
+
+        :param X: List of input data samples.
+        :type X: list
+        :param batch_size: The size of the batches (default is 32).
+        :type batch_size: int, optional
+        :param **kwargs: Additional keyword arguments (currently unused).
+        :type **kwargs: dict
+
+        :return: List of lists of posterior predictions.
+        :rtype: list
+        """
         # former surr_model forward
-        total_X = len(X)
+        sentence_batches = []
+
+        # Does it make sense to batch ??? getting embeddings could be one-liner
+        # Create batches
+        for i in tqdm(range(0, len(X), batch_size)):
+            batch_X = X[i:i + batch_size]
+            sentence_batches.append(batch_X)
+
+        # get embeddings
+        emb_batches = embed_text.get_embeddings(sentence_batches,
+                                                self.model,self.tokenizer)
+
+        # pass embedding batches through linear head
         posteriors = []
-
-        total_steps = total_X // batch_size
-        if total_steps * batch_size < total_X:
-            total_steps += 1
-
-        for i in tqdm(range(total_steps)):
-            idx_start = i * batch_size
-            idx_end = min((i+1) * batch_size, total_X)
-
-            batch_X = X[idx_start:idx_end]
-
-            model_inputs = self.tokenizer(
-                batch_X, add_special_tokens=False,
-                return_tensors="pt", padding=True)
-            model_inputs = {
-                k: v.to(self.model.device) for k, v in model_inputs.items()
-            }
-            embeds = self.model.model(**model_inputs, **kwargs)
-
-            last_idxs = []
-            for i in range(embeds.last_hidden_state.size(0)):
-                if self.tokenizer.pad_token_id is None:
-                    end_index = -1
-                else:
-                    end_indexes = (
-                        model_inputs["input_ids"][i] != self.
-                        tokenizer.pad_token_id).nonzero()
-                    end_index = end_indexes[-1].item()\
-                        if len(end_indexes) else 0
-
-                last_idxs.append(end_index)
-
-            embed_last_token = embeds.last_hidden_state[list(
-                range(len(last_idxs))), last_idxs]
-
-            posterior = self.linear_head.posterior(embed_last_token.float())
-            posteriors.append(posterior)
+        for batch in emb_batches:
+            posteriors.append(self.linear_head.posterior(batch.float()))
 
         return posteriors
 
+
     def predict(self, X, batch_size=32, **kwargs):
+        """
+        Generate predictions for a given input dataset.
+
+        This method processes the input data in batches, generates embeddings,
+        and computes the predictions using a linear head model.
+
+        :param X: List of input data samples.
+        :type X: list
+        :param batch_size: The size of the batches (default is 32).
+        :type batch_size: int, optional
+        :param **kwargs: Additional keyword arguments (currently unused).
+        :type **kwargs: dict
+
+        :return: List of lists of predictions.
+        :rtype: list
+        """
         # former Oracle forward
         sentence_batches = []
 
@@ -115,15 +125,13 @@ class MainModel:
         emb_batches = embed_text.get_embeddings(sentence_batches,
                                                 self.model,self.tokenizer)
 
-        # Un-batch
-        emb_all = [item for sublist in emb_batches for item in sublist]
-
-        # Does this have to be done in batches ???
         # pass embeddings through linear head
-        y_mean = self.linear_head.predict(
-            emb_all.float().cpu().detach().numpy()
-        )
-        return y_mean.tolist()
+        y_mean = []
+        for batch in emb_batches:
+            y_mean.appen(self.linear_head.predict(
+                emb_all.float().cpu().detach().numpy()))
+
+        return y_mean
         
 
     def sample(self, X, sample_size=1, **kwargs):
