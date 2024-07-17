@@ -55,26 +55,32 @@ class SurrModel:
         return self.forward(*args, **kwargs)
 
     def forward(self, X, batch_size=32, **kwargs):
+        # Some Inits and preps
         total_X = len(X)
         posteriors = []
-
         total_steps = total_X // batch_size
         if total_steps * batch_size < total_X:
             total_steps += 1
 
+        # Iterate over the batches
         for i in tqdm(range(total_steps)):
+            # Some preps
             idx_start = i * batch_size
             idx_end = min((i+1) * batch_size, total_X)
-
             batch_X = X[idx_start:idx_end]
 
+            # Do the tokenization
             model_inputs = self.tokenizer(
                 batch_X, add_special_tokens=False, return_tensors="pt", padding=True)
+            # Move all keys and values of the List model_inputs to the same device (GPU) as model.
             model_inputs = {
                 k: v.to(self.model.device) for k, v in model_inputs.items()
             }
+            # Do the embedding // **model_inputs unpacks the keys and values into the model.model() function
+            # Model_inputs should be of form <input_ids, attention_mask>
             embeds = self.model.model(**model_inputs, **kwargs)
 
+            # Find last indexes for the embedding-extraction
             last_idxs = []
             for i in range(embeds.last_hidden_state.size(0)):
                 if self.tokenizer.pad_token_id is None:
@@ -86,15 +92,20 @@ class SurrModel:
 
                 last_idxs.append(end_index)
 
+            # Do the actual embedding extraction
             embed_last_token = embeds.last_hidden_state[list(
                 range(len(last_idxs))), last_idxs]
 
+            # Pass the embeddings through the linear_head model and get posterior
+            # as BoTorch.posterior Object. This has attributes mean and variance,
+            # So this represents a "kind-of posterior-predictive function": p(y_new|x_new,X_batch) where X: {x,y}
             posterior = self.linear_head.posterior(embed_last_token.float())
             posteriors.append(posterior)
 
         return posteriors
 
     def sample(self, X, sample_size=1, **kwargs):
+        # Get posterior arguments (y_mean, y_var)
         posteriors = self.forward(X=X, **kwargs)
         posterior_preds = []
         for batch_posterior in posteriors:
