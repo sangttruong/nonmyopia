@@ -16,8 +16,8 @@ from botorch.test_functions.synthetic import (
 from main import Parameters, make_env
 from acqfs import qBOAcqf
 from utils import set_seed, str2bool, eval_func
-# from synthetic_functions.alpine import AlpineN1
-# from synthetic_functions.syngp import SynGP
+from synthetic_functions.alpine import AlpineN1
+from synthetic_functions.syngp import SynGP
 from env_embedder import DiscreteEmbbeder
 from env_wrapper import EnvWrapper
 

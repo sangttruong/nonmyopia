@@ -13,8 +13,8 @@ from botorch.test_functions.synthetic import (
     SixHumpCamel,  # 2D SixHumpCamel function - Minimum
     StyblinskiTang,  # XD StyblinskiTang function - Minimum
 )
-# from synthetic_functions.alpine import AlpineN1
-# from synthetic_functions.syngp import SynGP
+from synthetic_functions.alpine import AlpineN1
+from synthetic_functions.syngp import SynGP
 from env_wrapper import EnvWrapper
 import matplotlib.pyplot as plt
 import numpy as np
