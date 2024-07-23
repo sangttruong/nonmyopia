@@ -4,16 +4,62 @@ import random
 import botorch
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from sklearn.datasets import fetch_openml
 from botorch.models.transforms.input import Normalize
 from botorch.utils import standardize
+from botorch.posteriors import GPyTorchPosterior
 from torch.distributions.multivariate_normal import MultivariateNormal
 
 from sequence_design.bayesian_ridge import BayesianRidgeModel
 
 
 class TestBayesianRidde(unittest.TestCase):
+    def test_forward(self):
+        dim = 8
+        rand_coef_ = np.random.rand(dim)
+        rand_intercept_ = np.random.rand(1).item()
+        rand_sigma_ = np.random.rand(dim, dim)
+        rand_alpha_ = (
+            np.random.rand(1).item() * np.random.randint(low=0, high=1e4, size=1).item()
+        )
+
+        model = BayesianRidgeModel(
+            train_X=torch.zeros([1, dim]),
+            train_Y=torch.zeros([1, 1]),
+        )
+
+        model.br_model.coef_ = rand_coef_
+        model.br_model.intercept_ = rand_intercept_
+        model.br_model.sigma_ = rand_sigma_
+        model.br_model.alpha_ = rand_alpha_
+
+        x_test = np.random.rand(100, dim)
+        y_test_dist = model.forward(torch.tensor(x_test))
+        y_test_mean = y_test_dist.mean
+        y_test_std = y_test_dist.covariance_matrix.diag()
+
+        y_test_mean_truth = x_test @ rand_coef_ + rand_intercept_
+        sigmas_squared_data = (np.dot(x_test, rand_sigma_) * x_test).sum(axis=1)
+        y_test_std_truth = np.sqrt(sigmas_squared_data + (1.0 / rand_alpha_))
+
+        assert (y_test_mean.numpy() == y_test_mean_truth).all()
+        assert (y_test_std.numpy() == y_test_std_truth).all()
+
+    def test_posterior(self):
+        dim = 8
+
+        model = BayesianRidgeModel(
+            train_X=torch.rand([100, dim]),
+            train_Y=torch.rand([100, 1]),
+        )
+        x_test = np.random.rand(100, dim)
+        y_test_dist = model.forward(torch.tensor(x_test))
+
+        y_test_posterior = model.posterior(torch.tensor(x_test))
+
+        assert isinstance(y_test_posterior, GPyTorchPosterior)
+        assert (y_test_posterior.mvn.mean == y_test_dist.mean).all()
+        assert (y_test_posterior.mvn.stddev == y_test_dist.stddev).all()
 
     def test_regression(self):
         co2 = fetch_openml(data_id=41187, as_frame=True)
@@ -45,37 +91,12 @@ class TestBayesianRidde(unittest.TestCase):
 
         posterior_predictive = model.posterior(torch.tensor(X_test))
         mean_y_pred = posterior_predictive.mean
-        std_y_pred = posterior_predictive.variance
 
         assert (
             torch.nn.functional.l1_loss(mean_y_pred, torch.tensor(y_test)).item() < 4.0
         )
 
-        plt.plot(X, y, color="black", linestyle="dashed", label="Measurements")
-        plt.plot(
-            X_test,
-            mean_y_pred,
-            color="tab:blue",
-            alpha=0.4,
-            label="Bayesian Ridge prediction",
-        )
-
-        plt.fill_between(
-            X_test.ravel(),
-            (mean_y_pred - std_y_pred).ravel(),
-            (mean_y_pred + std_y_pred).ravel(),
-            color="tab:blue",
-            alpha=0.2,
-        )
-        plt.legend()
-        plt.xlabel("Year")
-        plt.ylabel("Monthly average of CO$_2$ concentration (ppm)")
-        plt.title(
-            "Monthly average of air samples measurements\nfrom the Mauna Loa Observatory"
-        )
-        plt.savefig("bayesian_ridge_regression.png")
-
-    def test_conditional(self):
+    def test_condition(self):
         co2 = fetch_openml(data_id=41187, as_frame=True)
         co2_data = co2.frame
         co2_data["date"] = pd.to_datetime(co2_data[["year", "month", "day"]])
@@ -140,29 +161,20 @@ class TestBayesianRidde(unittest.TestCase):
             model, best_f, sampler
         )
         qei = qEI(test_X)
-        print("qEI:", qei)
 
         qPi = botorch.acquisition.monte_carlo.qProbabilityOfImprovement(
             model, best_f, sampler
         )
         qpi = qPi(test_X)
-        print("qPI:", qpi)
-
-        print("Test X:", test_X)
-        print("Posterior mean:", model.posterior(test_X).mean)
-        print("Posterior variance:", model.posterior(test_X).variance)
-
         dist = MultivariateNormal(
             model.posterior(test_X).mean, model.posterior(test_X).variance
         )
 
         samples = [torch.relu(dist.sample() - best_f) for _ in range(10000)]
         mean_ei = torch.mean(torch.stack(samples), dim=0)
-        print("MC-EI:", mean_ei)
 
         samples = [torch.sigmoid((dist.sample() - best_f) / 1e-3) for _ in range(10000)]
         mean_pi = torch.mean(torch.stack(samples), dim=0)
-        print("MC-PI:", mean_pi)
 
         assert abs(qei - mean_ei) < 0.5
         assert abs(qpi - mean_pi) < 0.5
