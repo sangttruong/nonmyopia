@@ -1,5 +1,6 @@
 import time
 import pickle
+from torch.utils.data import DataLoader
 from typing import Any, Dict, List, Optional
 from datasets import concatenate_datasets, Dataset, Features, Value
 
@@ -10,10 +11,12 @@ from llmtuner.data.utils import merge_dataset
 
 from actor import Actor
 from hparams import get_bo_args
-from main_model import MainModel
+from bayesian_ridge import BayesianRidgeModel
+from embed_text_package.embed_text import Embedder
 from utils import (
     set_seed,
     random_sampling,
+    load_bayesian_ridge_model
 )
 
 
@@ -23,10 +26,6 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     callbacks = [LogCallback()] if callbacks is None else callbacks
     # Set seed
     set_seed(training_args.seed)
-
-    # Initializing models
-    oracle = MainModel(oracle_model_args, finetuning_args)
-    surr_model = MainModel(surr_model_args, finetuning_args)
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):
@@ -55,15 +54,30 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
                      'reward': Value(dtype='float32')})
         )
 
-    # Initializing training buffer
-    oracle.load()
+    # Initializing embedding model
+    embeder = Embedder()
+    embeder.load(oracle_model_args.model_name_or_path)
 
+    # Initializing oracle model
+    X_train = embeder.get_embeddings(
+        DataLoader(training_dataset, batch_size=1), 
+        oracle_model_args.model_name_or_path, 
+        ["text"]
+    ).data["text"]
+    y_train = torch.tensor(train_dataset["rewards"]).reshape(-1, 1)
+    oracle = BayesianRidgeModel(X_train, y_train)
+
+    # Initializing training buffer
     # Randomly sample from training dataset
     initial_dataset = random_sampling(
         training_dataset, num_samples=bo_args.initinal_sequences)
     # Query Oracle for y
-    initial_dataset_reward = oracle.predict(
-        initial_dataset["text"], batch_size=training_args.per_device_train_batch_size)
+    initial_emb = embeder.get_embeddings(
+        DataLoader(initial_dataset, batch_size=1), 
+        oracle_model_args.model_name_or_path, 
+        ["text"]
+    ).data["text"]
+    initial_dataset_reward = oracle.predict(initial_emb.float().cpu().detach().numpy())
     initial_dataset = initial_dataset.remove_columns("reward").add_column(
         "reward", initial_dataset_reward).cast(initial_dataset.features)
 
@@ -71,15 +85,18 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     initial_sequences = random_sampling(
         testing_dataset, num_samples=bo_args.n_sequences, constrained_reward=2.0)
     # Query Oracle for y
-    initial_sequences_reward = oracle.predict(
-        initial_sequences["text"], batch_size=training_args.per_device_train_batch_size)
+    initial_seq_emb = embeder.get_embeddings(
+        DataLoader(initial_sequences, batch_size=1), 
+        oracle_model_args.model_name_or_path, 
+        ["text"]
+    ).data["text"]
+    initial_sequences_reward = oracle.predict(initial_seq_emb.float().cpu().detach().numpy())
     initial_sequences = initial_sequences.remove_columns("reward").add_column(
         "reward", initial_sequences_reward).cast(initial_sequences.features)
 
     # Merge initial_sequences to initial_dataset
     initial_dataset = concatenate_datasets(
         [initial_dataset, initial_sequences])
-    oracle.unload()
 
     buffer = {
         "dataset": initial_dataset,
@@ -93,14 +110,20 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     # Startign BO loop
     for i in range(bo_args.algo_n_iterations):
         # Warming up reward models
-        surr_model.load()
-        surr_model.train(
-            dataset=buffer["dataset"],
-            training_args=training_args,
-            data_args=data_args,
-            callbacks=callbacks,
-            iteration=i
+        dataset_emb = embeder.get_embeddings(
+            DataLoader(buffer["dataset"], batch_size=1), 
+            oracle_model_args.model_name_or_path, 
+            ["text"]
         )
+
+        X_train = dataset_emb.data["text"].to_pylist()
+        y_train = buffer["dataset"].data["rewards"].to_pylist()
+        X_train = torch.tensor(X_train)
+        y_train = torch.tensor(y_train).reshape(-1, 1)
+
+        surr_model = BayesianRidgeModel(X_train, y_train)
+        # -------------------------------------------------------
+
 
         # Adjusting the lookahead steps
         if actor.algo_lookahead_steps > 1 and (
@@ -115,9 +138,6 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
             n_sequences=bo_args.rollout_sequences
         )
 
-        # Unload LLM in world model
-        surr_model.unload()
-
         # Train new policy with rolled out dataset
         actor.load_policy(iteration=i)
         actor.train_policy(dataset=rollout_dataset, data_args=data_args)
@@ -125,7 +145,6 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
         # Get the next X
         server_process = actor.load_policy_inference()
-        surr_model.load()
         iter_start_time = time.time()
 
         next_X = actor.query(
@@ -136,15 +155,17 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         )
 
         iter_end_time = time.time()
-        surr_model.unload()
         actor.unload_policy_inference(server_process)
         print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
 
         # Query Oracle for y
-        oracle.load()
-        next_y = oracle.predict(
-            next_X, batch_size=training_args.per_device_train_batch_size)
-        oracle.unload()
+        observed = Dataset.from_dict({"text": next_X})
+        observed_emb = embeder.get_embeddings(
+            DataLoader(observed, batch_size=1), 
+            oracle_model_args.model_name_or_path, 
+            ["text"]
+        ).data["text"]
+        next_y = oracle.predict(observed_emb.float().cpu().detach().numpy())
 
         buffer["x"].append(next_X)
         buffer["y"].append(next_y)

@@ -1,6 +1,7 @@
 import os
 import json
 import torch
+import joblib
 import pickle
 import random
 import psutil
@@ -23,6 +24,10 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def load_bayesian_ridge_model(ckpt):
+    return joblib.load(ckpt)
 
 
 def convert_oracle(examples, dataset_attr):
