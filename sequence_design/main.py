@@ -120,12 +120,12 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
         surr_model.unload()
 
         # Train new policy with rolled out dataset
-        actor.load_policy(iteration=i)
+        actor.policy.load(iteration=i)
         actor.train_policy(dataset=rollout_dataset, data_args=data_args)
-        actor.unload_policy()
+        actor.policy.unload()
 
         # Get the next X
-        server_process = actor.load_policy_inference()
+        server_process = actor.policy.load_inference()
         surr_model.load()
         iter_start_time = time.time()
 
@@ -138,7 +138,7 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
 
         iter_end_time = time.time()
         surr_model.unload()
-        actor.unload_policy_inference(server_process)
+        actor.policy.unload_inference(server_process)
         print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
 
         # Query Oracle for y
