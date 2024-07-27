@@ -11,7 +11,7 @@ from llmtuner.data.utils import merge_dataset
 from actor import Actor
 from hparams import get_bo_args
 from oracle import Oracle
-from surr_model import SurrModel
+# from surr_model import SurrModel
 from utils import (
     set_seed,
     random_sampling,
@@ -26,8 +26,8 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     set_seed(training_args.seed)
 
     # Initializing models
-    oracle = Oracle(oracle_model_args, finetuning_args)
-    surr_model = SurrModel(surr_model_args, finetuning_args)
+    # oracle = Oracle(oracle_model_args, finetuning_args)
+    # surr_model = SurrModel(surr_model_args, finetuning_args)
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):
@@ -94,14 +94,14 @@ def main(args: Optional[Dict[str, Any]] = None, callbacks: Optional[List["Traine
     # Startign BO loop
     for i in range(bo_args.algo_n_iterations):
         # Warming up reward models
-        surr_model.load()
-        surr_model.train(
-            dataset=buffer["dataset"],
-            training_args=training_args,
-            data_args=data_args,
-            callbacks=callbacks,
-            iteration=i
-        )
+        # surr_model.load()
+        # surr_model.train(
+        #     dataset=buffer["dataset"],
+        #     training_args=training_args,
+        #     data_args=data_args,
+        #     callbacks=callbacks,
+        #     iteration=i
+        # )
 
         # Adjusting the lookahead steps
         if actor.algo_lookahead_steps > 1 and (

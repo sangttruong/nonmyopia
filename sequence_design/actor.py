@@ -14,16 +14,16 @@ from llmtuner.extras.ploting import plot_loss
 from llmtuner.train.utils import create_ref_model
 from llmtuner.data.preprocess import preprocess_unsupervised_dataset
 from llmtuner.data.template import get_template_and_fix_tokenizer
-from acqfs import (
-    acqf_random,
-)
+
 from configs import ALLOWED_TOKENS
 from policy import Policy, PolicyPPOTrainer
+from utils import start_process
 
 def collate_fn(data):
     zipped = zip(data)
     return list(zipped)
-    
+
+
 class Actor:
     def __init__(self, bo_args, policy_model_args, policy_finetuning_args, data_args, training_args, generating_args):
         self.bo_args = bo_args
@@ -152,12 +152,8 @@ class Actor:
         
         return Dataset.from_dict(data_dict)
 
-    def train_policy(
-        self,
-        dataset,
-        data_args,
-        callbacks: Optional[List["TrainerCallback"]] = None,
-    ) -> None:
+    def format_query(self, dataset, data_args):
+        # We must convert to HF formating code
         template = get_template_and_fix_tokenizer(self.policy.tokenizer, data_args.template)
         preprocess_func = partial(
             preprocess_unsupervised_dataset, tokenizer=self.policy.tokenizer, template=template, data_args=data_args
@@ -170,43 +166,25 @@ class Actor:
                 desc="Running tokenizer on dataset",
             )
 
+        # Dataset must have a column 'text'
         dataset = dataset.map(preprocess_func, batched=True,
                               remove_columns=["prompt", "response", "system", "tools", "reward"], **kwargs)
+
+    def train_policy(
+        self,
+        dataset,
+        data_args
+    ) -> None:
+        format_query(dataset, data_args)
         
-        # Set callbacks
-        callbacks = [LogCallback()] if callbacks is None else callbacks
-
-        # use left-padding in generation while using right-padding in training
-        self.policy.tokenizer.padding_side = "left"
-        self.training_args.remove_unused_columns = False  # important for pairwise dataset
-
-        # Create reference model
-        ref_model = create_ref_model(
-            self.policy_model_args, self.policy_finetuning_args, add_valuehead=True)
-
-        # Initialize our Trainer
-        ppo_trainer = PolicyPPOTrainer(
-            model_args=self.policy_model_args,
-            training_args=self.training_args,
-            finetuning_args=self.policy_finetuning_args,
-            generating_args=self.generating_args,
-            callbacks=callbacks + [FixValueHeadModelCallback()],
-            model=self.policy.model,
-            ref_model=ref_model,
-            tokenizer=self.policy.tokenizer,
-            dataset=dataset,
-            data_collator=collate_fn,
+        start_process(
+            "python -m llmppo.reward_server --model acqf.EI &"
+        )
+        
+        start_process(
+            "accelerate launch -m llmppo.ppo --config configs/ppo.yaml"
         )
 
-        # Training
-        if self.training_args.do_train:
-            ppo_trainer.ppo_train(
-                resume_from_checkpoint=self.training_args.resume_from_checkpoint)
-            ppo_trainer.save_model()
-            if self.training_args.should_save:
-                fix_valuehead_checkpoint(
-                    self.policy.model, self.training_args.output_dir, self.training_args.save_safetensors)
-            ppo_trainer.save_state()  # must be called after save_model to have a folder
-            if ppo_trainer.is_world_process_zero() and self.policy_finetuning_args.plot_loss:
-                plot_loss(self.training_args.output_dir,
-                          keys=["loss", "reward"])
+        kill_process(
+            "python -m llmppo.reward_server --model acqf.EI &"
+        )
