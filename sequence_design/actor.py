@@ -41,18 +41,6 @@ class Actor:
 
         if self.bo_args.algo != "HES-TS-AM":
             raise NotImplementedError
-
-    def load_policy(self, *args, **kwargs):
-        self.policy.load(*args, **kwargs)
-
-    def unload_policy(self):
-        self.policy.unload()
-
-    def load_policy_inference(self, *args, **kwargs):
-        return self.policy.load_inference(*args, **kwargs)
-
-    def unload_policy_inference(self, *args, **kwargs):
-        return self.policy.unload_inference(*args, **kwargs)
         
     def query(self, prevX, prevY, reward_model, n_restarts=3):
         # Query the next sequence
