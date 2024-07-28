@@ -6,26 +6,21 @@
 
 r"""Run the main experiments."""
 
-from utils import set_seed, make_env, str2bool, make_save_dir, eval_and_plot
+from utils import set_seed, make_env, str2bool, make_save_dir
 from env_embedder import DiscreteEmbbeder
-from acqfs import qCostFunction, qLossFunctionTopK, qCostFunctionEditDistance
+from acqfs import qCostFunction, qLossFunctionTopK
 from actor import Actor
-from gpytorch.constraints import Interval
 from gpytorch.mlls import ExactMarginalLogLikelihood
-from botorch.models.transforms.outcome import Standardize
-from botorch.models.transforms.input import Normalize
 from botorch.models import SingleTaskGP
-from botorch import fit_gpytorch_model
+from botorch.fit import fit_gpytorch_mll
 from tensordict import TensorDict
-from tqdm import tqdm
 from argparse import ArgumentParser
 import numpy as np
-import random
 import wandb
 import torch
 import time
-import copy
 import os
+
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["OPENBLAS_NUM_THREADS"] = "2"
 os.environ["MKL_NUM_THREADS"] = "2"
@@ -69,7 +64,7 @@ class Parameters:
         if self.algo.startswith("HES"):
             self.n_restarts = 16
             self.algo = "HES"
-            self.algo_lookahead_steps = int(args.algo.split('-')[-1])
+            self.algo_lookahead_steps = int(args.algo.split("-")[-1])
             self.algo_ts = "TS" in args.algo
             self.amortized = "AM" in args.algo
         elif self.algo == "qMSL":
@@ -214,11 +209,12 @@ class Parameters:
         n_partitions = int(self.n_initial_points ** (1 / self.x_dim))
         remaining_points = self.n_initial_points - n_partitions**self.x_dim
         ranges = np.linspace(
-            self.bounds[..., 0], self.bounds[..., 1], n_partitions+1).T
+            self.bounds[..., 0], self.bounds[..., 1], n_partitions + 1
+        ).T
         range_bounds = np.stack((ranges[:, :-1], ranges[:, 1:]), axis=-1)
-        cartesian_idxs = np.array(np.meshgrid(*([list(range(n_partitions))] * self.x_dim))).T.reshape(
-            -1, self.x_dim
-        )
+        cartesian_idxs = np.array(
+            np.meshgrid(*([list(range(n_partitions))] * self.x_dim))
+        ).T.reshape(-1, self.x_dim)
         cartesian_rb = range_bounds[list(range(self.x_dim)), cartesian_idxs]
 
         self.initial_points = np.concatenate(
@@ -240,10 +236,9 @@ class Parameters:
         # * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
         self.env_noise = args.env_noise
         self.bounds = torch.tensor(
-            self.bounds, dtype=self.torch_dtype, device=self.device)
-        self.save_dir = (
-            f"./results/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{self.seed}"
+            self.bounds, dtype=self.torch_dtype, device=self.device
         )
+        self.save_dir = f"./results/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{self.seed}"
 
         if args.env_discretized:
             self.env_discretized = True
@@ -377,15 +372,15 @@ def run_exp(parms, env) -> None:
 
     # Warm-up parameters
     surr_model = SingleTaskGP(
-        buffer["x"][: continue_iter],
-        buffer["y"][: continue_iter],
+        buffer["x"][:continue_iter],
+        buffer["y"][:continue_iter],
         # input_transform=Normalize(
         #     d=parms.x_dim, bounds=parms.bounds.T),
         # outcome_transform=Standardize(1),
         covar_module=parms.kernel,
     ).to(parms.device)
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
-    fit_gpytorch_model(mll)
+    fit_gpytorch_mll(mll)
     actor.construct_acqf(surr_model=surr_model, buffer=buffer[:continue_iter])
     actor.reset_parameters(buffer=buffer[:continue_iter], embedder=embedder)
 
@@ -401,7 +396,7 @@ def run_exp(parms, env) -> None:
             covar_module=parms.kernel,
         ).to(parms.device)
         mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
-        fit_gpytorch_model(mll)
+        fit_gpytorch_mll(mll)
 
         # Adjust lookahead steps
         if actor.algo_lookahead_steps > 1 and (
@@ -416,11 +411,7 @@ def run_exp(parms, env) -> None:
 
         # Query and observe next point
         query_start_time = time.time()
-        output = actor.query(
-            buffer=buffer,
-            iteration=i,
-            embedder=embedder
-        )
+        output = actor.query(buffer=buffer, iteration=i, embedder=embedder)
         query_end_time = time.time()
 
         # Save output to buffer
@@ -431,35 +422,23 @@ def run_exp(parms, env) -> None:
         buffer["cost"][i] = output["cost"]
         buffer["runtime"][i] = query_end_time - query_start_time
 
-        # Evaluate and plot
-        ## Separated ##
-        # eval_and_plot(
-        #     env=env,
-        #     model=surr_model,
-        #     parms=parms,
-        #     buffer=buffer,
-        #     next_x=output["next_X"],
-        #     iteration=i,
-        #     embedder=embedder,
-        #     actions=output["actions"],
-        # )
-
         # Save buffer to file after each iteration
         torch.save(buffer, f"{parms.save_dir}/buffer.pt")
         print("Buffer saved to file.")
 
         # Save model to file after each iteration
-        torch.save(surr_model.state_dict(),
-                   f"{parms.save_dir}/surr_model_{i}.pt")
+        torch.save(surr_model.state_dict(), f"{parms.save_dir}/surr_model_{i}.pt")
         print("Model saved to file.")
 
         # Report to wandb
-        wandb.log({
-            "x": buffer["x"][i],
-            "y": buffer["y"][i],
-            "cost": buffer["cost"][i],
-            "runtime": buffer["runtime"][i]
-        })
+        wandb.log(
+            {
+                "x": buffer["x"][i],
+                "y": buffer["y"][i],
+                "cost": buffer["cost"][i],
+                "runtime": buffer["runtime"][i],
+            }
+        )
 
 
 if __name__ == "__main__":
@@ -473,7 +452,7 @@ if __name__ == "__main__":
         "cost_fn": "euclidean",
         "plot": False,
         "gpu_id": 0,
-        "cont": False
+        "cont": False,
     }
     # WandB start
     wandb.init(project="nonmyopia", config=default_config)

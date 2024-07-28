@@ -8,10 +8,8 @@ r"""Implement an actor."""
 import gc
 import math
 import torch
-from torch import Tensor
 from tqdm import tqdm
 
-from botorch.optim.optimize import optimize_acqf, optimize_acqf_discrete
 from botorch.sampling.normal import SobolQMCNormalSampler
 from amortized_network import AmortizedNetwork, Project2Range
 from acqfs import qBOAcqf, qMultiStepHEntropySearch
@@ -210,7 +208,7 @@ class Actor:
                 if embedder is not None:
                     x = embedder.decode(x)
                     x = torch.nn.functional.one_hot(
-                        x, num_classes=self.parms.num_categories).to(parms.torch_dtype)
+                        x, num_classes=self.parms.num_categories).to(self.parms.torch_dtype)
                 self.maps.append(x.requires_grad_(True))
 
             a = torch.rand(
@@ -225,7 +223,7 @@ class Actor:
             if embedder is not None:
                 a = embedder.decode(a)
                 a = torch.nn.functional.one_hot(
-                    a, num_classes=self.parms.num_categories).to(parms.torch_dtype)
+                    a, num_classes=self.parms.num_categories).to(self.parms.torch_dtype)
             self.maps.append(a.requires_grad_(True))
             self._parameters = self.maps
 
@@ -319,7 +317,7 @@ class Actor:
         ) if iteration > self.parms.n_initial_points else 0.0
 
         # Optimize the acquisition function
-        optimizer = torch.optim.AdamW(
+        optimizer = torch.optim.LBFGS(
             self._parameters, lr=self.parms.acq_opt_lr)
         lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer, T_max=20, eta_min=1e-5
@@ -373,7 +371,8 @@ class Actor:
                 loss, self._parameters, allow_unused=True)
             for param, grad in zip(self._parameters, grads):
                 param.grad = grad
-            optimizer.step()
+
+            optimizer.step(lambda: loss)
             lr_scheduler.step()
             optimizer.zero_grad()
 
