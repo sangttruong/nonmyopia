@@ -10,7 +10,7 @@ CUDA_VISIBLE_DEVICES=4 accelerate launch \
     --config_file examples/accelerate/single_config.yaml \
     main.py ...
 
-
+# Sample command
 CUDA_VISIBLE_DEVICES=1 python main.py \
     --seed 0 \
     --oracle_model_name_or_path google/gemma-7b \
@@ -40,10 +40,10 @@ CUDA_VISIBLE_DEVICES=1 python main.py \
     --top_k 10 \
     --top_p 1.0 \
     --max_new_tokens 512 \
-    --algo HES-TS-AM \
+    --algo SR \
     --algo_n_iterations 20 \
     --algo_lookahead_steps 20 \
-    --initinal_sequences 10000 \
+    --initinal_sequences 10 \
     --n_sequences 10 \
     --n_restarts 1 \
-    --rollout_sequences 100
+    --rollout_sequences 15
