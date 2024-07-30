@@ -26,6 +26,10 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
 
 
+def ensure_dir(dir_path):
+    os.makedirs(dir_path, exist_ok=True)
+
+
 def convert_oracle(examples, dataset_attr):
     outputs = {"text": [], "reward": []}
     for i, messages in enumerate(examples[dataset_attr.text]):

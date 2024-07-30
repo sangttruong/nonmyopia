@@ -17,6 +17,7 @@ from bayesian_ridge import BayesianRidgeModel
 from embed_text_package.embed_text import Embedder
 from utils import (
     set_seed,
+    ensure_dir,
     random_sampling,
     custom_load_dataset,
     load_embedded_dataset,
@@ -28,7 +29,7 @@ def main(
     callbacks: Optional[List["TrainerCallback"]] = None,
 ):
     (
-        surr_model_args,
+        reward_model_args,
         oracle_model_args,
         policy_model_args,
         data_args,
@@ -38,8 +39,10 @@ def main(
         bo_args,
     ) = get_bo_args(args)
     callbacks = [LogCallback()] if callbacks is None else callbacks
-    # Set seed
+
+    # Set seed & create necessary directory
     set_seed(training_args.seed)
+    ensure_dir(f"{training_args.output_dir}/reward_model")
 
     # Initializing full dataset
     with training_args.main_process_first(desc="load training dataset"):
@@ -67,16 +70,17 @@ def main(
         )
 
     # Initializing embedding model
-    embeder = Embedder()
-    embeder.load(oracle_model_args.model_name_or_path)
+    embedder = Embedder()
+    embedder.load(oracle_model_args.model_name_or_path)
 
     # Initializing oracle model
     embedded_dataset = load_embedded_dataset(
         dataset_attr.dataset_name, oracle_model_args.model_name_or_path, split="train"
     )
+
     if embedded_dataset is None:
         X_train = (
-            embeder.get_embeddings(
+            embedder.get_embeddings(
                 DataLoader(training_dataset, batch_size=1),
                 oracle_model_args.model_name_or_path,
                 ["text"],
@@ -98,15 +102,15 @@ def main(
     )
     # Query Oracle for y
     initial_emb = (
-        embeder.get_embeddings(
+        embedder.get_embeddings(
             DataLoader(initial_dataset, batch_size=1),
             oracle_model_args.model_name_or_path,
             ["text"],
         )
         .data["text"]
-        .to_numpy()
+        .to_pylist()
     )
-    initial_dataset_reward = oracle.predict(initial_emb)
+    initial_dataset_reward = oracle.predict(torch.Tensor(initial_emb)).tolist()
     initial_dataset = (
         initial_dataset.remove_columns("reward")
         .add_column("reward", initial_dataset_reward)
@@ -119,15 +123,15 @@ def main(
     )
     # Query Oracle for y
     initial_seq_emb = (
-        embeder.get_embeddings(
+        embedder.get_embeddings(
             DataLoader(initial_sequences, batch_size=1),
             oracle_model_args.model_name_or_path,
             ["text"],
         )
         .data["text"]
-        .to_numpy()
+        .to_pylist()
     )
-    initial_sequences_reward = oracle.predict(initial_seq_emb)
+    initial_sequences_reward = oracle.predict(torch.Tensor(initial_seq_emb)).tolist()
     initial_sequences = (
         initial_sequences.remove_columns("reward")
         .add_column("reward", initial_sequences_reward)
@@ -155,19 +159,22 @@ def main(
     # Startign BO loop
     for i in range(bo_args.algo_n_iterations):
         # Warming up reward models
-        dataset_emb = embeder.get_embeddings(
+        dataset_emb = embedder.get_embeddings(
             DataLoader(buffer["dataset"], batch_size=1),
             oracle_model_args.model_name_or_path,
             ["text"],
         )
 
         X_train = dataset_emb.data["text"].to_pylist()
-        y_train = buffer["dataset"].data["rewards"].to_pylist()
+        y_train = buffer["dataset"].data["reward"].to_pylist()
         X_train = torch.tensor(X_train)
         y_train = torch.tensor(y_train).reshape(-1, 1)
 
-        surr_model = BayesianRidgeModel(X_train, y_train)
-        joblib.dump(surr_model, os.path.join(f"ckpts/reward_model/model_{i}.joblib"))
+        reward_model = BayesianRidgeModel(X_train, y_train)
+        joblib.dump(
+            reward_model,
+            os.path.join(f"{training_args.output_dir}/reward_model/model_{i}.joblib"),
+        )
         # -------------------------------------------------------
 
         # Adjusting the lookahead steps
@@ -178,13 +185,17 @@ def main(
 
         # Rollout training dataset for policy
         rollout_dataset = actor.rollout(
-            surr_model, buffer["x"][-1], n_sequences=bo_args.rollout_sequences
+            embedder=embedder,
+            reward_model=reward_model,
+            sequences=buffer["x"][-1],
+            n_sequences=bo_args.rollout_sequences,
         )
 
         # Train new policy with rolled out dataset
-        actor.policy.load(iteration=i)
-        actor.train_policy(dataset=rollout_dataset, data_args=data_args)
-        actor.policy.unload()
+        # We must unload embedder here because we will load separated reward server
+        embedder.unload()
+        actor.train_policy(iteration=i, dataset=rollout_dataset, data_args=data_args)
+        embedder.load(oracle_model_args.model_name_or_path)
 
         # Get the next X
         server_process = actor.policy.load_inference()
@@ -193,19 +204,19 @@ def main(
         next_X = actor.query(
             prevX=buffer["x"],
             prevY=buffer["y"],
-            reward_model=surr_model,
+            reward_model=reward_model,
             n_restarts=bo_args.n_restarts,
         )
 
         iter_end_time = time.time()
-        
+
         actor.policy.unload_inference(server_process)
         print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
 
         # Query Oracle for y
         observed = Dataset.from_dict({"text": next_X})
         observed_emb = (
-            embeder.get_embeddings(
+            embedder.get_embeddings(
                 DataLoader(observed, batch_size=1),
                 oracle_model_args.model_name_or_path,
                 ["text"],
@@ -220,7 +231,7 @@ def main(
         print("Next X", next_X)
         print("Next y", next_y)
 
-        # Merge dataset for surr_model
+        # Merge dataset for reward_model
         observed = Dataset.from_dict({"text": next_X, "reward": next_y})
         observed = observed.cast(
             Features({"text": Value(dtype="string"), "reward": Value(dtype="float32")})

@@ -2,22 +2,14 @@ import os
 import copy
 import torch
 import random
+import yaml
 from datasets import Dataset
-from functools import partial
-from transformers import DataCollatorWithPadding
-from typing import TYPE_CHECKING, List, Optional
-
-from llmtuner.extras.callbacks import FixValueHeadModelCallback
-from llmtuner.extras.callbacks import LogCallback
-from llmtuner.extras.misc import fix_valuehead_checkpoint
-from llmtuner.extras.ploting import plot_loss
-from llmtuner.train.utils import create_ref_model
-from llmtuner.data.preprocess import preprocess_unsupervised_dataset
-from llmtuner.data.template import get_template_and_fix_tokenizer
+from torch.utils.data import DataLoader
 
 from configs import ALLOWED_TOKENS
-from policy import Policy, PolicyPPOTrainer
-from utils import start_process
+from policy import Policy
+from utils import start_process, kill_process
+
 
 def collate_fn(data):
     zipped = zip(data)
@@ -25,23 +17,34 @@ def collate_fn(data):
 
 
 class Actor:
-    def __init__(self, bo_args, policy_model_args, policy_finetuning_args, data_args, training_args, generating_args):
+    def __init__(
+        self,
+        bo_args,
+        policy_model_args,
+        policy_finetuning_args,
+        data_args,
+        training_args,
+        generating_args,
+    ):
         self.bo_args = bo_args
         self.data_args = data_args
         self.policy_model_args = policy_model_args
         self.policy_finetuning_args = policy_finetuning_args
-        self.policy = Policy(self.policy_model_args, self.policy_finetuning_args, self.data_args)
+        self.policy = Policy(
+            self.policy_model_args, self.policy_finetuning_args, self.data_args
+        )
         self.training_args = copy.deepcopy(training_args)
         self.training_args.output_dir = os.path.join(
-            self.training_args.output_dir, "policy")
+            self.training_args.output_dir, "policy"
+        )
 
         self.generating_args = generating_args
 
         self.algo_lookahead_steps = bo_args.algo_lookahead_steps
 
-        if self.bo_args.algo != "HES-TS-AM":
+        if self.bo_args.algo not in ["HES-TS-AM", "EI", "SR"]:
             raise NotImplementedError
-        
+
     def query(self, prevX, prevY, reward_model, n_restarts=3):
         # Query the next sequence
         X = prevX[-1]
@@ -55,17 +58,44 @@ class Actor:
                 local_prevX = copy.deepcopy(prevX)
                 local_prevy = copy.deepcopy(prevY)
                 local_X = local_prevX[-1]
-                
+
                 for step in range(self.algo_lookahead_steps):
-                    next_X = self.policy.generate(local_X, local_prevX, local_prevy, generating_args=self.generating_args)
-                    next_y = reward_model.sample(next_X, batch_size=self.training_args.per_device_train_batch_size).mean(0).float().detach().cpu().tolist()
+                    next_X = self.policy.generate(
+                        local_X,
+                        local_prevX,
+                        local_prevy,
+                        generating_args=self.generating_args,
+                    )
+                    next_y = (
+                        reward_model.sample(
+                            next_X,
+                            batch_size=self.training_args.per_device_train_batch_size,
+                        )
+                        .mean(0)
+                        .float()
+                        .detach()
+                        .cpu()
+                        .tolist()
+                    )
 
                     local_prevX.append(next_X)
                     local_prevy.append(next_y)
                     local_X = next_X
 
-                action_X = self.policy.generate(local_X, local_prevX, local_prevy, generating_args=self.generating_args)
-                action_y = reward_model.sample(action_X).mean(0).float().detach().cpu().tolist()
+                action_X = self.policy.generate(
+                    local_X,
+                    local_prevX,
+                    local_prevy,
+                    generating_args=self.generating_args,
+                )
+                action_y = (
+                    reward_model.sample(action_X)
+                    .mean(0)
+                    .float()
+                    .detach()
+                    .cpu()
+                    .tolist()
+                )
 
                 X_returned.append(local_prevX)
                 rewards.append(action_y)
@@ -73,106 +103,133 @@ class Actor:
             # For each sequence, find the best next sequence across n_restarts based on computed reward
             best_idx = torch.tensor(rewards).argmax(dim=0).numpy().tolist()
             output = []
-            
+
             for bi, si in zip(best_idx, list(range(n_sequences))):
                 output.append(X_returned[bi][0][si])
 
             return output
-            
+
         else:
             raise NotImplementedError
 
     @torch.no_grad()
     def rollout(
         self,
+        embedder,
         reward_model,
         sequences,
-        n_sequences = 16,
-        sequence_length = 237,
+        n_sequences=16,
+        sequence_length=237,
     ):
         if len(sequences) <= n_sequences:
             n_input_sequences = len(sequences)
-            sequences = [sequences*(n_sequences // n_input_sequences)]
+            sequences = [sequences * (n_sequences // n_input_sequences)]
             n_sequences = len(sequences[0])
         else:
             sequences = [sequences[-n_sequences:]]
-        
+
         # Deprecated
         # sequences = [[''.join(random.choices(ALLOWED_TOKENS, k=sequence_length)) for _ in range(n_sequences)]]
-        
+
         for i in range(self.algo_lookahead_steps):
             step_sequences = []
-            
+
             edit_idxs = random.choices(list(range(sequence_length)), k=n_sequences)
             edit_tokens = random.choices(ALLOWED_TOKENS, k=n_sequences)
             for sid, (idx, token) in enumerate(zip(edit_idxs, edit_tokens)):
                 new_sequence = sequences[i][sid]
-                new_sequence = new_sequence[:idx] + token + new_sequence[idx+1:]
+                new_sequence = new_sequence[:idx] + token + new_sequence[idx + 1 :]
                 step_sequences.append(new_sequence)
-                
-            sequences.append(step_sequences)
-                
-        # Infer reward
-        flatten_sequences = [s for ss in sequences for s in ss ]
-        rewards = reward_model.sample(flatten_sequences, sample_size=1, batch_size=self.training_args.per_device_train_batch_size)
-        rewards = rewards.reshape(1, -1, n_sequences).mean(0)
 
+            sequences.append(step_sequences)
+
+        # Infer reward
+        flatten_sequences = [s for ss in sequences for s in ss]
+        flatten_sequences_emb = (
+            embedder.get_embeddings(
+                DataLoader(
+                    Dataset.from_dict({"text": flatten_sequences}), batch_size=1
+                ),
+                embedder.which_model,
+                ["text"],
+            )
+            .data["text"]
+            .to_pylist()
+        )
+        flatten_sequences_emb = torch.tensor(flatten_sequences_emb)
+
+        rewards = reward_model.sample(flatten_sequences_emb, sample_size=1)
+        rewards = rewards.reshape(1, -1, n_sequences).mean(0)
         # Create dataset
-        data_dict = {"prompt": [], "response": [], "reward": [], "system": [], "tools": []}
-        for i in range(self.algo_lookahead_steps):
+        data_dict = {
+            "prompt": [],
+        }
+        for i in range(self.algo_lookahead_steps + 1):
             data_dict["prompt"].extend(
                 [
-                    [{"role": "user", "content": seq}] for seq in \
-                        self.policy.format_prompt(
-                            X=sequences[i], 
-                            prevX=sequences[:i+1], 
-                            prevY=rewards[:i+1].float().detach().cpu().tolist()
-                        )
+                    [{"role": "user", "content": seq}]
+                    for seq in self.policy.format_prompt(
+                        X=sequences[i],
+                        prevX=sequences[: i + 1],
+                        prevY=rewards[: i + 1].float().detach().cpu().tolist(),
+                    )
                 ]
             )
-            data_dict["response"].extend(
-                [[{"role": "assistant", "content": seq}] for seq in sequences[i+1]]
-            )
-            rw = ((rewards[i+1] - rewards[i]).float().detach().cpu() + 5) / 10
-            data_dict["reward"].extend(rw.tolist())
-            data_dict["system"].extend([""] * len(sequences[i]))
-            data_dict["tools"].extend([""] * len(sequences[i]))
-        
+
         return Dataset.from_dict(data_dict)
 
     def format_query(self, dataset, data_args):
-        # We must convert to HF formating code
-        template = get_template_and_fix_tokenizer(self.policy.tokenizer, data_args.template)
-        preprocess_func = partial(
-            preprocess_unsupervised_dataset, tokenizer=self.policy.tokenizer, template=template, data_args=data_args
-        )
-        kwargs = {}
-        if not data_args.streaming:
-            kwargs = dict(
-                num_proc=data_args.preprocessing_num_workers,
-                load_from_cache_file=False,
-                desc="Running tokenizer on dataset",
-            )
+        def format_query_fn(queries):
+            formatted_query = []
+            for query in queries["prompt"]:
+                formatted_query.append(
+                    self.policy.tokenizer.apply_chat_template(query, tokenize=False)
+                )
+            return {"text": formatted_query}
 
         # Dataset must have a column 'text'
-        dataset = dataset.map(preprocess_func, batched=True,
-                              remove_columns=["prompt", "response", "system", "tools", "reward"], **kwargs)
+        dataset = dataset.map(format_query_fn, batched=True, remove_columns=["prompt"])
+        return dataset
 
-    def train_policy(
-        self,
-        dataset,
-        data_args
-    ) -> None:
-        format_query(dataset, data_args)
-        
-        start_process(
-            "python -m llmppo.reward_server --model acqf.EI &"
-        )
-        
-        start_process(
-            "accelerate launch -m llmppo.ppo --config configs/ppo.yaml"
+    def train_policy(self, iteration, dataset, data_args) -> None:
+        # Copy reward model checkpoint to the right location
+        os.system(
+            f"cp ckpts/reward_model/model_{iteration}.joblib ckpts/reward_model/model.joblib"
         )
 
+        # Preprocess queries to LLM's format
+        dataset = self.format_query(dataset, data_args)
+        dataset.to_csv("data/ppo_query_dataset/ppo_query_dataset.csv")
+
+        # Start reward server
+        start_process(
+            f"CUDA_VISIBLE_DEVICES=1 python -m llmppo.reward_server --model acqf.{self.bo_args.algo} &"
+        )
+
+        # Start PPO training
+        ## Edit the checkpoint
+        with open("configs/ppo.yaml", "r", encoding="utf8") as stream:
+            loaded_configs = yaml.safe_load(stream)
+            if iteration == 0:
+                loaded_configs["model_name_or_path"] = (
+                    self.policy_model_args.model_name_or_path
+                )
+            else:
+                loaded_configs["model_name_or_path"] = (
+                    self.training_args.output_dir + f"/{iteration}"
+                )
+
+        with open("configs/ppo.yaml", "w", encoding="utf8") as stream:
+            yaml.dump(
+                loaded_configs, stream, default_flow_style=False, allow_unicode=True
+            )
+
+        ## Start PPO training process
+        start_process(
+            "CUDA_VISIBLE_DEVICES=7 accelerate launch -m llmppo.ppo --config configs/ppo.yaml"
+        )
+
+        # Stop reward server
         kill_process(
-            "python -m llmppo.reward_server --model acqf.EI &"
+            f"python -m llmppo.reward_server --model acqf.{self.bo_args.algo} &"
         )

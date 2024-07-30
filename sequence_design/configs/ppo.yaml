@@ -1,0 +1,12 @@
+gradient_accumulation_steps: 2
+gradient_checkpointing: true
+learning_rate: 0.0001
+lora_alpha: 16
+lora_dropout: 0.1
+lora_r: 8
+max_new_tokens: 1024
+mini_batch_size: 1
+model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+query_dataset: data/ppo_query_dataset
+reward_model: http://localhost:8000
+use_peft: true
