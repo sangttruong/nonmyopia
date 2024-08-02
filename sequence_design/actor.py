@@ -203,20 +203,23 @@ class Actor:
 
         # Start reward server
         start_process(
-            f"CUDA_VISIBLE_DEVICES=1 python -m llmppo.reward_server --model acqf.{self.bo_args.algo} &"
+            f"python -m llmppo.reward_server --model acqf.{self.bo_args.algo} &"
         )
 
         # Start PPO training
         ## Edit the checkpoint
         with open("configs/ppo.yaml", "r", encoding="utf8") as stream:
             loaded_configs = yaml.safe_load(stream)
+            loaded_configs["output_dir"] = os.path.join(
+                self.training_args.output_dir, f"{iteration}"
+            )
             if iteration == 0:
                 loaded_configs["model_name_or_path"] = (
                     self.policy_model_args.model_name_or_path
                 )
             else:
-                loaded_configs["model_name_or_path"] = (
-                    self.training_args.output_dir + f"/{iteration}"
+                loaded_configs["model_name_or_path"] = os.path.join(
+                    self.training_args.output_dir, f"{iteration-1}"
                 )
 
         with open("configs/ppo.yaml", "w", encoding="utf8") as stream:
@@ -225,9 +228,7 @@ class Actor:
             )
 
         ## Start PPO training process
-        start_process(
-            "CUDA_VISIBLE_DEVICES=7 accelerate launch -m llmppo.ppo --config configs/ppo.yaml"
-        )
+        start_process(f"accelerate launch -m llmppo.ppo --config configs/ppo.yaml")
 
         # Stop reward server
         kill_process(

@@ -1,3 +1,4 @@
+batch_size: 2
 gradient_accumulation_steps: 2
 gradient_checkpointing: true
 learning_rate: 0.0001
@@ -7,6 +8,9 @@ lora_r: 8
 max_new_tokens: 1024
 mini_batch_size: 1
 model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+output_dir: ckpts/policy
+ppo_epochs: 1
 query_dataset: data/ppo_query_dataset
+save_steps: 1000
 reward_model: http://localhost:8000
 use_peft: true

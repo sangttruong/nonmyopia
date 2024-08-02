@@ -34,14 +34,14 @@ class Acqf(RewardModelTemplate):
             .data["text"]
             .to_pylist()
         )
-        return self.bo_acqf.sample(torch.Tensor(ds_emb))
+        return self.bo_acqf(torch.Tensor(ds_emb))
 
     def load(self):
         """
         If you want to load something
         """
         self.embedder = Embedder()
-        self.embedder.load("meta-llama/Meta-Llama-3-8B-Instruct")
+        self.embedder.load("google/gemma-7b-it")
 
         self.model = joblib.load("ckpts/reward_model/model.joblib")
 
