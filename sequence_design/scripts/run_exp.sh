@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=1 python main.py \
     --num_train_epochs 1 \
     --do_train \
     --template llama3 \
-    --dataset proteinea/fluorescence \
+    --dataset stair-lab/proteinea_fluorescence-gemma-7b-embedding \
     --overwrite_cache False \
     --preprocessing_num_workers 8 \
     --bf16 True \

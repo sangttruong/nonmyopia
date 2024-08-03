@@ -5,23 +5,15 @@ import joblib
 import pickle
 from torch.utils.data import DataLoader
 from typing import Any, Dict, List, Optional
-from datasets import concatenate_datasets, Dataset, Features, Value
+from datasets import load_dataset, concatenate_datasets, Dataset, Features, Value
 
 from llmtuner.extras.callbacks import LogCallback
-from llmtuner.data.parser import get_dataset_list
-from llmtuner.data.utils import merge_dataset
 
 from actor import Actor
 from hparams import get_bo_args
 from bayesian_ridge import BayesianRidgeModel
 from embed_text_package.embed_text import Embedder
-from utils import (
-    set_seed,
-    ensure_dir,
-    random_sampling,
-    custom_load_dataset,
-    load_embedded_dataset,
-)
+from utils import set_seed, ensure_dir, random_sampling
 
 
 def main(
@@ -44,42 +36,14 @@ def main(
     set_seed(training_args.seed)
     ensure_dir(f"{training_args.output_dir}/reward_model")
 
-    # Initializing full dataset
-    with training_args.main_process_first(desc="load training dataset"):
-        all_datasets = []
-        data_args.split = "train"
-        for dataset_attr in get_dataset_list(data_args):
-            all_datasets.append(
-                custom_load_dataset(dataset_attr, data_args, oracle_model_args)
-            )
-        training_dataset = merge_dataset(all_datasets, data_args, training_args)
-        training_dataset = training_dataset.cast(
-            Features({"text": Value(dtype="string"), "reward": Value(dtype="float32")})
-        )
-
-    with training_args.main_process_first(desc="load testing dataset"):
-        all_datasets = []
-        data_args.split = "validation"
-        for dataset_attr in get_dataset_list(data_args):
-            all_datasets.append(
-                custom_load_dataset(dataset_attr, data_args, oracle_model_args)
-            )
-        testing_dataset = merge_dataset(all_datasets, data_args, training_args)
-        testing_dataset = testing_dataset.cast(
-            Features({"text": Value(dtype="string"), "reward": Value(dtype="float32")})
-        )
-
     # Initializing embedding model
     embedder = Embedder()
     embedder.load(oracle_model_args.model_name_or_path)
 
-    # Initializing oracle model
-    embedded_dataset = load_embedded_dataset(
-        dataset_attr.dataset_name, oracle_model_args.model_name_or_path, split="train"
-    )
-
-    if embedded_dataset is None:
-        X_train = (
+    # Initializing full dataset
+    training_dataset = load_dataset(path=data_args.dataset, split="train")
+    if "inputs_embeds" not in training_dataset.column_names:
+        inputs_embeds_training = (
             embedder.get_embeddings(
                 DataLoader(training_dataset, batch_size=1),
                 oracle_model_args.model_name_or_path,
@@ -88,11 +52,28 @@ def main(
             .data["text"]
             .to_pylist()
         )
-        X_train = torch.tensor(X_train)
-        y_train = torch.tensor(training_dataset["rewards"]).reshape(-1, 1)
-    else:
-        X_train = torch.tensor(embedded_dataset["inputs_embeds"])
-        y_train = torch.tensor(embedded_dataset["rewards"]).reshape(-1, 1)
+        training_dataset = training_dataset.add_column(
+            "inputs_embeds", inputs_embeds_training
+        )
+
+    testing_dataset = load_dataset(path=data_args.dataset, split="test")
+    if "inputs_embeds" not in testing_dataset.column_names:
+        inputs_embeds_testing = (
+            embedder.get_embeddings(
+                DataLoader(testing_dataset, batch_size=1),
+                oracle_model_args.model_name_or_path,
+                ["text"],
+            )
+            .data["text"]
+            .to_pylist()
+        )
+        testing_dataset = testing_dataset.add_column(
+            "inputs_embeds", inputs_embeds_testing
+        )
+
+    # Initializing oracle model
+    X_train = torch.tensor(training_dataset["inputs_embeds"])
+    y_train = torch.tensor(training_dataset["reward"]).reshape(-1, 1)
     oracle = BayesianRidgeModel(X_train, y_train)
 
     # Initializing training buffer
@@ -101,16 +82,9 @@ def main(
         training_dataset, num_samples=bo_args.initinal_sequences
     )
     # Query Oracle for y
-    initial_emb = (
-        embedder.get_embeddings(
-            DataLoader(initial_dataset, batch_size=1),
-            oracle_model_args.model_name_or_path,
-            ["text"],
-        )
-        .data["text"]
-        .to_pylist()
-    )
-    initial_dataset_reward = oracle.predict(torch.Tensor(initial_emb)).tolist()
+    initial_dataset_reward = oracle.predict(
+        torch.Tensor(initial_dataset["inputs_embeds"])
+    ).tolist()
     initial_dataset = (
         initial_dataset.remove_columns("reward")
         .add_column("reward", initial_dataset_reward)
@@ -122,16 +96,9 @@ def main(
         testing_dataset, num_samples=bo_args.n_sequences, constrained_reward=2.0
     )
     # Query Oracle for y
-    initial_seq_emb = (
-        embedder.get_embeddings(
-            DataLoader(initial_sequences, batch_size=1),
-            oracle_model_args.model_name_or_path,
-            ["text"],
-        )
-        .data["text"]
-        .to_pylist()
-    )
-    initial_sequences_reward = oracle.predict(torch.Tensor(initial_seq_emb)).tolist()
+    initial_sequences_reward = oracle.predict(
+        torch.Tensor(initial_sequences["inputs_embeds"])
+    ).tolist()
     initial_sequences = (
         initial_sequences.remove_columns("reward")
         .add_column("reward", initial_sequences_reward)
@@ -158,6 +125,8 @@ def main(
 
     # Startign BO loop
     for i in range(bo_args.algo_n_iterations):
+        print(f"Starting BO loop #{i}")
+
         # Warming up reward models
         dataset_emb = embedder.get_embeddings(
             DataLoader(buffer["dataset"], batch_size=1),

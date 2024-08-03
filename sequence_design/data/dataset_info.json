@@ -1,9 +1,0 @@
-{
-    "proteinea/fluorescence": {
-      "hf_hub_url": "proteinea/fluorescence",
-      "columns": {
-        "text": "primary",
-        "reward": "log_fluorescence"
-      }
-    }
-  }
