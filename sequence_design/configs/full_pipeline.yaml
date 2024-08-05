@@ -1,0 +1,29 @@
+# Experiment
+seed: 2
+dataset: stair-lab/proteinea_fluorescence-gemma-7b-embedding
+initinal_sequences: 10
+n_sequences: 10
+n_restarts: 1
+rollout_sequences: 16
+output_dir: ckpts
+
+# Acquisition function
+algo: qSR # 'HES', 'qKG', 'qEI', 'qPI', 'qSR', 'qUCB', 'qMSL', 'qNIPV'
+algo_ts: True
+algo_n_iterations: 20
+algo_lookahead_steps: 20
+
+# Cost function
+cost_spotlight_k: 100
+cost_p_norm: 2.0
+cost_max_noise: 1e-5
+cost_discount: 0.0
+cost_discount_threshold: -1.0
+
+# Models
+embedding_model_name_or_path: google/gemma-7b
+policy_model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+use_fast_tokenizer: True
+vllm_gpu_util: 0.9
+sample_size: 4 # Sampling reward value
+ppo_gpu: 0

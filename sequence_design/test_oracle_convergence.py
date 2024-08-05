@@ -8,6 +8,7 @@ from sklearn.linear_model import LinearRegression, Ridge, BayesianRidge
 from sklearn.metrics import r2_score, root_mean_squared_error
 import matplotlib.pyplot as plt
 from tueplots import bundles
+
 bundles.neurips2024()
 plt.rcParams.update(bundles.neurips2024())
 
@@ -52,17 +53,14 @@ for i, hf_embedding_name in enumerate(hf_embedding_names):
         rmse_local = []
         for s in [2, 3, 5, 7, 11]:
             random.seed(s)
-            idxs = random.choices(range(total_X), k=int(perc*total_X))
-            X_train_local = np.stack(
-                [x for i, x in enumerate(X_train) if i in idxs])
-            y_train_local = np.stack(
-                [x for i, x in enumerate(y_train) if i in idxs])
+            idxs = random.choices(range(total_X), k=int(perc * total_X))
+            X_train_local = np.stack([x for i, x in enumerate(X_train) if i in idxs])
+            y_train_local = np.stack([x for i, x in enumerate(y_train) if i in idxs])
             model = BayesianRidge().fit(X_train_local, y_train_local)
 
             y_hat = model.predict(X_test)
             r2s_local.append(r2_score(y_true=y_test, y_pred=y_hat))
-            rmse_local.append(root_mean_squared_error(
-                y_true=y_test, y_pred=y_hat))
+            rmse_local.append(root_mean_squared_error(y_true=y_test, y_pred=y_hat))
 
         r2s_local = np.array(r2s_local)
         r2s_local_mean = np.mean(r2s_local)
@@ -87,11 +85,15 @@ with open(os.path.join(args.output_dir, "oracle_results.pkl"), "wb") as f:
 
 # Draw plots
 plt.figure()
-sizes = [total_X*p for p in np.arange(0.1, 1.1, 0.1)]
+sizes = [total_X * p for p in np.arange(0.1, 1.1, 0.1)]
 for model_name in models:
     plt.plot(sizes, r2s_emb[model_name], label=model_name)
-    plt.fill_between(sizes, np.array(r2s_emb[model_name]) - np.array(r2s_std_emb[model_name]),
-                     np.array(r2s_emb[model_name]) + np.array(r2s_std_emb[model_name]), alpha=0.1)
+    plt.fill_between(
+        sizes,
+        np.array(r2s_emb[model_name]) - np.array(r2s_std_emb[model_name]),
+        np.array(r2s_emb[model_name]) + np.array(r2s_std_emb[model_name]),
+        alpha=0.1,
+    )
 plt.ylim(top=1)
 plt.ylabel(r"$R^2$")
 plt.xlabel("Number of training data")
@@ -102,8 +104,12 @@ plt.close()
 plt.figure()
 for model_name in models:
     plt.plot(sizes, rmse_emb[model_name], label=model_name)
-    plt.fill_between(sizes, np.array(rmse_emb[model_name]) - np.array(rmse_std_emb[model_name]),
-                     np.array(rmse_emb[model_name]) + np.array(rmse_std_emb[model_name]), alpha=0.1)
+    plt.fill_between(
+        sizes,
+        np.array(rmse_emb[model_name]) - np.array(rmse_std_emb[model_name]),
+        np.array(rmse_emb[model_name]) + np.array(rmse_std_emb[model_name]),
+        alpha=0.1,
+    )
 plt.ylim(bottom=0)
 plt.ylabel(r"$RMSE$")
 plt.xlabel("Number of training data")
