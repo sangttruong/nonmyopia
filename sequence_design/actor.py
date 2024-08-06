@@ -3,6 +3,7 @@ import copy
 import torch
 import random
 import yaml
+from datetime import datetime
 from datasets import Dataset
 from torch.utils.data import DataLoader
 
@@ -17,33 +18,17 @@ def collate_fn(data):
 
 
 class Actor:
-    def __init__(
-        self,
-        bo_args,
-        policy_model_args,
-        policy_finetuning_args,
-        data_args,
-        training_args,
-        generating_args,
-    ):
-        self.bo_args = bo_args
-        self.data_args = data_args
-        self.policy_model_args = policy_model_args
-        self.policy_finetuning_args = policy_finetuning_args
-        self.policy = Policy(
-            self.policy_model_args, self.policy_finetuning_args, self.data_args
-        )
-        self.training_args = copy.deepcopy(training_args)
-        self.training_args.output_dir = os.path.join(
-            self.training_args.output_dir, "policy"
-        )
+    def __init__(self, config):
+        self.config = copy.deepcopy(config)
+        self.policy = Policy(self.config)
+        self.config.output_dir = os.path.join(self.config.output_dir, "policy")
 
-        self.generating_args = generating_args
+        self.algo_lookahead_steps = config.algo_lookahead_steps
 
-        self.algo_lookahead_steps = bo_args.algo_lookahead_steps
-
-        if self.bo_args.algo not in ["HES-TS-AM", "EI", "SR"]:
-            raise NotImplementedError
+        if self.config.algo not in ["HES-TS-AM", "qEI", "qSR"]:
+            raise NotImplementedError(
+                f"Acquisition function `{self.config.algo}` is not implemented!"
+            )
 
     def query(self, prevX, prevY, reward_model, n_restarts=3):
         # Query the next sequence
@@ -51,7 +36,7 @@ class Actor:
         n_sequences = len(X)
         # >>> n_sequences
 
-        if self.bo_args.algo == "HES-TS-AM":
+        if self.config.algo == "HES-TS-AM":
             X_returned = []
             rewards = []
             for rid in range(n_restarts):
@@ -60,16 +45,11 @@ class Actor:
                 local_X = local_prevX[-1]
 
                 for step in range(self.algo_lookahead_steps):
-                    next_X = self.policy.generate(
-                        local_X,
-                        local_prevX,
-                        local_prevy,
-                        generating_args=self.generating_args,
-                    )
+                    next_X = self.policy.generate(local_X, local_prevX, local_prevy)
                     next_y = (
                         reward_model.sample(
                             next_X,
-                            batch_size=self.training_args.per_device_train_batch_size,
+                            sample_size=self.config.sample_size,
                         )
                         .mean(0)
                         .float()
@@ -82,12 +62,7 @@ class Actor:
                     local_prevy.append(next_y)
                     local_X = next_X
 
-                action_X = self.policy.generate(
-                    local_X,
-                    local_prevX,
-                    local_prevy,
-                    generating_args=self.generating_args,
-                )
+                action_X = self.policy.generate(local_X, local_prevX, local_prevy)
                 action_y = (
                     reward_model.sample(action_X)
                     .mean(0)
@@ -178,7 +153,7 @@ class Actor:
 
         return Dataset.from_dict(data_dict)
 
-    def format_query(self, dataset, data_args):
+    def format_query(self, dataset):
         def format_query_fn(queries):
             formatted_query = []
             for query in queries["prompt"]:
@@ -191,46 +166,51 @@ class Actor:
         dataset = dataset.map(format_query_fn, batched=True, remove_columns=["prompt"])
         return dataset
 
-    def train_policy(self, iteration, dataset, data_args) -> None:
+    def train_policy(self, iteration, dataset) -> None:
         # Copy reward model checkpoint to the right location
         os.system(
             f"cp ckpts/reward_model/model_{iteration}.joblib ckpts/reward_model/model.joblib"
         )
 
         # Preprocess queries to LLM's format
-        dataset = self.format_query(dataset, data_args)
+        dataset = self.format_query(dataset)
         dataset.to_csv("data/ppo_query_dataset/ppo_query_dataset.csv")
 
         # Start reward server
         start_process(
-            f"python -m llmppo.reward_server --model acqf.{self.bo_args.algo} &"
+            f"python -m llmppo.reward_server --model acqf.{self.config.algo} &"
         )
 
         # Start PPO training
-        ## Edit the checkpoint
+        # Edit the checkpoint
         with open("configs/ppo.yaml", "r", encoding="utf8") as stream:
             loaded_configs = yaml.safe_load(stream)
             loaded_configs["output_dir"] = os.path.join(
-                self.training_args.output_dir, f"{iteration}"
+                self.config.output_dir, f"{iteration}"
             )
             if iteration == 0:
                 loaded_configs["model_name_or_path"] = (
-                    self.policy_model_args.model_name_or_path
+                    self.config.policy_model_name_or_path
                 )
             else:
                 loaded_configs["model_name_or_path"] = os.path.join(
-                    self.training_args.output_dir, f"{iteration-1}"
+                    self.config.output_dir, f"{iteration-1}"
                 )
 
-        with open("configs/ppo.yaml", "w", encoding="utf8") as stream:
+        training_config_file = f"configs/ppo_{datetime.today().isoformat()}.yaml"
+        with open(training_config_file, "w", encoding="utf8") as stream:
             yaml.dump(
                 loaded_configs, stream, default_flow_style=False, allow_unicode=True
             )
 
-        ## Start PPO training process
-        start_process(f"accelerate launch -m llmppo.ppo --config configs/ppo.yaml")
+        # Start PPO training process
+        start_process(
+            f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch "
+            "--config_file configs/single_config.yaml "
+            f"-m llmppo.ppo --config {training_config_file}"
+        )
 
         # Stop reward server
         kill_process(
-            f"python -m llmppo.reward_server --model acqf.{self.bo_args.algo} &"
+            f"python -m llmppo.reward_server --model acqf.{self.config.algo} &"
         )

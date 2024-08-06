@@ -5,8 +5,27 @@ import random
 import psutil
 import subprocess
 import numpy as np
+import yaml
 from typing import Dict, Sequence, Tuple, Union
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
+from dataclasses import make_dataclass, field
+
+
+def create_dataclass_from_dict(class_name: str, data: dict):
+    """
+    Function to create a dataclass dynamically from a dictionary
+    """
+    fields = [(key, type(value), field(default=value)) for key, value in data.items()]
+    return make_dataclass(class_name, fields)
+
+
+def read_yaml_to_dynamic_dataclass(file_path: str, class_name: str = "DynamicConfig"):
+    """
+    Function to read YAML file and create a dataclass
+    """
+    with open(file_path, "r", encoding="utf8") as file:
+        data = yaml.safe_load(file)
+    return create_dataclass_from_dict(class_name, data)
 
 
 def set_seed(seed):

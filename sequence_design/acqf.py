@@ -1,3 +1,4 @@
+import re
 import json
 import torch
 import joblib
@@ -24,6 +25,7 @@ class Acqf(RewardModelTemplate):
         """
         This is implementation of your reward model.
         """
+        messages = [self.post_process(x) for x in messages]
         ds = Dataset.from_dict({"text": messages})
         ds_emb = (
             self.embedder.get_embeddings(
@@ -34,14 +36,14 @@ class Acqf(RewardModelTemplate):
             .data["text"]
             .to_pylist()
         )
-        return self.bo_acqf(torch.Tensor(ds_emb))
+        return self.bo_acqf(torch.Tensor(ds_emb).unsqueeze(-2))
 
     def load(self):
         """
         If you want to load something
         """
         self.embedder = Embedder()
-        self.embedder.load("google/gemma-7b-it")
+        self.embedder.load("google/gemma-7b")
 
         self.model = joblib.load("ckpts/reward_model/model.joblib")
 
@@ -51,8 +53,11 @@ class Acqf(RewardModelTemplate):
         """
         self.embedder.unload()
 
+    def post_process(self, generation):
+        return re.findall("[A-Z]{230,}", generation)[0]
 
-class EI(Acqf):
+
+class qEI(Acqf):
     def __init__(self):
         super().__init__()
         self.results = json.load("ckpts/results.json")
@@ -61,7 +66,7 @@ class EI(Acqf):
         )
 
 
-class SR(Acqf):
+class qSR(Acqf):
     def __init__(self):
         super().__init__()
         self.bo_acqf = qSimpleRegret(model=self.model)
