@@ -111,14 +111,7 @@ def main(args: Optional[Dict[str, Any]] = None):
     for i in range(config.algo_n_iterations):
         print(f"Starting BO loop #{i}")
 
-        # Warming up reward models
-        dataset_emb = embedder.get_embeddings(
-            DataLoader(buffer["dataset"], batch_size=1),
-            config.embedding_model_name_or_path,
-            ["text"],
-        )
-
-        X_train = dataset_emb.data["text"].to_pylist()
+        X_train = buffer["dataset"].data["inputs_embeds"].to_pylist()
         y_train = buffer["dataset"].data["reward"].to_pylist()
         X_train = torch.tensor(X_train)
         y_train = torch.tensor(y_train).reshape(-1, 1)
@@ -148,14 +141,16 @@ def main(args: Optional[Dict[str, Any]] = None):
         # We must unload embedder here because we will load separated reward server
         embedder.unload()
         actor.train_policy(iteration=i, dataset=rollout_dataset)
+        embedder.load(config.embedding_model_name_or_path)
 
         # Get the next X
-        server_process = actor.policy.load_inference()
+        actor.policy.load_inference(iteration=i)
         iter_start_time = time.time()
 
         next_X = actor.query(
             prevX=buffer["x"],
             prevY=buffer["y"],
+            embedder=embedder,
             reward_model=reward_model,
             n_restarts=config.n_restarts,
         )
@@ -163,8 +158,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         iter_end_time = time.time()
 
         print(f"Iteration {i} took {iter_end_time - iter_start_time} seconds")
-        actor.policy.unload_inference(server_process)
-        embedder.load(config.embedding_model_name_or_path)
+        actor.policy.unload_inference()
 
         # Query Oracle for y
         observed = Dataset.from_dict({"text": next_X})
@@ -175,19 +169,20 @@ def main(args: Optional[Dict[str, Any]] = None):
                 ["text"],
             )
             .data["text"]
-            .to_numpy()
+            .to_pylist()
         )
-        next_y = oracle.predict(observed_emb)
+        next_y = oracle.predict(
+            torch.tensor(observed_emb)
+        ).tolist()
 
         buffer["x"].append(next_X)
         buffer["y"].append(next_y)
         print("Next X", next_X)
         print("Next y", next_y)
-
+        
         # Merge dataset for reward_model
-        observed = Dataset.from_dict({"text": next_X, "reward": next_y})
-        observed = observed.cast(
-            Features({"text": Value(dtype="string"), "reward": Value(dtype="float32")})
+        observed = Dataset.from_dict(
+            {"text": next_X, "inputs_embeds": observed_emb, "reward": next_y}
         )
         buffer["dataset"] = concatenate_datasets([buffer["dataset"], observed])
 

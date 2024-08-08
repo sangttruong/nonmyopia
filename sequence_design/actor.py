@@ -6,6 +6,7 @@ import yaml
 from datetime import datetime
 from datasets import Dataset
 from torch.utils.data import DataLoader
+from peft import AutoPeftModelForCausalLM
 
 from configs import ALLOWED_TOKENS
 from policy import Policy
@@ -30,7 +31,7 @@ class Actor:
                 f"Acquisition function `{self.config.algo}` is not implemented!"
             )
 
-    def query(self, prevX, prevY, reward_model, n_restarts=3):
+    def query(self, prevX, prevY, embedder, reward_model, n_restarts=3):
         # Query the next sequence
         X = prevX[-1]
         n_sequences = len(X)
@@ -46,9 +47,20 @@ class Actor:
 
                 for step in range(self.algo_lookahead_steps):
                     next_X = self.policy.generate(local_X, local_prevX, local_prevy)
+                    next_X_ds = Dataset.from_dict({"text": next_X})
+                    next_X_ds_emb = (
+                        embedder.get_embeddings(
+                            DataLoader(next_X_ds, batch_size=1),
+                            self.config.embedding_model_name_or_path,
+                            ["text"],
+                        )
+                        .data["text"]
+                        .to_pylist()
+                    )
+                    
                     next_y = (
                         reward_model.sample(
-                            next_X,
+                            torch.tensor(next_X_ds_emb),
                             sample_size=self.config.sample_size,
                         )
                         .mean(0)
@@ -63,8 +75,20 @@ class Actor:
                     local_X = next_X
 
                 action_X = self.policy.generate(local_X, local_prevX, local_prevy)
+                action_X_ds = Dataset.from_dict({"text": action_X})
+                action_X_ds_emb = (
+                    embedder.get_embeddings(
+                        DataLoader(action_X_ds, batch_size=1),
+                        self.config.embedding_model_name_or_path,
+                        ["text"],
+                    )
+                    .data["text"]
+                    .to_pylist()
+                )
                 action_y = (
-                    reward_model.sample(action_X)
+                    reward_model.sample(
+                        torch.tensor(action_X_ds_emb)
+                    )
                     .mean(0)
                     .float()
                     .detach()
@@ -183,11 +207,10 @@ class Actor:
 
         # Start PPO training
         # Edit the checkpoint
+        output_dir = os.path.join(self.config.output_dir, f"{iteration}")
         with open("configs/ppo.yaml", "r", encoding="utf8") as stream:
             loaded_configs = yaml.safe_load(stream)
-            loaded_configs["output_dir"] = os.path.join(
-                self.config.output_dir, f"{iteration}"
-            )
+            loaded_configs["output_dir"] = output_dir
             if iteration == 0:
                 loaded_configs["model_name_or_path"] = (
                     self.config.policy_model_name_or_path
@@ -214,3 +237,8 @@ class Actor:
         kill_process(
             f"python -m llmppo.reward_server --model acqf.{self.config.algo} &"
         )
+
+        # Merge Lora adapter
+        model = AutoPeftModelForCausalLM.from_pretrained(output_dir)
+        model = model.merge_and_unload().to(torch.bfloat16)
+        model.save_pretrained(output_dir)

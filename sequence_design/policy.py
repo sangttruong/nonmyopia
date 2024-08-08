@@ -1,23 +1,28 @@
 import re
-import time
+import os
 import random
-import requests
 import editdistance
 from typing import List
 from tqdm import tqdm
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, GenerationConfig
+from vllm import LLM, SamplingParams
 
-from openai import OpenAI
 from configs import HISTORY_FORMAT, POLICY_PROMPT
-from utils import run_server, shutdown_server
 
 
 class Policy:
     def __init__(self, config):
         self.config = config
+        self.model = None
         self.tokenizer = AutoTokenizer.from_pretrained(
             self.config.policy_model_name_or_path,
             use_fast=self.config.use_fast_tokenizer,
+        )
+        generation_config = GenerationConfig.from_pretrained(self.config.policy_model_name_or_path)
+        self.sampling_params = SamplingParams(
+            temperature = generation_config.temperature,
+            top_p = generation_config.top_p,
+            max_tokens = self.config.max_new_tokens
         )
         self.__prompt__ = POLICY_PROMPT
         self.__history__ = HISTORY_FORMAT
@@ -25,36 +30,17 @@ class Policy:
     def __verify_output__(self, X: List[str], Y: List[str]):
         return [editdistance.eval(x, y) for x, y in zip(X, Y)]
 
-    def load_inference(self):
-        api_port = 1337
-        deploy_command = f"""API_PORT={api_port} python src/api_demo.py \
-                            --model_name_or_path {self.config.policy_model_name_or_path} \
-                            --infer_backend vllm \
-                            --vllm_gpu_util {self.config.vllm_gpu_util} \
-                            --temperature 0.6 \
-                            --top_k 50 \
-                            --top_p 0.9 \
-                            --vllm_enforce_eager"""
+    def load_inference(self, iteration):
+        ckpt_dir = os.path.join(self.config.output_dir, f"{iteration}")
+        self.model = LLM(
+            self.config.policy_model_name_or_path, # ckpt_dir
+            gpu_memory_utilization=0.5,
+            enforce_eager=True,
+        )
 
-        print("Deploying LLM...")
-        server_process = run_server(deploy_command)
-        time.sleep(5)
-
-        url = f"http://localhost:{api_port}/v1/models"
-        while True:
-            try:
-                print("Waiting for server...")
-                response = requests.request("GET", url, headers={}, data={})
-                if response.status_code == 200:
-                    break
-            except:
-                time.sleep(2)
-
-        return server_process
-
-    def unload_inference(self, server_process):
-        # Shutdown server
-        shutdown_server(server_process)
+    def unload_inference(self):
+        del self.model
+        self.model = None
 
     def format_prompt(
         self, X: List[str], prevX: List[List[str]], prevY: List[List[float]]
@@ -86,21 +72,21 @@ class Policy:
         **kwargs,
     ):
         prompts = self.format_prompt(X, prevX, prevY)
-        api_port = 1337
         outputs = []
-
-        client = OpenAI(
-            base_url=f"http://localhost:{api_port}/v1", api_key="token-abc123"
-        )
 
         for pi, prompt in enumerate(tqdm(prompts)):
             trying_time = 0
             while trying_time < max_retry:
-                completion = client.chat.completions.create(
-                    model=self.config.policy_model_name_or_path,
-                    messages=[{"role": "user", "content": prompt}],
+                prompt = self.tokenizer.apply_chat_template(
+                    [{"role": "user", "content": prompt}], 
+                    tokenize=False
                 )
-                generations = completion.choices[0].message.content
+                
+                generations = self.model.generate(
+                    prompt,
+                    self.sampling_params
+                )
+                generations = [g.outputs[0].text for g in generations][0]
                 generations = self.post_process(generations)
 
                 generations_ed = self.__verify_output__(
