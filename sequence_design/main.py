@@ -6,7 +6,7 @@ import pickle
 from argparse import ArgumentParser
 from torch.utils.data import DataLoader
 from typing import Any, Dict, Optional
-from datasets import load_dataset, concatenate_datasets, Dataset, Features, Value
+from datasets import load_dataset, concatenate_datasets, Dataset
 
 from actor import Actor
 from bayesian_ridge import BayesianRidgeModel
@@ -119,7 +119,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         reward_model = BayesianRidgeModel(X_train, y_train)
         joblib.dump(
             reward_model,
-            os.path.join(f"{config.output_dir}/reward_model/model_{i}.joblib"),
+            os.path.join(f"{config.output_dir}/{i}/reward_model.joblib"),
         )
         # -------------------------------------------------------
 
@@ -171,15 +171,13 @@ def main(args: Optional[Dict[str, Any]] = None):
             .data["text"]
             .to_pylist()
         )
-        next_y = oracle.predict(
-            torch.tensor(observed_emb)
-        ).tolist()
+        next_y = oracle.predict(torch.tensor(observed_emb)).tolist()
 
         buffer["x"].append(next_X)
         buffer["y"].append(next_y)
         print("Next X", next_X)
         print("Next y", next_y)
-        
+
         # Merge dataset for reward_model
         observed = Dataset.from_dict(
             {"text": next_X, "inputs_embeds": observed_emb, "reward": next_y}
@@ -187,7 +185,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         buffer["dataset"] = concatenate_datasets([buffer["dataset"], observed])
 
         # Save buffer
-        with open("results/buffer.pkl", "wb") as f:
+        with open(f"{config.output_dir}/buffer.pkl", "wb") as f:
             pickle.dump(buffer, f)
 
 
