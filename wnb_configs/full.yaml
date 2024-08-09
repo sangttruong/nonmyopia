@@ -25,5 +25,3 @@ parameters:
         values: [0]
     cont:  
         values: [True]
-    test_only:  
-        values: [False]
