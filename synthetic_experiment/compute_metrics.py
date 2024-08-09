@@ -133,7 +133,7 @@ if __name__ == "__main__":
         # Load saved surr_model
         surr_model_state_dicts = []
         for step in range(local_parms.n_initial_points, local_parms.algo_n_iterations):
-            surr_model_state_dict_file = os.path.join(base_path, "surr_model_{step}.pt")
+            surr_model_state_dict_file = os.path.join(base_path, f"surr_model_{step}.pt")
             if not os.path.exists(surr_model_state_dict_file):
                 raise RuntimeError(f"File {surr_model_state_dict_file} does not exist")
 
