@@ -18,11 +18,13 @@ class Policy:
             self.config.policy_model_name_or_path,
             use_fast=self.config.use_fast_tokenizer,
         )
-        generation_config = GenerationConfig.from_pretrained(self.config.policy_model_name_or_path)
+        generation_config = GenerationConfig.from_pretrained(
+            self.config.policy_model_name_or_path
+        )
         self.sampling_params = SamplingParams(
-            temperature = generation_config.temperature,
-            top_p = generation_config.top_p,
-            max_tokens = self.config.max_new_tokens
+            temperature=generation_config.temperature,
+            top_p=generation_config.top_p,
+            max_tokens=self.config.max_new_tokens,
         )
         self.__prompt__ = POLICY_PROMPT
         self.__history__ = HISTORY_FORMAT
@@ -33,7 +35,7 @@ class Policy:
     def load_inference(self, iteration):
         ckpt_dir = os.path.join(self.config.output_dir, f"{iteration}")
         self.model = LLM(
-            self.config.policy_model_name_or_path, # ckpt_dir
+            ckpt_dir,
             gpu_memory_utilization=0.5,
             enforce_eager=True,
         )
@@ -78,14 +80,10 @@ class Policy:
             trying_time = 0
             while trying_time < max_retry:
                 prompt = self.tokenizer.apply_chat_template(
-                    [{"role": "user", "content": prompt}], 
-                    tokenize=False
+                    [{"role": "user", "content": prompt}], tokenize=False
                 )
-                
-                generations = self.model.generate(
-                    prompt,
-                    self.sampling_params
-                )
+
+                generations = self.model.generate(prompt, self.sampling_params)
                 generations = [g.outputs[0].text for g in generations][0]
                 generations = self.post_process(generations)
 

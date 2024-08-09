@@ -57,7 +57,7 @@ class Actor:
                         .data["text"]
                         .to_pylist()
                     )
-                    
+
                     next_y = (
                         reward_model.sample(
                             torch.tensor(next_X_ds_emb),
@@ -86,9 +86,7 @@ class Actor:
                     .to_pylist()
                 )
                 action_y = (
-                    reward_model.sample(
-                        torch.tensor(action_X_ds_emb)
-                    )
+                    reward_model.sample(torch.tensor(action_X_ds_emb))
                     .mean(0)
                     .float()
                     .detach()
@@ -191,19 +189,15 @@ class Actor:
         return dataset
 
     def train_policy(self, iteration, dataset) -> None:
-        # Copy reward model checkpoint to the right location
-        os.system(
-            f"cp ckpts/reward_model/model_{iteration}.joblib ckpts/reward_model/model.joblib"
-        )
+        timestamp = datetime.today().isoformat()
+        algo = self.config.algo
+        if "HES" in algo:
+            algo = "qMultiStepHEntropySearch"
 
         # Preprocess queries to LLM's format
         dataset = self.format_query(dataset)
-        dataset.to_csv("data/ppo_query_dataset/ppo_query_dataset.csv")
-
-        # Start reward server
-        start_process(
-            f"python -m llmppo.reward_server --model acqf.{self.config.algo} &"
-        )
+        dataset_name = f"ppo_{timestamp}"
+        dataset.to_csv(f"data/{dataset_name}/{dataset_name}.csv")
 
         # Start PPO training
         # Edit the checkpoint
@@ -219,12 +213,18 @@ class Actor:
                 loaded_configs["model_name_or_path"] = os.path.join(
                     self.config.output_dir, f"{iteration-1}"
                 )
+            loaded_configs["query_dataset"] = f"data/{dataset_name}"
 
-        training_config_file = f"configs/ppo_{datetime.today().isoformat()}.yaml"
+        training_config_file = f"configs/ppo_{timestamp}.yaml"
         with open(training_config_file, "w", encoding="utf8") as stream:
             yaml.dump(
                 loaded_configs, stream, default_flow_style=False, allow_unicode=True
             )
+
+        # Start reward server
+        start_process(
+            f"python -m llmppo.reward_server --model acqfs.{algo} --config {training_config_file} &"
+        )
 
         # Start PPO training process
         start_process(
@@ -235,7 +235,7 @@ class Actor:
 
         # Stop reward server
         kill_process(
-            f"python -m llmppo.reward_server --model acqf.{self.config.algo} &"
+            f"python -m llmppo.reward_server --model acqfs.{algo} --config {training_config_file} &"
         )
 
         # Merge Lora adapter
