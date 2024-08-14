@@ -53,24 +53,24 @@ seeds = [2, 3, 5, 7, 11]
 
 env_names = [
     "Ackley",
-    # "Alpine",
-    # "Beale",
-    # "Branin",
-    # "Cosine8",
-    # "EggHolder",
-    # "Griewank",
-    # "Hartmann",
-    # "HolderTable",
-    # "Levy",
-    # "Powell",
-    # "SixHumpCamel",
-    # "StyblinskiTang",
-    # "SynGP"
+    "Alpine",
+    "Beale",
+    "Branin",
+    "Cosine8",
+    "EggHolder",
+    "Griewank",
+    "Hartmann",
+    "HolderTable",
+    "Levy",
+    "Powell",
+    "SixHumpCamel",
+    "StyblinskiTang",
+    "SynGP",
 ]
 
 env_noises = [
     0.0,
-    # 0.01,
+    0.01,
     # 0.1,
 ]
 
@@ -84,8 +84,6 @@ cost_function_names = {
     "r-spotlight": "$r$-spotlight cost",
     "non-markovian": "Non-Markovian cost",
 }
-
-# Init n_initial_points and algo_n_iterations
 
 
 def get_env_info(env_name, device):
@@ -198,43 +196,6 @@ def get_env_info(env_name, device):
     return x_dim, bounds, radius, n_initial_points, algo_n_iterations
 
 
-# Draw metrics
-def draw_metric(
-    metric_names,
-    env_name,
-    dict_metrics,
-    save_file,
-):
-    fig, axs = plt.subplots(1, len(metric_names), figsize=(4 * len(metric_names), 3))
-    for mid, metric_name in enumerate(metric_names):
-        if len(metric_names) == 1:
-            ax = axs
-        else:
-            ax = axs[mid]
-        for algo, metrics in dict_metrics.items():
-            mean = np.mean(metrics, axis=0)
-            std = np.std(metrics, axis=0)
-
-            ax.plot(np.arange(mean.shape[0]), mean[:, mid], label=algo)
-            ax.fill_between(
-                np.arange(mean.shape[0]),
-                mean[:, mid] - std[:, mid],
-                mean[:, mid] + std[:, mid],
-                alpha=0.1,
-            )
-
-        ax.set_xlabel("Step")
-        ax.set_ylabel(metric_name)
-
-    handles, labels = ax.get_legend_handles_labels()
-    fig.legend(
-        handles, labels, loc="outside lower center", ncol=5, bbox_to_anchor=(0.5, -0.15)
-    )
-    fig.suptitle(f"{env_name}", fontsize=11)
-    plt.savefig(save_file, dpi=300)
-    plt.close()
-
-
 def draw_time(
     env_name,
     dict_metrics,
@@ -259,6 +220,89 @@ def draw_time(
     plt.title(f"{env_name}", fontsize=11)
     plt.savefig(save_file, dpi=300)
     plt.close()
+
+
+def draw_metric_v2(
+    metric_names,
+    all_results,
+    save_files,
+):
+    for mi, metric_name in enumerate(metric_names):
+        fig, axs = plt.subplots(
+            len(env_noises),
+            len(cost_functions),
+            figsize=(4 * len(cost_functions), 3 * len(env_noises)),
+        )
+
+        for eni, env_noise in enumerate(env_noises):
+            for cfi, cost_fn in enumerate(cost_functions):
+                for algo in algos_name:
+                    list_eids = []
+                    list_means = []
+                    list_stds = []
+
+                    for eid, env_name in enumerate(env_names):
+                        for env_discretized in env_discretizeds:
+                            if (
+                                env_name,
+                                env_noise,
+                                env_discretized,
+                                cost_fn,
+                            ) not in all_results:
+                                continue
+
+                            if (
+                                algo
+                                not in all_results[
+                                    (env_name, env_noise, env_discretized, cost_fn)
+                                ]
+                            ):
+                                continue
+
+                            result = all_results[
+                                (env_name, env_noise, env_discretized, cost_fn)
+                            ][algo]
+                            mean = np.mean(
+                                result,
+                                axis=0,
+                            )[mi]
+                            std = np.std(
+                                result,
+                                axis=0,
+                            )[mi]
+                            list_eids.append(eid)
+                            list_means.append(mean)
+                            list_stds.append(std)
+
+                    # axs[eni][cfi].scatter(list_eids, list_means, label=algo, marker=".")
+                    axs[eni][cfi].errorbar(
+                        list_eids,
+                        list_means,
+                        yerr=list_stds,
+                        elinewidth=0.75,
+                        fmt="o",
+                        ms=3,
+                        label=algo,
+                    )
+
+                axs[eni][cfi].set_xticks(
+                    ticks=list(range(len(env_names))), labels=env_names, rotation=60
+                )
+                axs[eni][cfi].set_title(
+                    f"Noise {env_noise} - {cost_function_names[cost_fn]}"
+                )
+
+        handles, labels = axs[0][0].get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            loc="outside lower center",
+            ncol=7,
+            bbox_to_anchor=(0.5, -0.05),
+        )
+        fig.suptitle(metric_name, fontsize=11)
+        plt.savefig(save_files[mi], dpi=300)
+        plt.close()
 
 
 if __name__ == "__main__":
@@ -317,7 +361,7 @@ if __name__ == "__main__":
         draw_time(
             "",
             dict_metrics,
-            f"plots/runtime/runtime{'_discretized' if env_discretized else ''}.png",
+            f"plots/runtime{'_discretized' if env_discretized else ''}.png",
         )
 
     # Create all triplet (env_name, env_noise, env_discretized)
@@ -325,49 +369,49 @@ if __name__ == "__main__":
     for env_name in env_names:
         for env_noise in env_noises:
             for env_discretized in env_discretizeds:
-                datasets.append((env_name, env_noise, env_discretized))
+                for cost_fn in cost_functions:
+                    datasets.append((env_name, env_noise, env_discretized, cost_fn))
 
+    all_results = {}
     for dataset in datasets:
         print("Drawing for dataset", dataset)
-        env_name, env_noise, env_discretized = dataset
+        env_name, env_noise, env_discretized, cost_fn = dataset
 
-        for cost_fn in cost_functions:
-            dict_metrics = {}
-            for aid, algo in enumerate(algos):
-                list_metrics = []
-                for seed in seeds:
-                    if os.path.exists(
+        dict_metrics = {}
+        for aid, algo in enumerate(algos):
+            list_metrics = []
+            for seed in seeds:
+                if os.path.exists(
+                    f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
+                ):
+                    metrics = np.load(
                         f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
-                    ):
-                        metrics = np.load(
-                            f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
-                        )
-                    else:
-                        continue
-
-                    # >>> n_iterations x 3
-                    list_metrics.append(metrics)
-
-                if len(list_metrics) == 0:
+                    )
+                else:
                     continue
-                # >>> n_seeds x n_iterations x 3
 
-                dict_metrics[algos_name[aid]] = np.array(list_metrics)[
-                    ..., -1:
-                ]  # Get the Regret value
+                # >>> n_iterations x 3
+                fr = metrics[-1, -1]  # Get the final regret
+                i90 = next(
+                    x
+                    for x, val in enumerate(metrics[:, -1])
+                    if val > 0.9 * np.max(metrics[:, -1])
+                )  # Iteration exceeds 90% max c-regret
+                list_metrics.append([fr, i90])
 
-            if len(dict_metrics) == 0:
+            if len(list_metrics) == 0:
                 continue
+            # >>> n_seeds x n_iterations x 3
 
-            # >>> algo x n_seeds x n_iterations x 3
-            save_dir = Path(
-                f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}"
-            )
-            save_dir.mkdir(parents=True, exist_ok=True)
-            draw_metric(
-                # ["$u_{observed}$", "$u_{posterior}$", "Regret"],
-                ["Regret"],
-                f"{'Discretized ' if env_discretized else ''}{env_name} with $\sigma=${env_noise}\% and {cost_function_names[cost_fn]}",
-                dict_metrics,
-                f"plots/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{cost_fn}.png",
-            )
+            dict_metrics[algos_name[aid]] = np.array(list_metrics)
+
+        all_results[(env_name, env_noise, env_discretized, cost_fn)] = dict_metrics
+        # >>> algo x n_seeds x n_iterations x 1
+
+    save_dir = Path("plots")
+    save_dir.mkdir(parents=True, exist_ok=True)
+    draw_metric_v2(
+        ["Final Cummulative Regret", "Iteration @ 90\% Cummulative Regret"],
+        all_results,
+        ["plots/final_cregret.png", "plots/iteration_at_90perc_cregret.png"],
+    )
