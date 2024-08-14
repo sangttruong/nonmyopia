@@ -1,0 +1,23 @@
+# Model for PPO finetuning
+model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+use_peft: true
+lora_alpha: 16
+lora_r: 8
+lora_dropout: 0.1
+output_dir: ckpts/policy
+
+# Reward model
+reward_model: http://localhost:8000
+
+# Dataset
+query_dataset: data/ppo_query_dataset
+max_new_tokens: 512
+ppo_epochs: 1
+mini_batch_size: 1
+batch_size: 2
+
+# Hyperparameters
+gradient_accumulation_steps: 2
+gradient_checkpointing: true
+learning_rate: 1.0e-4
+save_steps: 1000

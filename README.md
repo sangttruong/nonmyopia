@@ -1,175 +1,51 @@
-# Non-myopic H-Entropy Search
+# Amortized Nonmyopic Bayesian Optimization in the Dynamic Cost Settings
 
-This repo support Bayesian optimization experiments with non-myopic H-Entropy Search. Bayesian optimization is a widely used approach for making optimal decisions in uncertain scenarios by acquiring information through costly experiments. Many real-world applications can be cast as instances of this problem, ranging from designing biological sequences to conducting ground surveys. In these contexts, the cost associated with each experiment can be dynamic and non-uniform. For instance, in cases where each experiment corresponds to a location, there exists a variable travel cost contingent on the distances between successive experiments. Conventional Bayesian optimization techniques, often reliant on myopic acquisition functions and assuming a fixed cost structure, yield suboptimal results in dynamic cost environments. To address these limitations, we introduce a scalable nonmyopic acquisition function grounded in a decision-theoretic extension of mutual information. Our empirical evaluations demonstrate that our method outperforms numerous baseline approaches across a range of global optimization tasks.
+This repository implements the paper Amortized Nonmyopic Bayesian Optimization in the Dynamic Cost Settings. We experiment with the following acquisition functions: multi-step H-entropy search (via Monte Carlo integration or Thompson sampling), multi-step trees, simple regret, expected improvement, probability of improvement, upper confidence bound, and knowledge gradient. There are two main experiments. First, we consider multiple synthetic functions with various input dimensions: 2D (Ackley, Alpine, Beale, Branin, EggHolder, Griewank, HolderTable, Levy, SixHumpCamel,  StyblinskiTang, and SynGP), 4D (Powell), 6D (Hartmann), and 8D (Cosine8). In addition, we also consider real-world experiments where we optimize protein sequences to maximize a protein's desirable properties, such as the fluorescent level.
 
-There are two main experiments:
-1. Synthetic experiments: We consider the synthetic environment with the following settings:
-    - 2D environment: Ackley, Alpine, Beale, Branin, EggHolder, Griewank, HolderTable, Levy, SixHumpCamel,  StyblinskiTang, and SynGP
-    - 4D environment: Powell
-    - 6D environment: Hartmann
-    - 8D environment: Cosine8
-2. Real-world experiments: We consider the real-world environment with protein sequence optimization.
+The online experiment is simulated in [main.py](main.py). Starting with initialized data points in the buffer, a Gaussian process regressor is constructed as a surrogate model to guide the decision-making of the actor (in [actor.py](actor.py)) in querying the next observed data point. This data point is chosen to maximize the value of an acquisition function (in [acqfs.py](acqfs.py)). An amortized network (in [amortized_network.py](amortized_network.py)), which is also known as the policy network, can be utilized to reduce the number of parameters when optimizing the acquisition function. The observed data point will be added to the buffer. The buffer is then used to update the surrogate model and guide the actor in collecting more data until the experiment is terminated according to the budget or some information criteria.
 
-## Pipeline code description
-Our pipeline is summarized as below figure.
-![Pipeline Overview](images/pipeline.png)
-
-The main process is located in [main.py](main.py). Starting with some initialized data points in the buffer, we construct the world model (surrogate model). This model is then used by the actor (in [actor.py](actor.py)) to query the next observed data point. This data point is chosen to maximize the value of an acquisition function (in [acqfs.py](acqfs.py)). An amortized network (in [amortized_network.py](amortized_network.py)) can be utilized to reduce the number of parameters when optimizing the acquisition function. The observed data point will be added to the buffer. Then the whole process will be repeated.
-
-### List of supporting acquistion functions
-- Multi-Step Trees
-- Simple Regret
-- Expected Improvement
-- Probability of Improvement
-- Upper Confidence Bound
-- Knowledge Gradient
-- H-Entropy Search
-
-## How to reproduce
-1. Install the requirements
+Package dependency for this project can be installed via pip:
 ```bash
- pip install -r requirements.txt
- pip install git+https://github.com/hiyouga/LLaMA-Factory.git@942362d0087345e468e0ae541dcca9b684d74d1a
+pip install -r requirements.txt
 ```
-2. Run the experiments by bash script
-```bash
-python main.py [-h] [--seed SEED] [--task TASK] [--env_name ENV_NAME] [--env_noise ENV_NOISE] [--env_discretized ENV_DISCRETIZED] [--algo ALGO]
-               [--cost_fn COST_FN] [--plot PLOT] [--gpu_id GPU_ID] [--cont CONT]
 
-options:
-  --seed SEED
-  --task TASK
-  --env_name ENV_NAME
-  --env_noise ENV_NOISE
-  --env_discretized ENV_DISCRETIZED
-  --algo ALGO
-  --cost_fn COST_FN
-  --plot PLOT
-  --gpu_id GPU_ID
-  --cont CONT
-```
-3. Compute metrics
+## Experiment 1: Optimization of Synthetic Functions
+Some arguments in this function are the following: `seed` specifies the seed value for random number generation. `task` indicates the type of task on which we run the experiment, which can be `top-k` or `level-set`. `env_name` specifies the name of the synthetic function that is used as the oracle, such as `alpine` or `ackley`. Other arguments include `env_noise`, which adds observation noise to the scores, with possible values like `0.0` or `0.1`. The `env_discretized` argument determines if the embedding space is continuous or discretized. The `algo` argument selects the acquisition function used in the experiment, while `cost_fn` specifies the cost function, with distance metrics like `euclidean` or `manhattan`. `plot` is a true/false boolean that decides whether to plot the loss during training. The `gpu_id` argument allows you to specify the GPU ID if they are visible. Setting `export CUDA_VISIBLE_DEVICES=2,5` will influence this option and assign gpu_id=0 to device 2, gpu_id=1 to device 5. Lastly, the `cont` argument controls whether a started experiment should be resumed( `True` ) or not (`False`). Our example configuration is
 ```bash
-python compute_metrics.py [-h] [--seed SEED] [--task TASK] [--env_name ENV_NAME] [--env_noise ENV_NOISE] [--env_discretized ENV_DISCRETIZED]
-                          [--algo ALGO] [--cost_fn COST_FN] [--plot PLOT] [--gpu_id GPU_ID] [--cont CONT]
-
-options:
-  --seed SEED
-  --task TASK
-  --env_name ENV_NAME
-  --env_noise ENV_NOISE
-  --env_discretized ENV_DISCRETIZED
-  --algo ALGO
-  --cost_fn COST_FN
-  --plot PLOT
-  --gpu_id GPU_ID
-  --cont CONT
+python main.py --seed 2 --task topk --env_name Ackley --env_noise 0.01 --env_discretized False --algo HES-TS-AM-1 --cost_fn euclidean --plot True --gpu_id 0 --cont False
 ```
-4. Draw regrets
+
+Evaluation metrics, such as regret, are computed after the online experiment is complete: we use the same set of arguments to draw its metrics.
+```bash
+python compute_metrics.py --seed 2 --task topk --env_name Ackley --env_noise 0.01 --env_discretized False --algo HES-TS-AM-1 --cost_fn euclidean --plot True --gpu_id 0 --cont False
+```
+
+After that, to visualize those metrics, one can simply run the following script:
 ```bash
 python draw_metrics.py
 ```
 
-## Running mass experiments with WandB Sweep
-1. Firstly, run below command to get the command to start sweep agent(s). 
+One can scale up the experiment in parallel painlessly with WandB sweep. First, run the below command to get the command to start sweep agent(s). 
 ```bash
 wandb sweep wnb_configs/full.yaml
 ```
-The result will look like "wandb agent your_name/nonmyopia/some_text".
-
-2. Start a single sweep agent.
+The result will look like "wandb agent your_name/nonmyopia/some_text". To start a single sweep agent.
 ```bash
 CUDA_VISIBLE_DEVICES=0 wandb agent your_name/nonmyopia/some_text &
 ```
-If you want to start more agents, simply rerun above command of different terminals/servers/... You can start as many sweep agents as your server can handle.
+To start more agents, simply rerun the above command for different terminals/servers. You can start as many sweep agents as your server can handle.
 
-## Analyzing world models
+## Experiment 2: Optimization of Protein Sequence Property
+The oracle in this semi-synthetic experiment is a linear model of the embedding space of the protein sequence. It emulates the outcome measurement from a wet lab experiment. The surrogate model is a linear model trained on the currently available dataset. The policy is a large language model (LLM) that is optimized via PPO to generate sequences with high acquisition values. To select the most suited embedding model, we experiment with various well-known LLMs, such as `meta-llama/Llama-2-7b-hf`, `meta-llama/Meta-Llama-3-8B`, `mistralai/Mistral-7B-v0.1`, `google/gemma-7b`, `zjunlp/llama-molinst-protein-7b`. We first embedded our dataset with various models and then ran the script below. One can compare as many models as they like by specifying a list of `models`.
 ```bash
-python test_surrogate_convergence.py [-h] [--seeds SEEDS [SEEDS ...]] [--env_names ENV_NAMES [ENV_NAMES ...]] [--env_noise ENV_NOISE]
-                                     [--env_discretized] [--gpu_id GPU_ID]
-
-options:
-  --seeds SEEDS [SEEDS ...]
-  --env_names ENV_NAMES [ENV_NAMES ...]
-  --env_noise ENV_NOISE
-  --env_discretized
-  --gpu_id GPU_ID
-```
-# Real World Experiment: LLM Sequence Design
-
-This source code is used to deisgn sequence(s) to maximize/minimize a property. It includes three main models:
-- **Oracle** is used as groundtruth to replace wet-lab experiments
-- **WorldModel** is the reward model trained with current observed data
-- **Policy** is the amortized network with ability to generate better sequence(s)
-
-
->[!INFO] Variables marked with "<  ...  >" are user-specific and have to be adapted before running the code.
-
-# SETUP
-## 1 Preparation
-
-Download this GITHUB into your DFS - file system (<GIT_PATH>).
-
-Before installation, please download and install miniconda and python ([Setup Instructions](https://docs.google.com/document/d/1PSTLJdtG3AymDGKPO-bHtzSnDyPmJPpJWXLmnJKzdfU/edit#heading=h.4tch43r93szq)). Then, create and activate a new conda environment by running the following code. Please choose your own < USERNAME> and any preferred name for "<ENV_NAME>".
-
-```bash
-source /dfs/scratch0/<USERNAME>/miniconda3/bin/activate
-conda create -n <ENV_NAME> python=3.10 -y
-conda activate <ENV_NAME>
+python test_oracle_convergence.py \
+    --seed 2 \
+    --datasets ura-hcmut/proteinea_fluorescence-Llama-2-7b-hf-embedding ura-hcmut/proteinea_fluorescence-Mistral-7B-v0.1-embedding ura-hcmut/proteinea_fluorescence-Meta-Llama-3-8B-embedding \
+    --models LLaMa-2 Mistral LLaMa-3 \
+    --output_dir results
 ```
 
-All required packages are listed in the [requirements](requirements.txt) file, so install all requirements:
->FIRST CD INTO...?
-```bash
-pip install -r requirements.txt
-```
-This might take a while, but we can use that time by creating a huggingface (HF) account on https://huggingface.co. After that, create a new model repository https://huggingface.co/new with your Username (<HF_USER>) and any Model (<HF_MODEL>) name you prefer. This Repo is used later to store modified models and datasets. Now create a new Access Token on Huggingface (Settings -> Access Tokens -> New token). It is crucial to copy paste that token (<hf_token>) into a safe space, since you will need it later and can't access it again. Now go to your freshly created Token and click on Manage -> Edit permissions. Make sure, to enable all the Repository permissions of <HF_MODEL> as well as all User permissions that are listed under "Repos".
-
-
-
-## 2 Building Oracle
-
-First, cd into the sequence_design folder <GIT_PATH>/nonmyopia/sequence_design.
-Make sure, your conda environment is activated.
-
-### 2.1 Data preprocessing and embedding
-Example with LLaMa-2 model and Proteina Fluorescence dataset. 
->Adapt the '--export_hub_model_id' and '--hf_hub_token' arguments with your personal variable names.
-```bash
-CUDA_VISIBLE_DEVICES=0 accelerate launch \
-    --config_file configs/single_config.yaml \
-    extract_emb_dataset.py \
-    --model_name_or_path meta-llama/Llama-2-7b-hf \
-    --dataset_dir data \
-    --template default \
-    --dataset proteinea/fluorescence \
-    --overwrite_cache False \
-    --preprocessing_num_workers 8 \
-    --num_train_epochs 0 \
-    --export_hub_model_id <HF_USER>/<HF_MODEL> \
-    --hf_hub_token <hf_token> \
-    --output_dir ckpts/embedding
-```
-
-Now, the newly created dataset needs to be added into the dataset_info.json file under <GIT_PATH>/nonmyopia/sequence_design/data/dataset_info.json. Open the file and insert (make sure to separate it from other models with a comma(,)):
-```bash
-  "<HF_USER>/<HF_MODEL>": {
-    "hf_hub_url": "<HF_USER>/<HF_MODEL>"
-  }
-```
-
-### List of supporting embedding models
-- meta-llama/Llama-2-7b-hf
-- meta-llama/Meta-Llama-3-8B
-- mistralai/Mistral-7B-v0.1
-- google/gemma-7b
-- zjunlp/llama-molinst-protein-7b
-
-### 2.2 Training
-
-In this step, we simply train linear models using sklearn. Currently, three models are suppported: linear, ridge, bayesridge. 
-
->Adapt the '--dataset' argument with the same personal variables as in '--export_hub_model_id'. Automaticly, a huggingface dataset will be created with the same RepoID as your model's.
+We train linear models (`linear`, `ridge`, or `bayesridge`) using `sklearn`. Adapt the `--dataset` argument with the same personal variables as in `--export_hub_model_id`. Automatically, a huggingface dataset will be created with the same RepoID as your model's.
 
 ```bash
 python oracle.py \
@@ -184,54 +60,4 @@ python oracle.py \
     --output_dir ckpts/oracle_bayesridge-seed2
 ```
 
-### 2.3 Embedding model selection
-To selecct the most suited embedding model for next steps, we tested various well-known LLMs. To do this, firstly, we embedd our dataset by various models, then run below script. Note: Below script is an example of comparing 3 embedding models including LLaMa-2, Mistral, and LLaMa-3.
-```bash
-python test_oracle_convergence.py \
-    --seed 2 \
-    --datasets ura-hcmut/proteinea_fluorescence-Llama-2-7b-hf-embedding ura-hcmut/proteinea_fluorescence-Mistral-7B-v0.1-embedding ura-hcmut/proteinea_fluorescence-Meta-Llama-3-8B-embedding \
-    --models LLaMa-2 Mistral LLaMa-3 \
-    --output_dir results
-```
-
-### 2.4 Bayesian Ridge testing
-To test bayesian ridge implemetation for regression and BoTorch acquisition function, please use below command. 
-```bash
-python bayesian_ridge.py
-```
-This script will use the Expected Improvement (EI) and Probability of Improvement (PI) acquisition functions from BoTorch. You will see results from BoTorch (qEI, qPI) similar to those from manual computations (MC-EI, MC-PI). Additionally, a figure named `bayesian_ridge_regression.png` will be created. From this figure, we can observe whether the Bayesian ridge regression is correct.
-```
-qEI: tensor([0.0362])
-qPI: tensor([0.0815])
-MC-EI: tensor([[[0.0351]]])
-MC-PI: tensor([[[0.0828]]])
-```
-
-
-### 2.5 Surrogate model testing
-To test the performance of the surrogate model, we can run below script. This script will output the performance of the surrogate model on the test set. The dataset used in this script is the same as the one used in the oracle training step.
-```bash
-python surr_model.py \
-    --seed 2 \
-    --do_train \
-    --do_eval \
-    --template default \
-    --model_name_or_path bayesridge \
-    --dataset_dir data \
-    --dataset <HF_USER>/<HF_MODEL> \
-    --preprocessing_num_workers 32 \
-    --output_dir ckpts/surr_model-seed2
-```
-
-## 3 Runing full pipeline code
-Currently, this code is only support HES-TS-AM acquision function. Some notes are: 
-- The world model should has the same embedding model with oracle.
-- Policy model can be different models with the above two models.
-- We would better finetuning Policy with LoRA to minimzing the catastrophic knowledge loss.
-  
-To run full pipeline, please use script in [Pipeline Script](scripts/run_exp.sh)
-
-## 4 Next steps
-- Re-adding the histories of sequence when optimizing with lookahead. See `configs.py` for designed prompt.
-- Verify the correctness of modified PPO pipeline.
-- Implement more acquisition functions.
+To run the full pipeline, please use the script in [Pipeline Script](scripts/run_exp.sh).

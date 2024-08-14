@@ -6,6 +6,14 @@
 
 r"""Run the main experiments."""
 
+import os
+
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+os.environ["NUMEXPR_NUM_THREADS"] = "1"
+
 from utils import set_seed, make_env, str2bool, make_save_dir
 from env_embedder import DiscreteEmbbeder
 from acqfs import qCostFunction, qLossFunctionTopK
@@ -19,13 +27,6 @@ import numpy as np
 import wandb
 import torch
 import time
-import os
-
-os.environ["OMP_NUM_THREADS"] = "2"
-os.environ["OPENBLAS_NUM_THREADS"] = "2"
-os.environ["MKL_NUM_THREADS"] = "2"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "2"
-os.environ["NUMEXPR_NUM_THREADS"] = "2"
 
 
 class Parameters:

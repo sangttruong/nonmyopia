@@ -26,7 +26,7 @@ from botorch.sampling.normal import SobolQMCNormalSampler
 from acqfs import qBOAcqf
 from synthetic_functions.alpine import AlpineN1
 from synthetic_functions.syngp import SynGP
-from env_wrapper import EnvWrapper
+from synthetic_functions.env_wrapper import EnvWrapper
 
 plt.rcParams.update(bundles.iclr2023())
 

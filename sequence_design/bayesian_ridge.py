@@ -58,17 +58,37 @@ class BayesianRidgeModel(BatchedMultiOutputGPyTorchModel):
         if input_transform is not None:
             self.input_transform = input_transform
 
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.transform_inputs(x)
-        x_shape = x.shape
-        x = x.view(-1, x_shape[-1])
-        y_mean, y_std = self.br_model.predict(x.cpu().detach().numpy(), return_std=True)
+    def forward(self, X: Tensor) -> Tensor:
+        X = self.transform_inputs(X)
+        X_shape = X.shape
+        X = X.view(-1, X_shape[-1])
+        y_mean, y_std = self.br_model.predict(X.cpu().detach().numpy(), return_std=True)
 
         return MultivariateNormal(
-            torch.tensor(y_mean).to(x).reshape(x_shape[:-1]),
-            torch.tensor(y_std).to(x).reshape(x_shape[:-1]).unsqueeze(-1)
-            * torch.eye(x_shape[-2]).to(x).expand(x_shape[:-1] + (x_shape[-2],)),
+            torch.tensor(y_mean).to(X).reshape(X_shape[:-1]),
+            torch.tensor(y_std).to(X).reshape(X_shape[:-1]).unsqueeze(-1)
+            * torch.eye(X_shape[-2]).to(X).expand(X_shape[:-1] + (X_shape[-2],)),
         )
+
+    def predict(self, X: Tensor) -> Tensor:
+        """
+        This functin return the mean outputs.
+        """
+        X = self.transform_inputs(X)
+        X_shape = X.shape
+        X = X.view(-1, X_shape[-1])
+        y_mean = self.br_model.predict(X.cpu().detach().numpy())
+        return torch.tensor(y_mean).to(X)
+
+    def sample(self, X: Tensor, sample_size: int = 1, **kwargs):
+        """
+        This functin return sampled outputs.
+        """
+        posteriors = self.posterior(X=X, **kwargs)
+        posterior_pred = posteriors.sample(
+            sample_shape=torch.Size([sample_size])
+        ).squeeze(-1)
+        return posterior_pred
 
     def posterior(
         self,
@@ -77,7 +97,7 @@ class BayesianRidgeModel(BatchedMultiOutputGPyTorchModel):
         **kwargs: Any,
     ) -> Union[GPyTorchPosterior, TransformedPosterior]:
 
-        mvn = self.forward(X)
+        mvn = self.forward(X=X)
         posterior = GPyTorchPosterior(distribution=mvn)
 
         if hasattr(self, "outcome_transform"):

@@ -23,5 +23,5 @@ parameters:
         values: [True]
     gpu_id:  
         values: [0]
-    cont:  
+    cont:
         values: [True]

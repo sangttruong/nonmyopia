@@ -1,18 +1,31 @@
 import os
-import json
 import torch
 import pickle
 import random
 import psutil
 import subprocess
 import numpy as np
-from tqdm import tqdm
-from functools import partial
-from datasets import Dataset, Features, load_dataset
+import yaml
 from typing import Dict, Sequence, Tuple, Union
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
+from dataclasses import make_dataclass, field
 
-from llmtuner.extras.constants import DATA_CONFIG
+
+def create_dataclass_from_dict(class_name: str, data: dict):
+    """
+    Function to create a dataclass dynamically from a dictionary
+    """
+    fields = [(key, type(value), field(default=value)) for key, value in data.items()]
+    return make_dataclass(class_name, fields)
+
+
+def read_yaml_to_dynamic_dataclass(file_path: str, class_name: str = "DynamicConfig"):
+    """
+    Function to read YAML file and create a dataclass
+    """
+    with open(file_path, "r", encoding="utf8") as file:
+        data = yaml.safe_load(file)
+    return create_dataclass_from_dict(class_name, data)
 
 
 def set_seed(seed):
@@ -23,6 +36,10 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def ensure_dir(dir_path):
+    os.makedirs(dir_path, exist_ok=True)
 
 
 def convert_oracle(examples, dataset_attr):
@@ -39,85 +56,24 @@ def save_to_pkl(data, name):
     pklFile.close()
 
 
-def get_data_info(data_args):
-    with open(os.path.join(data_args.dataset_dir, DATA_CONFIG), "r") as f:
-        dataset_info = json.load(f)
-    return dataset_info
-
-
-def custom_load_dataset(dataset_attr, data_args, model_args):
-    dataset = load_dataset(
-        path=dataset_attr.dataset_name,
-        name=dataset_attr.subset,
-        data_dir=dataset_attr.folder,
-        split=data_args.split,
-        cache_dir=model_args.cache_dir,
-        token=model_args.hf_hub_token
-    )
-    column_names = list(next(iter(dataset)).keys())
-    features = Features.from_dict(
-        {
-            "text": {"dtype": "string", "_type": "Value"},
-            "reward": {"dtype": "float", "_type": "Value"}
-        }
-    )
-    dataset_info = get_data_info(data_args)
-    for column_name in ["text", "reward"]:
-        dataset_attr.set_attr(
-            column_name, dataset_info[dataset_attr.dataset_name]["columns"])
-
-    convert_func = partial(convert_oracle, dataset_attr=dataset_attr)
-    dataset = dataset.map(
-        convert_func,
-        batched=True,
-        remove_columns=column_names,
-        features=features
-    )
-    return dataset
-
-
-def tokenize_dataset(
-    examples,
-    tokenizer,
-    data_args
-):
-    # build inputs with format `<bos> X1 Y1 <eos> <bos> X2 Y2 <eos>`
-    # and labels with format `<ignore> ... <ignore> Y1 <eos> <ignore> ... <ignore> Y2 <eos>`
-    model_inputs = {
-        "input_ids": [],
-        "attention_mask": [],
-        "rewards": []
-    }
-
-    for i in range(len(examples["text"])):
-        input_ids = tokenizer.encode(
-            examples["text"][i], add_special_tokens=False,
-            # padding='max_length', truncation=True,
-            # max_length=data_args.cutoff_len
-        )
-        attention_mask = [1] * len(input_ids)
-        labels = examples["reward"][i]
-
-        model_inputs["input_ids"].append(input_ids)
-        model_inputs["attention_mask"].append(attention_mask)
-        model_inputs["rewards"].append(labels)
-
-    return model_inputs
-
-
-def compute_regression_metrics(eval_preds: Sequence[Union[np.array, Tuple[np.array]]]) -> Dict[str, float]:
+def compute_regression_metrics(
+    eval_preds: Sequence[Union[np.array, Tuple[np.array]]]
+) -> Dict[str, float]:
     preds, labels = eval_preds
     labels = labels.reshape(-1, 1)
 
-    return {"mae": mean_absolute_error(labels, preds),
-            "r2": r2_score(labels, preds),
-            "rmse": root_mean_squared_error(labels, preds)}
+    return {
+        "mae": mean_absolute_error(labels, preds),
+        "r2": r2_score(labels, preds),
+        "rmse": root_mean_squared_error(labels, preds),
+    }
 
 
 def random_sampling(dataset, num_samples, *args, **kwargs):
     if "constrained_reward" in kwargs:
         dataset = dataset.filter(
-            lambda sample: sample["reward"] < kwargs["constrained_reward"])
+            lambda sample: sample["reward"] < kwargs["constrained_reward"]
+        )
     total_samples = len(dataset)
     indices = random.sample(range(total_samples), num_samples)
     return dataset.select(indices)
