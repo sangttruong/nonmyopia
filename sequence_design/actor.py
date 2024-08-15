@@ -10,7 +10,7 @@ from peft import AutoPeftModelForCausalLM
 
 from configs import ALLOWED_TOKENS
 from policy import Policy
-from utils import start_process, kill_process
+from utils import run_server, shutdown_server, start_process
 
 
 def collate_fn(data):
@@ -22,11 +22,9 @@ class Actor:
     def __init__(self, config):
         self.config = copy.deepcopy(config)
         self.policy = Policy(self.config)
-        self.config.output_dir = os.path.join(self.config.output_dir, "policy")
-
         self.algo_lookahead_steps = config.algo_lookahead_steps
 
-        if self.config.algo not in ["HES-TS-AM", "qEI", "qSR"]:
+        if self.config.algo not in ["HES-TS-AM", "qEI", "qSR", "qUCB", "qPI", "qKG"]:
             raise NotImplementedError(
                 f"Acquisition function `{self.config.algo}` is not implemented!"
             )
@@ -222,8 +220,8 @@ class Actor:
             )
 
         # Start reward server
-        start_process(
-            f"python -m llmppo.reward_server --model acqfs.{algo} --config {training_config_file} &"
+        server_process = run_server(
+            f"python -m llmppo.reward_server --model acqfs.{algo} --config {training_config_file}"
         )
 
         # Start PPO training process
@@ -234,9 +232,10 @@ class Actor:
         )
 
         # Stop reward server
-        kill_process(
-            f"python -m llmppo.reward_server --model acqfs.{algo} --config {training_config_file} &"
-        )
+        shutdown_server(server_process)
+
+        # Remove temp config file
+        os.system(f"rm -rf {training_config_file}")
 
         # Merge Lora adapter
         if loaded_configs["use_peft"]:
