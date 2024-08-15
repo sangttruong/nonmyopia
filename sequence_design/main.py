@@ -111,6 +111,9 @@ def main(args: Optional[Dict[str, Any]] = None):
     for i in range(config.algo_n_iterations):
         print(f"Starting BO loop #{i}")
 
+        # Ensure ckpt folder
+        os.makedirs(f"{config.output_dir}/{i}", exist_ok=True)
+
         X_train = buffer["dataset"].data["inputs_embeds"].to_pylist()
         y_train = buffer["dataset"].data["reward"].to_pylist()
         X_train = torch.tensor(X_train)

@@ -230,7 +230,7 @@ class Actor:
         start_process(
             f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch "
             "--config_file configs/single_config.yaml "
-            f"-m llmppo.ppo --config {training_config_file}"
+            f"-m llmppo.ppo_vllm --config {training_config_file}"
         )
 
         # Stop reward server
@@ -239,6 +239,7 @@ class Actor:
         )
 
         # Merge Lora adapter
-        model = AutoPeftModelForCausalLM.from_pretrained(output_dir)
-        model = model.merge_and_unload().to(torch.bfloat16)
-        model.save_pretrained(output_dir)
+        if loaded_configs["use_peft"]:
+            model = AutoPeftModelForCausalLM.from_pretrained(output_dir)
+            model = model.merge_and_unload().to(torch.bfloat16)
+            model.save_pretrained(output_dir)
