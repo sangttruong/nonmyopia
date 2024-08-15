@@ -1,6 +1,6 @@
 # Model for PPO finetuning
 model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
-use_peft: true
+use_peft: false
 lora_alpha: 16
 lora_r: 8
 lora_dropout: 0.1
