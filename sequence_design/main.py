@@ -3,6 +3,7 @@ import time
 import torch
 import joblib
 import pickle
+import wandb
 from argparse import ArgumentParser
 from torch.utils.data import DataLoader
 from typing import Any, Dict, Optional
@@ -15,6 +16,8 @@ from utils import set_seed, ensure_dir, random_sampling, read_yaml_to_dynamic_da
 
 
 def main(args: Optional[Dict[str, Any]] = None):
+    wandb.init(project="nonmyopia-sequence")
+
     parser = ArgumentParser()
     parser.add_argument("--config", type=str, default="configs/full_pipeline.yaml")
     args = parser.parse_args()
@@ -141,6 +144,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         )
 
         # Train new policy with rolled out dataset
+        query_start_time = time.time()
         # We must unload embedder here because we will load separated reward server
         embedder.unload()
         actor.train_policy(iteration=i, dataset=rollout_dataset)
@@ -175,11 +179,21 @@ def main(args: Optional[Dict[str, Any]] = None):
             .to_pylist()
         )
         next_y = oracle.predict(torch.tensor(observed_emb)).tolist()
+        query_end_time = time.time()
 
         buffer["x"].append(next_X)
         buffer["y"].append(next_y)
         print("Next X", next_X)
         print("Next y", next_y)
+
+        # Logging
+        wandb.log(
+            {
+                "x": next_X,
+                "y": next_y,
+                "runtime": query_end_time - query_start_time,
+            }
+        )
 
         # Merge dataset for reward_model
         observed = Dataset.from_dict(
@@ -190,6 +204,9 @@ def main(args: Optional[Dict[str, Any]] = None):
         # Save buffer
         with open(f"{config.output_dir}/buffer.pkl", "wb") as f:
             pickle.dump(buffer, f)
+
+    # WandB end
+    wandb.finish()
 
 
 if __name__ == "__main__":
