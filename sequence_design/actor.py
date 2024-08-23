@@ -1,15 +1,14 @@
-import os
 import copy
-import torch
-import random
-import yaml
+import os
 from datetime import datetime
+
+import torch
+import yaml
 from datasets import Dataset
-from torch.utils.data import DataLoader
 from peft import AutoPeftModelForCausalLM
 
-from configs import ALLOWED_TOKENS
 from policy import Policy
+from torch.utils.data import DataLoader
 from utils import run_server, shutdown_server, start_process
 
 
@@ -107,72 +106,6 @@ class Actor:
         else:
             raise NotImplementedError
 
-    @torch.no_grad()
-    def rollout(
-        self,
-        embedder,
-        reward_model,
-        sequences,
-        n_sequences=16,
-        sequence_length=237,
-    ):
-        if len(sequences) <= n_sequences:
-            n_input_sequences = len(sequences)
-            sequences = [sequences * (n_sequences // n_input_sequences)]
-            n_sequences = len(sequences[0])
-        else:
-            sequences = [sequences[-n_sequences:]]
-
-        # Deprecated
-        # sequences = [[''.join(random.choices(ALLOWED_TOKENS, k=sequence_length)) for _ in range(n_sequences)]]
-
-        for i in range(self.algo_lookahead_steps):
-            step_sequences = []
-
-            edit_idxs = random.choices(list(range(sequence_length)), k=n_sequences)
-            edit_tokens = random.choices(ALLOWED_TOKENS, k=n_sequences)
-            for sid, (idx, token) in enumerate(zip(edit_idxs, edit_tokens)):
-                new_sequence = sequences[i][sid]
-                new_sequence = new_sequence[:idx] + token + new_sequence[idx + 1 :]
-                step_sequences.append(new_sequence)
-
-            sequences.append(step_sequences)
-
-        # Infer reward
-        flatten_sequences = [s for ss in sequences for s in ss]
-        flatten_sequences_emb = (
-            embedder.get_embeddings(
-                DataLoader(
-                    Dataset.from_dict({"text": flatten_sequences}), batch_size=1
-                ),
-                embedder.which_model,
-                ["text"],
-            )
-            .data["text"]
-            .to_pylist()
-        )
-        flatten_sequences_emb = torch.tensor(flatten_sequences_emb)
-
-        rewards = reward_model.sample(flatten_sequences_emb, sample_size=1)
-        rewards = rewards.reshape(1, -1, n_sequences).mean(0)
-        # Create dataset
-        data_dict = {
-            "prompt": [],
-        }
-        for i in range(self.algo_lookahead_steps + 1):
-            data_dict["prompt"].extend(
-                [
-                    [{"role": "user", "content": seq}]
-                    for seq in self.policy.format_prompt(
-                        X=sequences[i],
-                        prevX=sequences[: i + 1],
-                        prevY=rewards[: i + 1].float().detach().cpu().tolist(),
-                    )
-                ]
-            )
-
-        return Dataset.from_dict(data_dict)
-
     def format_query(self, dataset):
         def format_query_fn(queries):
             formatted_query = []
@@ -186,6 +119,27 @@ class Actor:
         dataset = dataset.map(format_query_fn, batched=True, remove_columns=["prompt"])
         return dataset
 
+    def create_dataset(
+        self,
+        prevX,
+        prevY,
+        sequence_length=237,
+    ):
+        # Create dataset
+        dataset = Dataset.from_dict(
+            {
+                "prompt": [
+                    [{"role": "user", "content": seq}]
+                    for seq in self.policy.format_prompt(
+                        prevX=prevX,
+                        prevY=prevY,
+                    )
+                ],
+            }
+        )
+
+        return self.format_query(dataset)
+
     def train_policy(self, iteration, dataset) -> None:
         timestamp = datetime.today().isoformat()
         algo = self.config.algo
@@ -193,7 +147,6 @@ class Actor:
             algo = "qMultiStepHEntropySearch"
 
         # Preprocess queries to LLM's format
-        dataset = self.format_query(dataset)
         dataset_name = f"ppo_{timestamp}"
         dataset.to_csv(f"data/{dataset_name}/{dataset_name}.csv")
 

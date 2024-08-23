@@ -1,25 +1,26 @@
 import os
-import time
-import torch
-import joblib
 import pickle
-import wandb
+import time
 from argparse import ArgumentParser
-from torch.utils.data import DataLoader
 from typing import Any, Dict, Optional
-from datasets import load_dataset, concatenate_datasets, Dataset
+
+import joblib
+import torch
+import wandb
 
 from actor import Actor
 from bayesian_ridge import BayesianRidgeModel
+from datasets import concatenate_datasets, Dataset, load_dataset
 from embed_text_package.embed_text import Embedder
-from utils import set_seed, ensure_dir, random_sampling, read_yaml_to_dynamic_dataclass
+from torch.utils.data import DataLoader
+from utils import ensure_dir, random_sampling, read_yaml_to_dynamic_dataclass, set_seed
 
 
 def main(args: Optional[Dict[str, Any]] = None):
     wandb.init(project="nonmyopia-sequence")
 
     parser = ArgumentParser()
-    parser.add_argument("--config", type=str, default="configs/full_pipeline.yaml")
+    parser.add_argument("--config", type=str, default="configs/hes_ts_am.yaml")
     args = parser.parse_args()
 
     # Automatically create config class
@@ -28,7 +29,6 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Set seed & create necessary directory
     set_seed(config.seed)
-    ensure_dir(f"{config.output_dir}/reward_model")
 
     # Initializing embedding model
     embedder = Embedder()
@@ -115,7 +115,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         print(f"Starting BO loop #{i}")
 
         # Ensure ckpt folder
-        os.makedirs(f"{config.output_dir}/{i}", exist_ok=True)
+        ensure_dir(f"{config.output_dir}/{i}")
 
         X_train = buffer["dataset"].data["inputs_embeds"].to_pylist()
         y_train = buffer["dataset"].data["reward"].to_pylist()
@@ -135,19 +135,14 @@ def main(args: Optional[Dict[str, Any]] = None):
         ):
             actor.algo_lookahead_steps -= 1
 
-        # Rollout training dataset for policy
-        rollout_dataset = actor.rollout(
-            embedder=embedder,
-            reward_model=reward_model,
-            sequences=buffer["x"][-1],
-            n_sequences=config.rollout_sequences,
-        )
+        # Create prompt dataset for policy training
+        prompt_dataset = actor.create_dataset(prevX=buffer["x"], prevY=buffer["y"])
 
         # Train new policy with rolled out dataset
         query_start_time = time.time()
         # We must unload embedder here because we will load separated reward server
         embedder.unload()
-        actor.train_policy(iteration=i, dataset=rollout_dataset)
+        actor.train_policy(iteration=i, dataset=prompt_dataset)
         embedder.load(config.embedding_model_name_or_path)
 
         # Get the next X
@@ -187,13 +182,9 @@ def main(args: Optional[Dict[str, Any]] = None):
         print("Next y", next_y)
 
         # Logging
-        wandb.log(
-            {
-                "x": next_X,
-                "y": next_y,
-                "runtime": query_end_time - query_start_time,
-            }
-        )
+        log_dict = {f"y{k}": v for k, v in enumerate(next_y)}
+        log_dict.update({"runtime": query_end_time - query_start_time})
+        wandb.log(log_dict)
 
         # Merge dataset for reward_model
         observed = Dataset.from_dict(

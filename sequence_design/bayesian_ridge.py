@@ -1,20 +1,17 @@
-from typing import (
-    Any,
-    Optional,
-    Union,
-)
-from botorch.models.utils import validate_input_scaling
+from typing import Any, Optional, Union
+
+import torch
 from botorch.acquisition.objective import PosteriorTransform
-from botorch.models.model import Model
 from botorch.models.gpytorch import BatchedMultiOutputGPyTorchModel
+from botorch.models.model import Model
 from botorch.models.transforms.input import InputTransform
 from botorch.models.transforms.outcome import OutcomeTransform
+from botorch.models.utils import validate_input_scaling
 from botorch.posteriors import GPyTorchPosterior
 from botorch.posteriors.transformed import TransformedPosterior
 from gpytorch.distributions.multivariate_normal import MultivariateNormal
 from sklearn.linear_model import BayesianRidge
 from torch import Tensor
-import torch
 
 
 class BayesianRidgeModel(BatchedMultiOutputGPyTorchModel):
