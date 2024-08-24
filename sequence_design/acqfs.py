@@ -56,7 +56,8 @@ class Acqf(RewardModelTemplate):
         self.embedder.unload()
 
     def post_process(self, generation):
-        return re.findall("[A-Z]{230,}", generation)[0]
+        # Pick the lastest protein-like sequence
+        return re.findall("[A-Z]{230,}", generation)[-1]
 
 
 class qKG(Acqf):
