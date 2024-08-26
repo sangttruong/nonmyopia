@@ -1,13 +1,13 @@
-import re
 import os
 import random
-import editdistance
+import re
 from typing import List
-from tqdm import tqdm
-from transformers import AutoTokenizer, GenerationConfig
-from vllm import LLM, SamplingParams
+
+import editdistance
 
 from configs import HISTORY_FORMAT, POLICY_PROMPT
+from transformers import AutoTokenizer, GenerationConfig
+from vllm import LLM, SamplingParams
 
 
 class Policy:
@@ -44,63 +44,62 @@ class Policy:
         del self.model
         self.model = None
 
-    def format_prompt(
-        self, X: List[str], prevX: List[List[str]], prevY: List[List[float]]
-    ):
+    def format_prompt(self, prevX: List[List[str]], prevY: List[List[float]]):
         # prevX, prevY: n_steps x n_protein
-        histories = [[] for _ in range(len(X))]
+        histories = [[] for _ in range(len(prevX[0]))]
         for stepX, stepY in zip(prevX, prevY):
             for i, (pX, pY) in enumerate(zip(stepX, stepY)):
                 histories[i].append(
                     self.__history__.format(protein=pX, fluorescence=pY)
                 )
 
-        histories = ["\n".join(h) for h in histories]
         prompt = [
-            self.__prompt__.format(history=h, protein=x) for h, x in zip(histories, X)
+            self.__prompt__.format(history="\n".join(h), protein=p)
+            for h, p in zip(histories, prevX[-1])
         ]
-        # prompt = [self.__prompt__.format(protein=x) for x in X]
         return prompt
 
-    def post_process(self, generation):
-        return re.findall("[A-Z]{230,}", generation)
+    def post_process(self, generations: List[str]):
+        outputs = []
+        for generation in generations:
+            outputs.extend(re.findall("[A-Z]{230,}", generation))
+        return outputs
 
     def generate(
         self,
         X: List[str],
         prevX: List[List[str]],
         prevY: List[List[float]],
-        max_retry=4,
+        max_retry=8,
         **kwargs,
     ):
+        self.sampling_params.n = max_retry
         prompts = self.format_prompt(X, prevX, prevY)
+        prompts = [
+            self.tokenizer.apply_chat_template(
+                [{"role": "user", "content": prompt}], tokenize=False
+            )
+            for prompt in prompts
+        ]
+
+        list_generations = self.model.generate(prompts, self.sampling_params)
+        list_generations = [[go.text for go in g.outputs] for g in list_generations]
+        list_generations = [self.post_process(g) for g in list_generations]
+
         outputs = []
 
-        for pi, prompt in enumerate(tqdm(prompts)):
-            trying_time = 0
-            while trying_time < max_retry:
-                prompt = self.tokenizer.apply_chat_template(
-                    [{"role": "user", "content": prompt}], tokenize=False
-                )
+        for pi, generations in enumerate(list_generations):
+            generations_ed = self.__verify_output__(
+                [X[pi]] * len(generations), generations
+            )
+            filtered_generations = [
+                g for g, ed in zip(generations, generations_ed) if ed == 1
+            ]
 
-                generations = self.model.generate(prompt, self.sampling_params)
-                generations = [g.outputs[0].text for g in generations][0]
-                generations = self.post_process(generations)
-
-                generations_ed = self.__verify_output__(
-                    [X[pi]] * len(generations), generations
-                )
-                filtered_generations = [
-                    g for g, ed in zip(generations, generations_ed) if ed == 1
-                ]
-
-                if len(filtered_generations) > 0:
-                    outputs.append(random.choice(filtered_generations))
-                    break
-                else:
-                    trying_time += 1
-
-            if trying_time == max_retry:
+            if len(filtered_generations) > 0:
+                outputs.append(random.choice(filtered_generations))
+                break
+            else:
                 outputs.append(X[pi])
 
         return outputs

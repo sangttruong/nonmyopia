@@ -1,14 +1,15 @@
 import os
-import torch
 import pickle
 import random
-import psutil
 import subprocess
-import numpy as np
-import yaml
+from dataclasses import field, make_dataclass
 from typing import Dict, Sequence, Tuple, Union
+
+import numpy as np
+import psutil
+import torch
+import yaml
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
-from dataclasses import make_dataclass, field
 
 
 def create_dataclass_from_dict(class_name: str, data: dict):
