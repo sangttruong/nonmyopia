@@ -54,8 +54,8 @@ class Policy:
                 )
 
         prompt = [
-            self.__prompt__.format(history="\n".join(h), protein=h[-1])
-            for h in histories
+            self.__prompt__.format(history="\n".join(h), protein=p)
+            for h, p in zip(histories, prevX[-1])
         ]
         return prompt
 
