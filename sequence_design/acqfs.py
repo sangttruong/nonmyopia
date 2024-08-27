@@ -1,6 +1,8 @@
 import pickle
 import re
 
+import editdistance
+
 import joblib
 import numpy as np
 import torch
@@ -129,3 +131,21 @@ class qMultiStepHEntropySearch(Acqf):
             .cpu()
         )
         return y
+
+
+def spotlight_cost_fn(msg) -> bool:
+    """
+    This function checks whether the generated sequences differ from latest sequence by 1 character or not.
+
+    msg: List[str]: A converasation containing all rounds. E.g. [q1, a1, q2, a2]
+    """
+    # Take the latest two sequences
+    latest_sequence = re.findall("[A-Z]{230,}", msg[-1])
+    latest_sequence = latest_sequence[-1] if latest_sequence else ""
+    semi_latest_sequence = re.findall("[A-Z]{230,}", msg[-3])
+    semi_latest_sequence = semi_latest_sequence[-1] if semi_latest_sequence else ""
+
+    if latest_sequence == "" and semi_latest_sequence == "":
+        return 0
+
+    return editdistance.eval(latest_sequence, semi_latest_sequence) <= 1
