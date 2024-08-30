@@ -4,9 +4,10 @@ from datetime import datetime
 
 import torch
 import yaml
+
+from configs import SYSTEM_PROMPT, TEMPLATED_LOOKAHEAD_PROMPT
 from datasets import Dataset
 from peft import AutoPeftModelForCausalLM
-
 from policy import Policy
 from torch.utils.data import DataLoader
 from utils import run_server, shutdown_server, start_process
@@ -40,10 +41,9 @@ class Actor:
             for rid in range(n_restarts):
                 local_prevX = copy.deepcopy(prevX)
                 local_prevy = copy.deepcopy(prevY)
-                local_X = local_prevX[-1]
 
                 for step in range(self.algo_lookahead_steps):
-                    next_X = self.policy.generate(local_X, local_prevX, local_prevy)
+                    next_X = self.policy.generate(local_prevX, local_prevy)
                     next_X_ds = Dataset.from_dict({"text": next_X})
                     next_X_ds_emb = (
                         embedder.get_embeddings(
@@ -69,9 +69,8 @@ class Actor:
 
                     local_prevX.append(next_X)
                     local_prevy.append(next_y)
-                    local_X = next_X
 
-                action_X = self.policy.generate(local_X, local_prevX, local_prevy)
+                action_X = self.policy.generate(local_prevX, local_prevy)
                 action_X_ds = Dataset.from_dict({"text": action_X})
                 action_X_ds_emb = (
                     embedder.get_embeddings(
@@ -111,33 +110,53 @@ class Actor:
             formatted_query = []
             for query in queries["prompt"]:
                 formatted_query.append(
-                    self.policy.tokenizer.apply_chat_template(query, tokenize=False)
+                    self.policy.tokenizer.apply_chat_template(
+                        query, add_generation_prompt=True, tokenize=False
+                    )
                 )
-            return {"text": formatted_query}
+            output = {"text": formatted_query}
+
+            for i in range(self.algo_lookahead_steps):
+                output[f"text{i+1}"] = queries[f"prompt{i+1}"]
+
+            return output
 
         # Dataset must have a column 'text'
-        dataset = dataset.map(format_query_fn, batched=True, remove_columns=["prompt"])
+        columns = dataset.column_names
+        dataset = dataset.map(format_query_fn, batched=True, remove_columns=columns)
         return dataset
 
     def create_dataset(
         self,
         prevX,
         prevY,
-        sequence_length=237,
     ):
+        data_dict = {"prompt": []}
+        data_dict.update({f"prompt{i+1}": [] for i in range(self.algo_lookahead_steps)})
         # Create dataset
-        dataset = Dataset.from_dict(
-            {
-                "prompt": [
-                    [{"role": "user", "content": seq}]
-                    for seq in self.policy.format_prompt(
-                        prevX=prevX,
-                        prevY=prevY,
-                    )
-                ],
-            }
-        )
+        lookahead_prompt = None
+        for model_type in TEMPLATED_LOOKAHEAD_PROMPT:
+            if model_type in self.config.policy_model_name_or_path.lower():
+                lookahead_prompt = TEMPLATED_LOOKAHEAD_PROMPT[model_type]
+                break
+        assert (
+            lookahead_prompt is not None
+        ), "Please define template for lookahead manually."
 
+        for seq in self.policy.format_prompt(
+            prevX=prevX,
+            prevY=prevY,
+        ):
+            data_dict["prompt"].append(
+                [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": seq},
+                ]
+            )
+            for i in range(self.algo_lookahead_steps):
+                data_dict[f"prompt{i+1}"].append(lookahead_prompt)
+
+        dataset = Dataset.from_dict(data_dict)
         return self.format_query(dataset)
 
     def train_policy(self, iteration, dataset) -> None:

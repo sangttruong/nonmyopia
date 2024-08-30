@@ -67,14 +67,14 @@ class Policy:
 
     def generate(
         self,
-        X: List[str],
         prevX: List[List[str]],
         prevY: List[List[float]],
         max_retry=8,
         **kwargs,
     ):
+        X = prevX[-1]
         self.sampling_params.n = max_retry
-        prompts = self.format_prompt(X, prevX, prevY)
+        prompts = self.format_prompt(prevX, prevY)
         prompts = [
             self.tokenizer.apply_chat_template(
                 [{"role": "user", "content": prompt}], tokenize=False

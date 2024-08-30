@@ -30,7 +30,8 @@ class Acqf(RewardModelTemplate):
         """
         This is implementation of your reward model.
         """
-        messages = [self.post_process(x) for x in messages]
+        print(messages)
+        messages = [self.post_process(x[-1]) for x in messages]
         ds = Dataset.from_dict({"text": messages})
         ds_emb = (
             self.embedder.get_embeddings(
@@ -142,7 +143,11 @@ def spotlight_cost_fn(msg) -> bool:
     # Take the latest two sequences
     latest_sequence = re.findall("[A-Z]{230,}", msg[-1])
     latest_sequence = latest_sequence[-1] if latest_sequence else ""
-    semi_latest_sequence = re.findall("[A-Z]{230,}", msg[-3])
+    if len(msg) > 3:
+        msg_idx = -3
+    else:
+        msg_idx = 0
+    semi_latest_sequence = re.findall("[A-Z]{230,}", msg[msg_idx])
     semi_latest_sequence = semi_latest_sequence[-1] if semi_latest_sequence else ""
 
     if latest_sequence == "" and semi_latest_sequence == "":

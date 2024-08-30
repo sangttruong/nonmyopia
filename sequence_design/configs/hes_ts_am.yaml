@@ -1,5 +1,5 @@
 # Experiment
-seed: 2
+seed: 42
 dataset: stair-lab/proteinea_fluorescence-gemma-7b-embedding
 initinal_sequences: 2000
 n_sequences: 10
@@ -21,9 +21,9 @@ cost_discount_threshold: -1.0
 
 # Models
 embedding_model_name_or_path: google/gemma-7b
-policy_model_name_or_path: Qwen/Qwen2-1.5B-Instruct
+policy_model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
 use_fast_tokenizer: True
 max_new_tokens: 1024
 vllm_gpu_util: 0.9
 sample_size: 4 # Sampling reward value
-ppo_gpu: 3
+ppo_gpu: 2

@@ -87,7 +87,7 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Random choose sequences with reward < 2.0 as inital sequence
     initial_sequences = random_sampling(
-        testing_dataset, num_samples=config.n_sequences, constrained_reward=2.0
+        testing_dataset, num_samples=config.n_sequences, constrained_reward=1.5
     )
     # Query Oracle for y
     initial_sequences_reward = oracle.predict(
