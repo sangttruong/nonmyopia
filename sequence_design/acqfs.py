@@ -16,7 +16,7 @@ from botorch.acquisition import (
 )
 from datasets import Dataset
 from embed_text_package.embed_text import Embedder
-from llmppo.reward_model import RewardModelTemplate
+from lampo.reward_model import RewardModelTemplate
 from torch.utils.data import DataLoader
 
 
@@ -32,7 +32,10 @@ class Acqf(RewardModelTemplate):
         """
         print(messages)
         messages = [self.post_process(x[-1]) for x in messages]
-        ds = Dataset.from_dict({"text": messages})
+        sequences = [x[0] for x in messages]
+        num_sequences = [x[1] for x in messages]
+
+        ds = Dataset.from_dict({"text": sequences})
         ds_emb = (
             self.embedder.get_embeddings(
                 DataLoader(ds, batch_size=1),
@@ -42,7 +45,11 @@ class Acqf(RewardModelTemplate):
             .data["text"]
             .to_pylist()
         )
-        return self.bo_acqf(torch.Tensor(ds_emb).unsqueeze(-2))
+        output = self.bo_acqf(torch.Tensor(ds_emb).unsqueeze(-2))
+        for i, ns in enumerate(num_sequences):
+            if ns != 1:
+                output[i] = -10
+        return output
 
     def load(self):
         """
@@ -61,7 +68,8 @@ class Acqf(RewardModelTemplate):
 
     def post_process(self, generation):
         # Pick the lastest protein-like sequence
-        return re.findall("[A-Z]{230,}", generation)[-1]
+        pp_generation = re.findall("[A-Z]{230,}", generation)
+        return pp_generation[-1], len(pp_generation)
 
 
 class qKG(Acqf):
@@ -142,7 +150,7 @@ def spotlight_cost_fn(msg) -> bool:
     """
     # Take the latest two sequences
     latest_sequence = re.findall("[A-Z]{230,}", msg[-1])
-    latest_sequence = latest_sequence[-1] if latest_sequence else ""
+    latest_sequence = latest_sequence[0] if len(latest_sequence) == 1 else ""
     if len(msg) > 3:
         msg_idx = -3
     else:
@@ -153,4 +161,4 @@ def spotlight_cost_fn(msg) -> bool:
     if latest_sequence == "" and semi_latest_sequence == "":
         return 0
 
-    return editdistance.eval(latest_sequence, semi_latest_sequence) <= 1
+    return editdistance.eval(latest_sequence, semi_latest_sequence) == 1

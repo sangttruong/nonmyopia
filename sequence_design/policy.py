@@ -5,7 +5,7 @@ from typing import List
 
 import editdistance
 
-from configs import HISTORY_FORMAT, POLICY_PROMPT
+from configs import LOOKAHEAD_PROMPT, POLICY_PROMPT, SYSTEM_PROMPT
 from transformers import AutoTokenizer, GenerationConfig
 from vllm import LLM, SamplingParams
 
@@ -26,8 +26,6 @@ class Policy:
             top_p=generation_config.top_p,
             max_tokens=self.config.max_new_tokens,
         )
-        self.__prompt__ = POLICY_PROMPT
-        self.__history__ = HISTORY_FORMAT
 
     def __verify_output__(self, X: List[str], Y: List[str]):
         return [editdistance.eval(x, y) for x, y in zip(X, Y)]
@@ -45,19 +43,38 @@ class Policy:
         self.model = None
 
     def format_prompt(self, prevX: List[List[str]], prevY: List[List[float]]):
-        # prevX, prevY: n_steps x n_protein
-        histories = [[] for _ in range(len(prevX[0]))]
-        for stepX, stepY in zip(prevX, prevY):
-            for i, (pX, pY) in enumerate(zip(stepX, stepY)):
-                histories[i].append(
-                    self.__history__.format(protein=pX, fluorescence=pY)
-                )
+        # prevX, prevY: n_steps x n_proteins
+        n_steps = len(prevX)
+        n_proteins = len(prevX[0])
 
-        prompt = [
-            self.__prompt__.format(history="\n".join(h), protein=p)
-            for h, p in zip(histories, prevX[-1])
-        ]
-        return prompt
+        prompts = []
+        for pi in range(n_proteins):
+            prompt = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+            ]
+            for sid in range(n_steps):
+                X = prevX[sid][pi]
+                y = prevY[sid][pi]
+
+                if sid == 0:
+                    prompt.append(
+                        {
+                            "role": "user",
+                            "content": POLICY_PROMPT.format(protein=X)
+                            + LOOKAHEAD_PROMPT.format(reward=y),
+                        }
+                    )
+                else:
+                    prompt.append({"role": "assistant", "content": X})
+                    prompt.append(
+                        {"role": "user", "content": LOOKAHEAD_PROMPT.format(reward=y)}
+                    )
+            prompt = self.tokenizer.apply_chat_template(
+                prompt, add_generation_prompt=True, tokenize=False
+            )
+            prompts.append(prompt)
+
+        return prompts
 
     def post_process(self, generations: List[str]):
         outputs = []
@@ -74,13 +91,8 @@ class Policy:
     ):
         X = prevX[-1]
         self.sampling_params.n = max_retry
+        self.sampling_params.best_of = max_retry
         prompts = self.format_prompt(prevX, prevY)
-        prompts = [
-            self.tokenizer.apply_chat_template(
-                [{"role": "user", "content": prompt}], tokenize=False
-            )
-            for prompt in prompts
-        ]
 
         list_generations = self.model.generate(prompts, self.sampling_params)
         list_generations = [[go.text for go in g.outputs] for g in list_generations]

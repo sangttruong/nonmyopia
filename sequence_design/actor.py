@@ -5,12 +5,12 @@ from datetime import datetime
 import torch
 import yaml
 
-from configs import SYSTEM_PROMPT, TEMPLATED_LOOKAHEAD_PROMPT
+from configs import TEMPLATED_LOOKAHEAD_PROMPT
 from datasets import Dataset
 from peft import AutoPeftModelForCausalLM
 from policy import Policy
 from torch.utils.data import DataLoader
-from utils import run_server, shutdown_server, start_process
+from utils import check_health, run_server, shutdown_server, start_process
 
 
 def collate_fn(data):
@@ -29,7 +29,7 @@ class Actor:
                 f"Acquisition function `{self.config.algo}` is not implemented!"
             )
 
-    def query(self, prevX, prevY, embedder, reward_model, n_restarts=3):
+    def query(self, iteration, prevX, prevY, embedder, reward_model, n_restarts=3):
         # Query the next sequence
         X = prevX[-1]
         n_sequences = len(X)
@@ -98,41 +98,20 @@ class Actor:
             output = []
 
             for bi, si in zip(best_idx, list(range(n_sequences))):
-                output.append(X_returned[bi][0][si])
+                output.append(X_returned[bi][iteration + 1][si])
 
             return output
 
         else:
             raise NotImplementedError
 
-    def format_query(self, dataset):
-        def format_query_fn(queries):
-            formatted_query = []
-            for query in queries["prompt"]:
-                formatted_query.append(
-                    self.policy.tokenizer.apply_chat_template(
-                        query, add_generation_prompt=True, tokenize=False
-                    )
-                )
-            output = {"text": formatted_query}
-
-            for i in range(self.algo_lookahead_steps):
-                output[f"text{i+1}"] = queries[f"prompt{i+1}"]
-
-            return output
-
-        # Dataset must have a column 'text'
-        columns = dataset.column_names
-        dataset = dataset.map(format_query_fn, batched=True, remove_columns=columns)
-        return dataset
-
     def create_dataset(
         self,
         prevX,
         prevY,
     ):
-        data_dict = {"prompt": []}
-        data_dict.update({f"prompt{i+1}": [] for i in range(self.algo_lookahead_steps)})
+        data_dict = {"text": []}
+        data_dict.update({f"text{i+1}": [] for i in range(self.algo_lookahead_steps)})
         # Create dataset
         lookahead_prompt = None
         for model_type in TEMPLATED_LOOKAHEAD_PROMPT:
@@ -147,17 +126,12 @@ class Actor:
             prevX=prevX,
             prevY=prevY,
         ):
-            data_dict["prompt"].append(
-                [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": seq},
-                ]
-            )
+            data_dict["text"].append(seq)
             for i in range(self.algo_lookahead_steps):
-                data_dict[f"prompt{i+1}"].append(lookahead_prompt)
+                data_dict[f"text{i+1}"].append(lookahead_prompt)
 
         dataset = Dataset.from_dict(data_dict)
-        return self.format_query(dataset)
+        return dataset
 
     def train_policy(self, iteration, dataset) -> None:
         timestamp = datetime.today().isoformat()
@@ -193,14 +167,17 @@ class Actor:
 
         # Start reward server
         server_process = run_server(
-            f"python -m llmppo.reward_server --model acqfs.{algo} --config {training_config_file}"
+            f"python -m lampo.reward_server --model acqfs.{algo} --config {training_config_file}"
         )
+
+        # Waiting for reward server
+        check_health(loaded_configs["reward_model"] + "/health")
 
         # Start PPO training process
         start_process(
             f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch "
             "--config_file configs/single_config.yaml "
-            f"-m llmppo.ppo_vllm --config {training_config_file}"
+            f"-m lampo.ppo_vllm --config {training_config_file}"
         )
 
         # Stop reward server

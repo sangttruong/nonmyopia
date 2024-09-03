@@ -2,11 +2,13 @@ import os
 import pickle
 import random
 import subprocess
+import time
 from dataclasses import field, make_dataclass
 from typing import Dict, Sequence, Tuple, Union
 
 import numpy as np
 import psutil
+import requests
 import torch
 import yaml
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
@@ -124,3 +126,21 @@ def kill_process(command):
         print("Process(es) killed.")
     else:
         print("No matching process found.")
+
+
+def check_health(url):
+    server_ok = False
+    while server_ok is False:
+        try:
+            # Send a GET request to the health check endpoint
+            response = requests.get(url)
+
+            # Check if the server is healthy
+            if response.status_code == 200:
+                server_ok = True
+            else:
+                time.sleep(1)
+
+        except requests.exceptions.RequestException as e:
+            time.sleep(1)
+    return server_ok
