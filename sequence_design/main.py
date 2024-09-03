@@ -66,9 +66,15 @@ def main(args: Optional[Dict[str, Any]] = None):
         )
 
     # Initializing oracle model
-    X_train = torch.tensor(training_dataset["inputs_embeds"])
-    y_train = torch.tensor(training_dataset["reward"]).reshape(-1, 1)
-    oracle = BayesianRidgeModel(X_train, y_train)
+    print("Creating Oracle...")
+    if os.path.exists(f"{config.oracle_path}/model.joblib"):
+        oracle = joblib.load(f"{config.oracle_path}/model.joblib")
+    else:
+        X_train = torch.tensor(training_dataset["inputs_embeds"])
+        y_train = torch.tensor(training_dataset["reward"]).reshape(-1, 1)
+        oracle = BayesianRidgeModel(X_train, y_train)
+        ensure_dir(f"{config.oracle_path}")
+        joblib.dump(oracle, f"{config.oracle_path}/model.joblib")
 
     # Initializing training buffer
     # Randomly sample from training dataset
@@ -87,7 +93,7 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Random choose sequences with reward < 2.0 as inital sequence
     initial_sequences = random_sampling(
-        testing_dataset, num_samples=config.n_sequences, constrained_reward=2.0
+        testing_dataset, num_samples=config.n_sequences, constrained_reward=1.5
     )
     # Query Oracle for y
     initial_sequences_reward = oracle.predict(
@@ -150,6 +156,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         iter_start_time = time.time()
 
         next_X = actor.query(
+            iteration=i,
             prevX=buffer["x"],
             prevY=buffer["y"],
             embedder=embedder,
@@ -195,6 +202,13 @@ def main(args: Optional[Dict[str, Any]] = None):
         # Save buffer
         with open(f"{config.output_dir}/buffer.pkl", "wb") as f:
             pickle.dump(buffer, f)
+
+        # Remove unneccessary checkpoints
+        if i > 0:
+            ckpt_files = os.path.join(
+                config.output_dir, f"{i-1}", "model-*.safetensors"
+            )
+            os.system(f"rm -rf {ckpt_files}")
 
     # WandB end
     wandb.finish()
