@@ -130,6 +130,9 @@ class Actor:
             for i in range(self.algo_lookahead_steps):
                 data_dict[f"text{i+1}"].append(lookahead_prompt)
 
+        for key, value in data_dict.items():
+            data_dict[key] = value * self.config.n_restarts
+
         dataset = Dataset.from_dict(data_dict)
         return dataset
 

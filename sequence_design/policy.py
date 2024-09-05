@@ -79,7 +79,7 @@ class Policy:
     def post_process(self, generations: List[str]):
         outputs = []
         for generation in generations:
-            outputs.extend(re.findall("[A-Z]{230,}", generation))
+            outputs.extend(re.findall("[A-Z]{220,}", generation))
         return outputs
 
     def generate(

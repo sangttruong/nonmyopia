@@ -5,8 +5,8 @@ Protein sequence: {protein}
 """
 
 TEMPLATED_RESPONSE = {
-    "llama-3": """<|start_header_id|>assistant<|end_header_id|>\n\n{protein}<|eot_id|>""",
-    "qwen": """<|im_start|>assistant\n{protein}<|im_end|>\n""",
+    "llama-3": """{protein}<|eot_id|>""",
+    "qwen": """{protein}<|im_end|>\n""",
 }
 
 LOOKAHEAD_PROMPT = """Fluorescence level of the above protein: {reward}

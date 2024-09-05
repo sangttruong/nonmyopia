@@ -7,7 +7,8 @@ lora_dropout: 0.1
 lora_target_modules: ["q_proj", "v_proj"]
 output_dir: ckpts/policy
 verify_rollout: acqfs.spotlight_cost_fn
-max_rollout_retry: 20
+max_rollout_retry: 32
+alter_response: acqfs.random_edit_seq
 discount_reward_factor: 0.95
 
 # Reward model
