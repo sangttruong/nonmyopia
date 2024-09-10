@@ -4,14 +4,95 @@ import random
 import subprocess
 import time
 from dataclasses import field, make_dataclass
-from typing import Dict, Sequence, Tuple, Union
+from typing import Dict, List, Sequence, Tuple, Union
 
 import numpy as np
 import psutil
 import requests
 import torch
 import yaml
+from configs import ALLOWED_TOKENS, LOOKAHEAD_PROMPT, POLICY_PROMPT, SYSTEM_PROMPT
+from datasets import Dataset, DatasetDict, load_dataset
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
+from torch.utils.data import DataLoader
+from tqdm import tqdm
+
+
+def random_mutation(sequence):
+    sequence_length = len(sequence)
+    edit_idxs = random.choice(list(range(sequence_length)))
+    edit_tokens = random.choice(ALLOWED_TOKENS)
+    new_sequence = sequence[:edit_idxs] + edit_tokens + sequence[edit_idxs + 1 :]
+    return new_sequence
+
+
+def format_prompt(tokenizer, prevX: List[List[str]], prevY: List[List[float]]):
+    # prevX, prevY: n_steps x n_proteins
+    n_steps = len(prevX)
+    n_proteins = len(prevX[0])
+
+    prompts = []
+    for pi in range(n_proteins):
+        prompt = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+        ]
+        for sid in range(n_steps):
+            X = prevX[sid][pi]
+            y = prevY[sid][pi]
+
+            if sid == 0:
+                prompt.append(
+                    {
+                        "role": "user",
+                        "content": POLICY_PROMPT.format(protein=X)
+                        + LOOKAHEAD_PROMPT.format(reward=y),
+                    }
+                )
+            else:
+                prompt.append({"role": "assistant", "content": X})
+                prompt.append(
+                    {"role": "user", "content": LOOKAHEAD_PROMPT.format(reward=y)}
+                )
+        prompt = tokenizer.apply_chat_template(
+            prompt, add_generation_prompt=True, tokenize=False
+        )
+        prompts.append(prompt)
+
+    return prompts
+
+
+def create_lookahead_sequences(args, tokenizer, embedder, oracle, ds):
+    prevX = [[] for _ in range(args.algo_lookahead_steps + 2)]
+    prevY = [[] for _ in range(args.algo_lookahead_steps + 2)]
+    for seq in tqdm(ds):
+        prevX[0].append(seq["text"])
+        prevY[0].append(seq["reward"])
+
+        for las in range(args.algo_lookahead_steps + 1):
+            currentX = prevX[las][-1]
+
+            # Random mutation 10 times
+            mutated_sequences = [random_mutation(currentX) for i in range(10)]
+            mutation_ds = Dataset.from_dict({"text": mutated_sequences})
+            mutation_emb = (
+                embedder.get_embeddings(
+                    DataLoader(mutation_ds, batch_size=1),
+                    args.embedding_model_name_or_path,
+                    ["text"],
+                )
+                .data["text"]
+                .to_pylist()
+            )
+            mutation_y = oracle.predict(torch.tensor(mutation_emb))
+
+            # Select the best
+            best_idx = mutation_y.argmax()
+            prevX[las + 1].append(mutated_sequences[best_idx])
+            prevY[las + 1].append(mutation_y[best_idx])
+
+    list_text = format_prompt(tokenizer, prevX, prevY)
+
+    return Dataset.from_dict({"text": list_text})
 
 
 def create_dataclass_from_dict(class_name: str, data: dict):

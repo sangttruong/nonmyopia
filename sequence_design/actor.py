@@ -10,7 +10,13 @@ from datasets import Dataset
 from peft import AutoPeftModelForCausalLM
 from policy import Policy
 from torch.utils.data import DataLoader
-from utils import check_health, run_server, shutdown_server, start_process
+from utils import (
+    check_health,
+    format_prompt,
+    run_server,
+    shutdown_server,
+    start_process,
+)
 
 
 def collate_fn(data):
@@ -122,7 +128,8 @@ class Actor:
             lookahead_prompt is not None
         ), "Please define template for lookahead manually."
 
-        for seq in self.policy.format_prompt(
+        for seq in format_prompt(
+            tokenizer=self.policy.tokenizer,
             prevX=prevX,
             prevY=prevY,
         ):
@@ -136,7 +143,11 @@ class Actor:
         dataset = Dataset.from_dict(data_dict)
         return dataset
 
-    def train_policy(self, iteration, dataset) -> None:
+    def train_policy(
+        self,
+        iteration,
+        dataset,
+    ) -> None:
         timestamp = datetime.today().isoformat()
         algo = self.config.algo
         if "HES" in algo:
@@ -153,8 +164,8 @@ class Actor:
             loaded_configs = yaml.safe_load(stream)
             loaded_configs["output_dir"] = output_dir
             if iteration == 0:
-                loaded_configs["model_name_or_path"] = (
-                    self.config.policy_model_name_or_path
+                loaded_configs["model_name_or_path"] = os.path.join(
+                    self.config.output_dir, "sft_model"
                 )
             else:
                 loaded_configs["model_name_or_path"] = os.path.join(

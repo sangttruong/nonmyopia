@@ -2,18 +2,27 @@ import os
 import pickle
 import time
 from argparse import ArgumentParser
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 import joblib
 import torch
 import wandb
-
+import yaml
 from actor import Actor
 from bayesian_ridge import BayesianRidgeModel
-from datasets import concatenate_datasets, Dataset, load_dataset
+from datasets import concatenate_datasets, Dataset, DatasetDict, load_dataset
 from embed_text_package.embed_text import Embedder
+from peft import AutoPeftModelForCausalLM
 from torch.utils.data import DataLoader
-from utils import ensure_dir, random_sampling, read_yaml_to_dynamic_dataclass, set_seed
+from utils import (
+    create_lookahead_sequences,
+    ensure_dir,
+    random_sampling,
+    read_yaml_to_dynamic_dataclass,
+    set_seed,
+    start_process,
+)
 
 
 def main(args: Optional[Dict[str, Any]] = None):
@@ -115,6 +124,40 @@ def main(args: Optional[Dict[str, Any]] = None):
     }
 
     actor = Actor(config)
+
+    # Create SFT dataset for pretraining Policy
+    timestamp = datetime.today().isoformat()
+    sft_ds = create_lookahead_sequences(
+        config, actor.policy.tokenizer, embedder, oracle, initial_sequences
+    )
+    sft_ds_name = f"sft_{timestamp}"
+    sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_train.csv")
+    sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_test.csv")
+
+    # SFT Training for Policy
+    output_dir = os.path.join(config.output_dir, "sft_model")
+    with open("configs/sft.yaml", "r", encoding="utf8") as stream:
+        loaded_configs = yaml.safe_load(stream)
+        loaded_configs["output_dir"] = output_dir
+        loaded_configs["model_name_or_path"] = config.policy_model_name_or_path
+        loaded_configs["dataset_name"] = f"data/{sft_ds_name}"
+
+    training_config_file = f"configs/sft_{timestamp}.yaml"
+    with open(training_config_file, "w", encoding="utf8") as stream:
+        yaml.dump(loaded_configs, stream, default_flow_style=False, allow_unicode=True)
+    start_process(
+        f"CUDA_VISIBLE_DEVICES={config.ppo_gpu} trl sft "
+        f"--config {training_config_file}"
+    )
+
+    # Remove temp config file
+    os.system(f"rm -rf {training_config_file}")
+
+    # Merge Lora adapter
+    if loaded_configs["use_peft"]:
+        model = AutoPeftModelForCausalLM.from_pretrained(output_dir)
+        model = model.merge_and_unload().to(torch.bfloat16)
+        model.save_pretrained(output_dir)
 
     # Startign BO loop
     for i in range(config.algo_n_iterations):

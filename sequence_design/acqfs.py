@@ -20,6 +20,7 @@ from datasets import Dataset
 from embed_text_package.embed_text import Embedder
 from lampo.reward_model import RewardModelTemplate
 from torch.utils.data import DataLoader
+from utils import random_mutation
 
 
 class Acqf(RewardModelTemplate):
@@ -177,10 +178,7 @@ def random_edit_seq(responses):
 
     # ..., latest_reponse, latest_query
     sequence = re.findall("[A-Z]{220,}", latest_response)[-1]
-    sequence_length = len(sequence)
-    edit_idxs = random.choice(list(range(sequence_length)))
-    edit_tokens = random.choice(ALLOWED_TOKENS)
-    new_sequence = sequence[:edit_idxs] + edit_tokens + sequence[edit_idxs + 1 :]
+    new_sequence = random_mutation(sequence)
 
     model_type = "llama-3"
     return TEMPLATED_RESPONSE[model_type].format(protein=new_sequence)
