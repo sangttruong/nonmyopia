@@ -52,7 +52,7 @@ class Policy:
         self,
         prevX: List[List[str]],
         prevY: List[List[float]],
-        max_retry=8,
+        max_retry=32,
         **kwargs,
     ):
         X = prevX[-1]
@@ -76,7 +76,6 @@ class Policy:
 
             if len(filtered_generations) > 0:
                 outputs.append(random.choice(filtered_generations))
-                break
             else:
                 outputs.append(X[pi])
 
