@@ -7,10 +7,10 @@ n_restarts: 4
 output_dir: ckpts/HES-TS-AM-10-10seq
 
 # Acquisition function
-algo: HES-TS-AM # 'HES', 'qKG', 'qEI', 'qPI', 'qSR', 'qUCB', 'qMSL', 'qNIPV'
+algo: qPI # 'HES', 'qKG', 'qEI', 'qPI', 'qSR', 'qUCB', 'qMSL', 'qNIPV'
 algo_ts: True
 algo_n_iterations: 10
-algo_lookahead_steps: 10
+algo_lookahead_steps: 0
 
 # Cost function
 cost_spotlight_k: 100

@@ -6,7 +6,7 @@ from typing import List
 import editdistance
 
 from transformers import AutoTokenizer, GenerationConfig
-from utils import format_prompt
+from utils import format_prompt, random_mutation
 from vllm import LLM, SamplingParams
 
 
@@ -77,6 +77,6 @@ class Policy:
             if len(filtered_generations) > 0:
                 outputs.append(random.choice(filtered_generations))
             else:
-                outputs.append(X[pi])
+                outputs.append(random_mutation(X[pi]))
 
         return outputs

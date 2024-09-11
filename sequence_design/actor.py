@@ -41,54 +41,30 @@ class Actor:
         n_sequences = len(X)
         # >>> n_sequences
 
-        if self.config.algo == "HES-TS-AM":
-            X_returned = []
-            rewards = []
-            for rid in range(n_restarts):
-                local_prevX = copy.deepcopy(prevX)
-                local_prevy = copy.deepcopy(prevY)
+        X_returned = []
+        rewards = []
+        for rid in range(n_restarts):
+            local_prevX = copy.deepcopy(prevX)
+            local_prevy = copy.deepcopy(prevY)
 
-                for step in range(self.algo_lookahead_steps):
-                    next_X = self.policy.generate(local_prevX, local_prevy)
-                    next_X_ds = Dataset.from_dict({"text": next_X})
-                    next_X_ds_emb = (
-                        embedder.get_embeddings(
-                            DataLoader(next_X_ds, batch_size=1),
-                            self.config.embedding_model_name_or_path,
-                            ["text"],
-                        )
-                        .data["text"]
-                        .to_pylist()
-                    )
-
-                    next_y = (
-                        reward_model.sample(
-                            torch.tensor(next_X_ds_emb),
-                            sample_size=self.config.sample_size,
-                        )
-                        .mean(0)
-                        .float()
-                        .detach()
-                        .cpu()
-                        .tolist()
-                    )
-
-                    local_prevX.append(next_X)
-                    local_prevy.append(next_y)
-
-                action_X = self.policy.generate(local_prevX, local_prevy)
-                action_X_ds = Dataset.from_dict({"text": action_X})
-                action_X_ds_emb = (
+            for step in range(self.algo_lookahead_steps):
+                next_X = self.policy.generate(local_prevX, local_prevy)
+                next_X_ds = Dataset.from_dict({"text": next_X})
+                next_X_ds_emb = (
                     embedder.get_embeddings(
-                        DataLoader(action_X_ds, batch_size=1),
+                        DataLoader(next_X_ds, batch_size=1),
                         self.config.embedding_model_name_or_path,
                         ["text"],
                     )
                     .data["text"]
                     .to_pylist()
                 )
-                action_y = (
-                    reward_model.sample(torch.tensor(action_X_ds_emb))
+
+                next_y = (
+                    reward_model.sample(
+                        torch.tensor(next_X_ds_emb),
+                        sample_size=self.config.sample_size,
+                    )
                     .mean(0)
                     .float()
                     .detach()
@@ -96,20 +72,40 @@ class Actor:
                     .tolist()
                 )
 
-                X_returned.append(local_prevX)
-                rewards.append(action_y)
+                local_prevX.append(next_X)
+                local_prevy.append(next_y)
 
-            # For each sequence, find the best next sequence across n_restarts based on computed reward
-            best_idx = torch.tensor(rewards).argmax(dim=0).numpy().tolist()
-            output = []
+            action_X = self.policy.generate(local_prevX, local_prevy)
+            action_X_ds = Dataset.from_dict({"text": action_X})
+            action_X_ds_emb = (
+                embedder.get_embeddings(
+                    DataLoader(action_X_ds, batch_size=1),
+                    self.config.embedding_model_name_or_path,
+                    ["text"],
+                )
+                .data["text"]
+                .to_pylist()
+            )
+            action_y = (
+                reward_model.sample(torch.tensor(action_X_ds_emb))
+                .mean(0)
+                .float()
+                .detach()
+                .cpu()
+                .tolist()
+            )
 
-            for bi, si in zip(best_idx, list(range(n_sequences))):
-                output.append(X_returned[bi][iteration + 1][si])
+            X_returned.append(local_prevX)
+            rewards.append(action_y)
 
-            return output
+        # For each sequence, find the best next sequence across n_restarts based on computed reward
+        best_idx = torch.tensor(rewards).argmax(dim=0).numpy().tolist()
+        output = []
 
-        else:
-            raise NotImplementedError
+        for bi, si in zip(best_idx, list(range(n_sequences))):
+            output.append(X_returned[bi][iteration + 1][si])
+
+        return output
 
     def create_dataset(
         self,

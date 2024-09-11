@@ -100,18 +100,18 @@ def main(args: Optional[Dict[str, Any]] = None):
         .cast(initial_dataset.features)
     )
 
+    # Query Oracle for y
+    testing_dataset_reward = oracle.predict(
+        torch.Tensor(testing_dataset["inputs_embeds"])
+    ).tolist()
+    testing_dataset = (
+        testing_dataset.remove_columns("reward")
+        .add_column("reward", testing_dataset_reward)
+        .cast(testing_dataset.features)
+    )
     # Random choose sequences with reward < 2.0 as inital sequence
     initial_sequences = random_sampling(
         testing_dataset, num_samples=config.n_sequences, constrained_reward=1.5
-    )
-    # Query Oracle for y
-    initial_sequences_reward = oracle.predict(
-        torch.Tensor(initial_sequences["inputs_embeds"])
-    ).tolist()
-    initial_sequences = (
-        initial_sequences.remove_columns("reward")
-        .add_column("reward", initial_sequences_reward)
-        .cast(initial_sequences.features)
     )
 
     # Merge initial_sequences to initial_dataset
@@ -124,6 +124,8 @@ def main(args: Optional[Dict[str, Any]] = None):
     }
 
     actor = Actor(config)
+
+    # -------------------------------------------------------
 
     # Create SFT dataset for pretraining Policy
     timestamp = datetime.today().isoformat()
@@ -158,6 +160,10 @@ def main(args: Optional[Dict[str, Any]] = None):
         model = AutoPeftModelForCausalLM.from_pretrained(output_dir)
         model = model.merge_and_unload().to(torch.bfloat16)
         model.save_pretrained(output_dir)
+        del model
+        model = None
+
+    # -------------------------------------------------------
 
     # Startign BO loop
     for i in range(config.algo_n_iterations):
@@ -176,6 +182,7 @@ def main(args: Optional[Dict[str, Any]] = None):
             reward_model,
             os.path.join(f"{config.output_dir}/{i}/reward_model.joblib"),
         )
+
         # -------------------------------------------------------
 
         # Adjusting the lookahead steps
@@ -193,6 +200,8 @@ def main(args: Optional[Dict[str, Any]] = None):
         embedder.unload()
         actor.train_policy(iteration=i, dataset=prompt_dataset)
         embedder.load(config.embedding_model_name_or_path)
+
+        # -------------------------------------------------------
 
         # Get the next X
         actor.policy.load_inference(iteration=i)
@@ -230,6 +239,8 @@ def main(args: Optional[Dict[str, Any]] = None):
         buffer["y"].append(next_y)
         print("Next X", next_X)
         print("Next y", next_y)
+
+        # -------------------------------------------------------
 
         # Logging
         log_dict = {f"y{k}": v for k, v in enumerate(next_y)}
