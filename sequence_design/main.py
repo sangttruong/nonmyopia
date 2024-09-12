@@ -137,7 +137,7 @@ def main(args: Optional[Dict[str, Any]] = None):
     # Create SFT dataset for pretraining Policy
     timestamp = datetime.today().isoformat()
     sft_ds_name = f"sft_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
-    if not os.path.exists(sft_ds_name):
+    if not os.path.exists(f"data/{sft_ds_name}"):
         sft_ds = create_lookahead_sequences(
             config, actor.policy.tokenizer, embedder, oracle, initial_sequences
         )
