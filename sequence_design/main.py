@@ -136,40 +136,45 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Create SFT dataset for pretraining Policy
     timestamp = datetime.today().isoformat()
-    sft_ds = create_lookahead_sequences(
-        config, actor.policy.tokenizer, embedder, oracle, initial_sequences
-    )
-    sft_ds_name = f"sft_{timestamp}"
-    sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_train.csv")
-    sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_test.csv")
+    sft_ds_name = f"sft_n{config.n_sequences}_s{config.seed}"
+    if not os.path.exists(sft_ds_name):
+        sft_ds = create_lookahead_sequences(
+            config, actor.policy.tokenizer, embedder, oracle, initial_sequences
+        )
+        sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_train.csv")
+        sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_test.csv")
 
     # SFT Training for Policy
-    output_dir = os.path.join(config.output_dir, "sft_model")
-    with open("configs/sft.yaml", "r", encoding="utf8") as stream:
-        loaded_configs = yaml.safe_load(stream)
-        loaded_configs["output_dir"] = output_dir
-        loaded_configs["model_name_or_path"] = config.policy_model_name_or_path
-        loaded_configs["dataset_name"] = f"data/{sft_ds_name}"
+    output_dir = os.path.join(f"ckpts/sft_model_n{config.n_sequences}_s{config.seed}")
+    if not os.path.exists(output_dir):
+        with open("configs/sft.yaml", "r", encoding="utf8") as stream:
+            loaded_configs = yaml.safe_load(stream)
+            loaded_configs["output_dir"] = output_dir
+            loaded_configs["model_name_or_path"] = config.policy_model_name_or_path
+            loaded_configs["dataset_name"] = f"data/{sft_ds_name}"
 
-    training_config_file = f"configs/sft_{timestamp}.yaml"
-    with open(training_config_file, "w", encoding="utf8") as stream:
-        yaml.dump(loaded_configs, stream, default_flow_style=False, allow_unicode=True)
-    start_process(
-        f"CUDA_VISIBLE_DEVICES={config.ppo_gpu} accelerate launch --main_process_port {config.main_process_port} "
-        "/lfs/skampere1/0/nqduc/miniconda3/envs/lf/lib/python3.10/site-packages/trl/commands/scripts/sft.py "
-        f"--config {training_config_file}"
-    )
+        training_config_file = f"configs/sft_{timestamp}.yaml"
+        with open(training_config_file, "w", encoding="utf8") as stream:
+            yaml.dump(
+                loaded_configs, stream, default_flow_style=False, allow_unicode=True
+            )
+        start_process(
+            f"CUDA_VISIBLE_DEVICES={config.ppo_gpu} accelerate launch --main_process_port {config.main_process_port} "
+            "--config_file configs/single_config.yaml "
+            "/lfs/ampere1/0/nqduc/miniconda3/envs/lf/lib/python3.10/site-packages/trl/commands/scripts/sft.py "
+            f"--config {training_config_file}"
+        )
 
-    # Remove temp config file
-    os.system(f"rm -rf {training_config_file}")
+        # Remove temp config file
+        os.system(f"rm -rf {training_config_file}")
 
-    # Merge Lora adapter
-    if loaded_configs["use_peft"]:
-        model = AutoPeftModelForCausalLM.from_pretrained(output_dir)
-        model = model.merge_and_unload().to(torch.bfloat16)
-        model.save_pretrained(output_dir)
-        del model
-        model = None
+        # Merge Lora adapter
+        if loaded_configs["use_peft"]:
+            model = AutoPeftModelForCausalLM.from_pretrained(output_dir)
+            model = model.merge_and_unload().to(torch.bfloat16)
+            model.save_pretrained(output_dir)
+            del model
+            model = None
 
     # -------------------------------------------------------
 

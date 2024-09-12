@@ -162,8 +162,8 @@ class Actor:
             loaded_configs = yaml.safe_load(stream)
             loaded_configs["output_dir"] = output_dir
             if iteration == 0:
-                loaded_configs["model_name_or_path"] = os.path.join(
-                    self.config.output_dir, "sft_model"
+                loaded_configs["model_name_or_path"] = (
+                    f"ckpts/sft_model_n{self.config.n_sequences}_s{self.config.seed}"
                 )
             else:
                 loaded_configs["model_name_or_path"] = os.path.join(
