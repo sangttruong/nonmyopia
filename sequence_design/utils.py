@@ -48,11 +48,14 @@ def format_prompt(tokenizer, prevX: List[List[str]], prevY: List[List[float]]):
                         + LOOKAHEAD_PROMPT.format(reward=y),
                     }
                 )
-            else:
+            elif sid < n_steps - 1:
                 prompt.append({"role": "assistant", "content": X})
                 prompt.append(
                     {"role": "user", "content": LOOKAHEAD_PROMPT.format(reward=y)}
                 )
+            else:
+                prompt.append({"role": "assistant", "content": X})
+
         prompt = tokenizer.apply_chat_template(
             prompt, add_generation_prompt=True, tokenize=False
         )

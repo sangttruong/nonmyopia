@@ -136,7 +136,7 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Create SFT dataset for pretraining Policy
     timestamp = datetime.today().isoformat()
-    sft_ds_name = f"sft_n{config.n_sequences}_s{config.seed}"
+    sft_ds_name = f"sft_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
     if not os.path.exists(sft_ds_name):
         sft_ds = create_lookahead_sequences(
             config, actor.policy.tokenizer, embedder, oracle, initial_sequences
@@ -145,7 +145,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_test.csv")
 
     # SFT Training for Policy
-    output_dir = os.path.join(f"ckpts/sft_model_n{config.n_sequences}_s{config.seed}")
+    output_dir = os.path.join(f"ckpts/sft_model_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}")
     if not os.path.exists(output_dir):
         with open("configs/sft.yaml", "r", encoding="utf8") as stream:
             loaded_configs = yaml.safe_load(stream)
@@ -161,7 +161,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         start_process(
             f"CUDA_VISIBLE_DEVICES={config.ppo_gpu} accelerate launch --main_process_port {config.main_process_port} "
             "--config_file configs/single_config.yaml "
-            "/lfs/ampere1/0/nqduc/miniconda3/envs/lf/lib/python3.10/site-packages/trl/commands/scripts/sft.py "
+            "/lfs/skampere1/0/nqduc/miniconda3/envs/lf/lib/python3.10/site-packages/trl/commands/scripts/sft.py "
             f"--config {training_config_file}"
         )
 
