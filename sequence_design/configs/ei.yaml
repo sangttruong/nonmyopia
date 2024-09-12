@@ -4,12 +4,12 @@ dataset: stair-lab/proteinea_fluorescence-gemma-7b-embedding
 initinal_sequences: 2000
 n_sequences: 10
 n_restarts: 4
-output_dir: ckpts/HES-TS-AM-10-10seq
+output_dir: ckpts/EI-10seq
 
 # Acquisition function
 algo: qEI # 'HES', 'qKG', 'qEI', 'qPI', 'qSR', 'qUCB', 'qMSL', 'qNIPV'
 algo_ts: True
-algo_n_iterations: 10
+algo_n_iterations: 11
 algo_lookahead_steps: 0
 
 # Cost function
@@ -27,4 +27,6 @@ use_fast_tokenizer: True
 max_new_tokens: 1024
 vllm_gpu_util: 0.9
 sample_size: 4 # Sampling reward value
-ppo_gpu: 6
+ppo_gpu: 4
+main_process_port: 29501
+reward_model_port: 8001

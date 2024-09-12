@@ -8,7 +8,11 @@ from tueplots import bundles
 
 plt.rcParams.update(bundles.neurips2024())
 
-LIST_RESULTS = {"HES-TS-AM-10": "ckpts/HES-TS-AM-10-10seq"}
+LIST_RESULTS = {
+    "HES-TS-AM-10": "ckpts/HES-TS-AM-10-10seq",
+    "SR": "ckpts/SR-10seq",
+    "UCB": "ckpts/UCB-10seq",
+}
 
 if __name__ == "__main__":
     plt.figure()

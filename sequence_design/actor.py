@@ -94,6 +94,8 @@ class Actor:
                 .cpu()
                 .tolist()
             )
+            local_prevX.append(action_X)
+            local_prevy.append(action_y)
 
             X_returned.append(local_prevX)
             rewards.append(action_y)
@@ -168,6 +170,9 @@ class Actor:
                     self.config.output_dir, f"{iteration-1}"
                 )
             loaded_configs["query_dataset"] = f"data/{dataset_name}"
+            loaded_configs["reward_model"] = (
+                f"http://localhost:{self.config.reward_model_port}"
+            )
 
         training_config_file = f"configs/ppo_{timestamp}.yaml"
         with open(training_config_file, "w", encoding="utf8") as stream:
@@ -177,7 +182,7 @@ class Actor:
 
         # Start reward server
         server_process = run_server(
-            f"python -m lampo.reward_server --model acqfs.{algo} --config {training_config_file}"
+            f"python -m lampo.reward_server --model acqfs.{algo} --config {training_config_file} --port {self.config.reward_model_port}"
         )
 
         # Waiting for reward server
@@ -185,7 +190,7 @@ class Actor:
 
         # Start PPO training process
         start_process(
-            f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch "
+            f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch --main_process_port {self.config.main_process_port} "
             "--config_file configs/single_config.yaml "
             f"-m lampo.ppo_vllm --config {training_config_file}"
         )
@@ -195,6 +200,7 @@ class Actor:
 
         # Remove temp config file
         os.system(f"rm -rf {training_config_file}")
+        os.system(f"rm -rf data/{dataset_name}")
 
         # Merge Lora adapter
         if loaded_configs["use_peft"]:

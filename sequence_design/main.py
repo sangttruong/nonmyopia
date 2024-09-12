@@ -123,6 +123,13 @@ def main(args: Optional[Dict[str, Any]] = None):
         "y": [initial_sequences["reward"]],
     }
 
+    # Ensure ckpt folder
+    ensure_dir(f"{config.output_dir}")
+
+    # Save buffer
+    with open(f"{config.output_dir}/buffer.pkl", "wb") as f:
+        pickle.dump(buffer, f)
+
     actor = Actor(config)
 
     # -------------------------------------------------------
@@ -148,7 +155,8 @@ def main(args: Optional[Dict[str, Any]] = None):
     with open(training_config_file, "w", encoding="utf8") as stream:
         yaml.dump(loaded_configs, stream, default_flow_style=False, allow_unicode=True)
     start_process(
-        f"CUDA_VISIBLE_DEVICES={config.ppo_gpu} trl sft "
+        f"CUDA_VISIBLE_DEVICES={config.ppo_gpu} accelerate launch --main_process_port {config.main_process_port} "
+        "/lfs/skampere1/0/nqduc/miniconda3/envs/lf/lib/python3.10/site-packages/trl/commands/scripts/sft.py "
         f"--config {training_config_file}"
     )
 
@@ -186,8 +194,8 @@ def main(args: Optional[Dict[str, Any]] = None):
         # -------------------------------------------------------
 
         # Adjusting the lookahead steps
-        if actor.algo_lookahead_steps > 1 and (
-            config.algo_n_iterations - i < actor.algo_lookahead_steps
+        if actor.algo_lookahead_steps > 0 and (
+            config.algo_n_iterations - i - 1 < actor.algo_lookahead_steps
         ):
             actor.algo_lookahead_steps -= 1
 
