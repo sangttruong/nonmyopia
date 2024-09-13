@@ -117,18 +117,23 @@ def main(args: Optional[Dict[str, Any]] = None):
     # Merge initial_sequences to initial_dataset
     initial_dataset = concatenate_datasets([initial_dataset, initial_sequences])
 
-    buffer = {
-        "dataset": initial_dataset,
-        "x": [initial_sequences["text"]],
-        "y": [initial_sequences["reward"]],
-    }
+    if config.continue_iter:
+        with open(f"{config.output_dir}/buffer.pkl", "rb") as f:
+            buffer = pickle.load(f)
+    else:
+        config.continue_iter = 0
+        buffer = {
+            "dataset": initial_dataset,
+            "x": [initial_sequences["text"]],
+            "y": [initial_sequences["reward"]],
+        }
 
-    # Ensure ckpt folder
-    ensure_dir(f"{config.output_dir}")
+        # Ensure ckpt folder
+        ensure_dir(f"{config.output_dir}")
 
-    # Save buffer
-    with open(f"{config.output_dir}/buffer.pkl", "wb") as f:
-        pickle.dump(buffer, f)
+        # Save buffer
+        with open(f"{config.output_dir}/buffer.pkl", "wb") as f:
+            pickle.dump(buffer, f)
 
     actor = Actor(config)
 
@@ -136,7 +141,9 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Create SFT dataset for pretraining Policy
     timestamp = datetime.today().isoformat()
-    sft_ds_name = f"sft_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
+    sft_ds_name = (
+        f"sft_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
+    )
     if not os.path.exists(f"data/{sft_ds_name}"):
         sft_ds = create_lookahead_sequences(
             config, actor.policy.tokenizer, embedder, oracle, initial_sequences
@@ -145,7 +152,9 @@ def main(args: Optional[Dict[str, Any]] = None):
         sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_test.csv")
 
     # SFT Training for Policy
-    output_dir = os.path.join(f"ckpts/sft_model_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}")
+    output_dir = os.path.join(
+        f"ckpts/sft_model_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
+    )
     if not os.path.exists(output_dir):
         with open("configs/sft.yaml", "r", encoding="utf8") as stream:
             loaded_configs = yaml.safe_load(stream)
@@ -179,7 +188,7 @@ def main(args: Optional[Dict[str, Any]] = None):
     # -------------------------------------------------------
 
     # Startign BO loop
-    for i in range(config.algo_n_iterations):
+    for i in range(config.continue_iter, config.algo_n_iterations):
         print(f"Starting BO loop #{i}")
 
         # Ensure ckpt folder
@@ -202,7 +211,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         if actor.algo_lookahead_steps > 0 and (
             config.algo_n_iterations - i - 1 < actor.algo_lookahead_steps
         ):
-            actor.algo_lookahead_steps -= 1
+            actor.algo_lookahead_steps = config.algo_n_iterations - i - 1
 
         # Create prompt dataset for policy training
         prompt_dataset = actor.create_dataset(prevX=buffer["x"], prevY=buffer["y"])
