@@ -10,7 +10,13 @@ from datasets import Dataset
 from peft import AutoPeftModelForCausalLM
 from policy import Policy
 from torch.utils.data import DataLoader
-from utils import check_health, run_server, shutdown_server, start_process
+from utils import (
+    check_health,
+    format_prompt,
+    run_server,
+    shutdown_server,
+    start_process,
+)
 
 
 def collate_fn(data):
@@ -35,54 +41,30 @@ class Actor:
         n_sequences = len(X)
         # >>> n_sequences
 
-        if self.config.algo == "HES-TS-AM":
-            X_returned = []
-            rewards = []
-            for rid in range(n_restarts):
-                local_prevX = copy.deepcopy(prevX)
-                local_prevy = copy.deepcopy(prevY)
+        X_returned = []
+        rewards = []
+        for rid in range(n_restarts):
+            local_prevX = copy.deepcopy(prevX)
+            local_prevy = copy.deepcopy(prevY)
 
-                for step in range(self.algo_lookahead_steps):
-                    next_X = self.policy.generate(local_prevX, local_prevy)
-                    next_X_ds = Dataset.from_dict({"text": next_X})
-                    next_X_ds_emb = (
-                        embedder.get_embeddings(
-                            DataLoader(next_X_ds, batch_size=1),
-                            self.config.embedding_model_name_or_path,
-                            ["text"],
-                        )
-                        .data["text"]
-                        .to_pylist()
-                    )
-
-                    next_y = (
-                        reward_model.sample(
-                            torch.tensor(next_X_ds_emb),
-                            sample_size=self.config.sample_size,
-                        )
-                        .mean(0)
-                        .float()
-                        .detach()
-                        .cpu()
-                        .tolist()
-                    )
-
-                    local_prevX.append(next_X)
-                    local_prevy.append(next_y)
-
-                action_X = self.policy.generate(local_prevX, local_prevy)
-                action_X_ds = Dataset.from_dict({"text": action_X})
-                action_X_ds_emb = (
+            for step in range(self.algo_lookahead_steps):
+                next_X = self.policy.generate(local_prevX, local_prevy)
+                next_X_ds = Dataset.from_dict({"text": next_X})
+                next_X_ds_emb = (
                     embedder.get_embeddings(
-                        DataLoader(action_X_ds, batch_size=1),
+                        DataLoader(next_X_ds, batch_size=1),
                         self.config.embedding_model_name_or_path,
                         ["text"],
                     )
                     .data["text"]
                     .to_pylist()
                 )
-                action_y = (
-                    reward_model.sample(torch.tensor(action_X_ds_emb))
+
+                next_y = (
+                    reward_model.sample(
+                        torch.tensor(next_X_ds_emb),
+                        sample_size=self.config.sample_size,
+                    )
                     .mean(0)
                     .float()
                     .detach()
@@ -90,20 +72,42 @@ class Actor:
                     .tolist()
                 )
 
-                X_returned.append(local_prevX)
-                rewards.append(action_y)
+                local_prevX.append(next_X)
+                local_prevy.append(next_y)
 
-            # For each sequence, find the best next sequence across n_restarts based on computed reward
-            best_idx = torch.tensor(rewards).argmax(dim=0).numpy().tolist()
-            output = []
+            action_X = self.policy.generate(local_prevX, local_prevy)
+            action_X_ds = Dataset.from_dict({"text": action_X})
+            action_X_ds_emb = (
+                embedder.get_embeddings(
+                    DataLoader(action_X_ds, batch_size=1),
+                    self.config.embedding_model_name_or_path,
+                    ["text"],
+                )
+                .data["text"]
+                .to_pylist()
+            )
+            action_y = (
+                reward_model.sample(torch.tensor(action_X_ds_emb))
+                .mean(0)
+                .float()
+                .detach()
+                .cpu()
+                .tolist()
+            )
+            local_prevX.append(action_X)
+            local_prevy.append(action_y)
 
-            for bi, si in zip(best_idx, list(range(n_sequences))):
-                output.append(X_returned[bi][iteration + 1][si])
+            X_returned.append(local_prevX)
+            rewards.append(action_y)
 
-            return output
+        # For each sequence, find the best next sequence across n_restarts based on computed reward
+        best_idx = torch.tensor(rewards).argmax(dim=0).numpy().tolist()
+        output = []
 
-        else:
-            raise NotImplementedError
+        for bi, si in zip(best_idx, list(range(n_sequences))):
+            output.append(X_returned[bi][iteration + 1][si])
+
+        return output
 
     def create_dataset(
         self,
@@ -122,7 +126,8 @@ class Actor:
             lookahead_prompt is not None
         ), "Please define template for lookahead manually."
 
-        for seq in self.policy.format_prompt(
+        for seq in format_prompt(
+            tokenizer=self.policy.tokenizer,
             prevX=prevX,
             prevY=prevY,
         ):
@@ -130,10 +135,17 @@ class Actor:
             for i in range(self.algo_lookahead_steps):
                 data_dict[f"text{i+1}"].append(lookahead_prompt)
 
+        for key, value in data_dict.items():
+            data_dict[key] = value * self.config.n_restarts
+
         dataset = Dataset.from_dict(data_dict)
         return dataset
 
-    def train_policy(self, iteration, dataset) -> None:
+    def train_policy(
+        self,
+        iteration,
+        dataset,
+    ) -> None:
         timestamp = datetime.today().isoformat()
         algo = self.config.algo
         if "HES" in algo:
@@ -151,13 +163,16 @@ class Actor:
             loaded_configs["output_dir"] = output_dir
             if iteration == 0:
                 loaded_configs["model_name_or_path"] = (
-                    self.config.policy_model_name_or_path
+                    f"ckpts/sft_model_n{self.config.n_sequences}_lah{self.config.algo_lookahead_steps}_s{self.config.seed}"
                 )
             else:
                 loaded_configs["model_name_or_path"] = os.path.join(
                     self.config.output_dir, f"{iteration-1}"
                 )
             loaded_configs["query_dataset"] = f"data/{dataset_name}"
+            loaded_configs["reward_model"] = (
+                f"http://localhost:{self.config.reward_model_port}"
+            )
 
         training_config_file = f"configs/ppo_{timestamp}.yaml"
         with open(training_config_file, "w", encoding="utf8") as stream:
@@ -167,7 +182,7 @@ class Actor:
 
         # Start reward server
         server_process = run_server(
-            f"python -m lampo.reward_server --model acqfs.{algo} --config {training_config_file}"
+            f"python -m lampo.reward_server --model acqfs.{algo} --config {training_config_file} --port {self.config.reward_model_port}"
         )
 
         # Waiting for reward server
@@ -175,7 +190,7 @@ class Actor:
 
         # Start PPO training process
         start_process(
-            f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch "
+            f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch --main_process_port {self.config.main_process_port} "
             "--config_file configs/single_config.yaml "
             f"-m lampo.ppo_vllm --config {training_config_file}"
         )
@@ -185,6 +200,7 @@ class Actor:
 
         # Remove temp config file
         os.system(f"rm -rf {training_config_file}")
+        os.system(f"rm -rf data/{dataset_name}")
 
         # Merge Lora adapter
         if loaded_configs["use_peft"]:

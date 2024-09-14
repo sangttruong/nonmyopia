@@ -5,7 +5,7 @@ lora_alpha: 16
 lora_r: 8
 lora_dropout: 0.1
 lora_target_modules: ["q_proj", "v_proj"]
-output_dir: ckpts/policy
+output_dir: ckpts/HES-TS-AM-10-10seq/0
 verify_rollout: acqfs.spotlight_cost_fn
 max_rollout_retry: 32
 alter_response: acqfs.random_edit_seq
@@ -15,7 +15,7 @@ discount_reward_factor: 0.95
 reward_model: http://localhost:8000
 
 # Dataset
-query_dataset: data/ppo_query_dataset
+query_dataset: data/ppo_2024-09-05T12:48:39.226187
 max_new_tokens: 1024
 ppo_epochs: 4
 mini_batch_size: 1

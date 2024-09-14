@@ -2,18 +2,27 @@ import os
 import pickle
 import time
 from argparse import ArgumentParser
+from datetime import datetime
 from typing import Any, Dict, Optional
 
 import joblib
 import torch
 import wandb
-
+import yaml
 from actor import Actor
 from bayesian_ridge import BayesianRidgeModel
-from datasets import concatenate_datasets, Dataset, load_dataset
+from datasets import concatenate_datasets, Dataset, DatasetDict, load_dataset
 from embed_text_package.embed_text import Embedder
+from peft import AutoPeftModelForCausalLM
 from torch.utils.data import DataLoader
-from utils import ensure_dir, random_sampling, read_yaml_to_dynamic_dataclass, set_seed
+from utils import (
+    create_lookahead_sequences,
+    ensure_dir,
+    random_sampling,
+    read_yaml_to_dynamic_dataclass,
+    set_seed,
+    start_process,
+)
 
 
 def main(args: Optional[Dict[str, Any]] = None):
@@ -91,33 +100,95 @@ def main(args: Optional[Dict[str, Any]] = None):
         .cast(initial_dataset.features)
     )
 
+    # Query Oracle for y
+    testing_dataset_reward = oracle.predict(
+        torch.Tensor(testing_dataset["inputs_embeds"])
+    ).tolist()
+    testing_dataset = (
+        testing_dataset.remove_columns("reward")
+        .add_column("reward", testing_dataset_reward)
+        .cast(testing_dataset.features)
+    )
     # Random choose sequences with reward < 2.0 as inital sequence
     initial_sequences = random_sampling(
         testing_dataset, num_samples=config.n_sequences, constrained_reward=1.5
-    )
-    # Query Oracle for y
-    initial_sequences_reward = oracle.predict(
-        torch.Tensor(initial_sequences["inputs_embeds"])
-    ).tolist()
-    initial_sequences = (
-        initial_sequences.remove_columns("reward")
-        .add_column("reward", initial_sequences_reward)
-        .cast(initial_sequences.features)
     )
 
     # Merge initial_sequences to initial_dataset
     initial_dataset = concatenate_datasets([initial_dataset, initial_sequences])
 
-    buffer = {
-        "dataset": initial_dataset,
-        "x": [initial_sequences["text"]],
-        "y": [initial_sequences["reward"]],
-    }
+    if config.continue_iter:
+        with open(f"{config.output_dir}/buffer.pkl", "rb") as f:
+            buffer = pickle.load(f)
+    else:
+        config.continue_iter = 0
+        buffer = {
+            "dataset": initial_dataset,
+            "x": [initial_sequences["text"]],
+            "y": [initial_sequences["reward"]],
+        }
+
+        # Ensure ckpt folder
+        ensure_dir(f"{config.output_dir}")
+
+        # Save buffer
+        with open(f"{config.output_dir}/buffer.pkl", "wb") as f:
+            pickle.dump(buffer, f)
 
     actor = Actor(config)
 
+    # -------------------------------------------------------
+
+    # Create SFT dataset for pretraining Policy
+    timestamp = datetime.today().isoformat()
+    sft_ds_name = (
+        f"sft_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
+    )
+    if not os.path.exists(f"data/{sft_ds_name}"):
+        sft_ds = create_lookahead_sequences(
+            config, actor.policy.tokenizer, embedder, oracle, initial_sequences
+        )
+        sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_train.csv")
+        sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_test.csv")
+
+    # SFT Training for Policy
+    output_dir = os.path.join(
+        f"ckpts/sft_model_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
+    )
+    if not os.path.exists(output_dir):
+        with open("configs/sft.yaml", "r", encoding="utf8") as stream:
+            loaded_configs = yaml.safe_load(stream)
+            loaded_configs["output_dir"] = output_dir
+            loaded_configs["model_name_or_path"] = config.policy_model_name_or_path
+            loaded_configs["dataset_name"] = f"data/{sft_ds_name}"
+
+        training_config_file = f"configs/sft_{timestamp}.yaml"
+        with open(training_config_file, "w", encoding="utf8") as stream:
+            yaml.dump(
+                loaded_configs, stream, default_flow_style=False, allow_unicode=True
+            )
+        start_process(
+            f"CUDA_VISIBLE_DEVICES={config.ppo_gpu} accelerate launch --main_process_port {config.main_process_port} "
+            "--config_file configs/single_config.yaml "
+            "/lfs/skampere1/0/nqduc/miniconda3/envs/lf/lib/python3.10/site-packages/trl/commands/scripts/sft.py "
+            f"--config {training_config_file}"
+        )
+
+        # Remove temp config file
+        os.system(f"rm -rf {training_config_file}")
+
+        # Merge Lora adapter
+        if loaded_configs["use_peft"]:
+            model = AutoPeftModelForCausalLM.from_pretrained(output_dir)
+            model = model.merge_and_unload().to(torch.bfloat16)
+            model.save_pretrained(output_dir)
+            del model
+            model = None
+
+    # -------------------------------------------------------
+
     # Startign BO loop
-    for i in range(config.algo_n_iterations):
+    for i in range(config.continue_iter, config.algo_n_iterations):
         print(f"Starting BO loop #{i}")
 
         # Ensure ckpt folder
@@ -133,13 +204,14 @@ def main(args: Optional[Dict[str, Any]] = None):
             reward_model,
             os.path.join(f"{config.output_dir}/{i}/reward_model.joblib"),
         )
+
         # -------------------------------------------------------
 
         # Adjusting the lookahead steps
-        if actor.algo_lookahead_steps > 1 and (
-            config.algo_n_iterations - i < actor.algo_lookahead_steps
+        if actor.algo_lookahead_steps > 0 and (
+            config.algo_n_iterations - i - 1 < actor.algo_lookahead_steps
         ):
-            actor.algo_lookahead_steps -= 1
+            actor.algo_lookahead_steps = config.algo_n_iterations - i - 1
 
         # Create prompt dataset for policy training
         prompt_dataset = actor.create_dataset(prevX=buffer["x"], prevY=buffer["y"])
@@ -150,6 +222,8 @@ def main(args: Optional[Dict[str, Any]] = None):
         embedder.unload()
         actor.train_policy(iteration=i, dataset=prompt_dataset)
         embedder.load(config.embedding_model_name_or_path)
+
+        # -------------------------------------------------------
 
         # Get the next X
         actor.policy.load_inference(iteration=i)
@@ -187,6 +261,8 @@ def main(args: Optional[Dict[str, Any]] = None):
         buffer["y"].append(next_y)
         print("Next X", next_X)
         print("Next y", next_y)
+
+        # -------------------------------------------------------
 
         # Logging
         log_dict = {f"y{k}": v for k, v in enumerate(next_y)}
