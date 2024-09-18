@@ -353,7 +353,9 @@ def run_exp(parms, env) -> None:
     if parms.env_discretized:
         embedder = DiscreteEmbbeder(
             num_categories=parms.num_categories,
-            bounds=torch.stack([torch.zeros(parms.x_dim), torch.ones(parms.x_dim)], dim=1),
+            bounds=torch.stack(
+                [torch.zeros(parms.x_dim), torch.ones(parms.x_dim)], dim=1
+            ),
         ).to(device=parms.device, dtype=parms.torch_dtype)
     else:
         embedder = None

@@ -114,7 +114,7 @@ class qBOAcqf(MCAcquisitionFunction):
         prev_cost: float = 0.0,
         **kwargs,
     ) -> Dict[str, Tensor]:
-        breakpoint()
+
         n_restarts = prev_X.shape[0]
         x_dim = prev_X.shape[1]
 
@@ -411,7 +411,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
 
         # Calculate loss value
         acqf_loss = self.loss_function(actions, action_yis)
-        
+
         # Calculate cost value
         first_prev_X = prev_X[:, None, ...]
         if embedder is not None:

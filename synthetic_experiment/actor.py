@@ -90,7 +90,7 @@ class Actor:
                 prev_X, num_classes=self.parms.num_categories
             ).to(dtype=self.parms.torch_dtype)
             # >>> n_restarts x x_dim x n_categories
-            
+
             # Cat ==> Con
             encoded_prev_X = embedder.encode(prev_X)
         else:
@@ -208,7 +208,7 @@ class Actor:
                 )
 
                 x = (x * (ub - lb) + lb).detach()
-                
+
                 if embedder is not None:
                     x = embedder.decode(x)
                     x = torch.nn.functional.one_hot(
@@ -353,7 +353,7 @@ class Actor:
             self.acqf.dump_model()
 
         for ep in range(self.parms.acq_opt_iter):
-            if not self.parms.amortized:
+            if not self.parms.amortized and not self.parms.env_discretized:
                 local_maps = [torch.sigmoid(x) for x in self.maps]
             else:
                 local_maps = self.maps
