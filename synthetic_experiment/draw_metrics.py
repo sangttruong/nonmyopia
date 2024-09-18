@@ -1,8 +1,9 @@
+import os
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import os
-from pathlib import Path
 from tueplots import bundles
 
 plt.rcParams.update(bundles.neurips2024())
@@ -10,7 +11,7 @@ plt.rcParams.update(bundles.neurips2024())
 algos_name = [
     # "HES-TS-AM-1",
     # "HES-TS-AM-10",
-    "HES-TS-AM-20",
+    # "HES-TS-AM-20",
     # "HES-TS-1",
     # "HES-TS-2",
     # "HES-TS-3",
@@ -20,18 +21,18 @@ algos_name = [
     # "HES-1",
     # "HES-2",
     # "HES-3",
-    "MSL-3",
+    # "MSL-3",
     "SR",
-    "EI",
-    "PI",
-    "UCB",
-    "KG",
+    # "EI",
+    # "PI",
+    # "UCB",
+    # "KG",
 ]
 
 algos = [
     # "HES-TS-AM-1",
     # "HES-TS-AM-10",
-    "HES-TS-AM-20",
+    # "HES-TS-AM-20",
     # "HES-TS-1",
     # "HES-TS-2",
     # "HES-TS-3",
@@ -41,42 +42,46 @@ algos = [
     # "HES-1",
     # "HES-2",
     # "HES-3",
-    "qMSL",
+    # "qMSL",
     "qSR",
-    "qEI",
-    "qPI",
-    "qUCB",
-    "qKG",
+    # "qEI",
+    # "qPI",
+    # "qUCB",
+    # "qKG",
 ]
 
 seeds = [2, 3, 5, 7, 11]
 
 env_names = [
-    "Ackley",
-    "Alpine",
-    "Beale",
-    "Branin",
-    "Cosine8",
-    "EggHolder",
-    "Griewank",
-    "Hartmann",
+    # "Ackley",
+    # "Alpine",
+    # "Beale",
+    # "Branin",
+    # "Cosine8",
+    # "EggHolder",
+    # "Griewank",
+    # "Hartmann",
     "HolderTable",
-    "Levy",
-    "Powell",
-    "SixHumpCamel",
-    "StyblinskiTang",
-    "SynGP",
+    # "Levy",
+    # "Powell",
+    # "SixHumpCamel",
+    # "StyblinskiTang",
+    # "SynGP",
 ]
 
 env_noises = [
-    0.0,
+    # 0.0,
     0.01,
     # 0.1,
 ]
 
 env_discretizeds = [False, True]
 
-cost_functions = ["euclidean", "manhattan", "r-spotlight", "non-markovian"]
+cost_functions = [
+    # "euclidean", "manhattan",
+    "r-spotlight",
+    # "non-markovian"
+]
 
 cost_function_names = {
     "euclidean": "Euclidean cost",
@@ -188,6 +193,17 @@ def get_env_info(env_name, device):
     else:
         raise NotImplementedError
 
+    if self.x_dim == 2:
+        self.radius = 0.075
+    elif self.x_dim == 4:
+        self.radius = 0.1
+    elif self.x_dim == 6:
+        self.radius = 0.125
+    elif self.x_dim == 8:
+        self.radius = 0.15
+    else:
+        raise NotImplementedError
+
     bounds = np.array(bounds)
     if bounds.ndim < 2 or bounds.shape[0] < x_dim:
         bounds = np.tile(bounds, [x_dim, 1])
@@ -204,8 +220,16 @@ def draw_time(
     plt.figure(figsize=(4, 3))
 
     for idx, (algo, metrics) in enumerate(dict_metrics.items()):
-        mean = np.mean(metrics)
-        std = np.std(metrics)
+        # mean = np.mean(metrics)
+        # std = np.std(metrics)
+        list_means = []
+        for _ in range(100):
+            mean = np.random.choice(metrics.flatten(), size=100, replace=True)
+            list_means.append(np.mean(mean))
+
+        mean = np.mean(list_means)
+        std = np.std(list_means)
+
         plt.bar(
             algo,
             mean,
@@ -281,15 +305,16 @@ def draw_metric_v2(
                         yerr=list_stds,
                         elinewidth=0.75,
                         fmt="o",
-                        ms=3,
+                        ms=5,
                         label=algo,
                     )
 
                 axs[eni][cfi].set_xticks(
-                    ticks=list(range(len(env_names))), labels=env_names, rotation=60
+                    ticks=list(range(len(env_names))), labels=env_names, rotation=75
                 )
+                axs[eni][cfi].tick_params(axis="both", labelsize=12)
                 axs[eni][cfi].set_title(
-                    f"Noise {env_noise} - {cost_function_names[cost_fn]}"
+                    f"Noise {env_noise} - {cost_function_names[cost_fn]}", fontsize=14
                 )
 
         handles, labels = axs[0][0].get_legend_handles_labels()
@@ -298,9 +323,10 @@ def draw_metric_v2(
             labels,
             loc="outside lower center",
             ncol=7,
-            bbox_to_anchor=(0.5, -0.05),
+            bbox_to_anchor=(0.5, -0.075),
+            fontsize=14,
         )
-        fig.suptitle(metric_name, fontsize=11)
+        # fig.suptitle(metric_name, fontsize=12)
         plt.savefig(save_files[mi], dpi=300)
         plt.close()
 
@@ -388,6 +414,15 @@ if __name__ == "__main__":
                         f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
                     )
                 else:
+                    print(
+                        "Missing ",
+                        env_name,
+                        env_noise,
+                        env_discretized,
+                        algo,
+                        cost_fn,
+                        seed,
+                    )
                     continue
 
                 # >>> n_iterations x 3
@@ -400,6 +435,15 @@ if __name__ == "__main__":
                 list_metrics.append([fr, i90])
 
             if len(list_metrics) == 0:
+                print(
+                    "Missing ",
+                    env_name,
+                    env_noise,
+                    env_discretized,
+                    algo,
+                    cost_fn,
+                    seed,
+                )
                 continue
             # >>> n_seeds x n_iterations x 3
 
@@ -407,7 +451,7 @@ if __name__ == "__main__":
 
         all_results[(env_name, env_noise, env_discretized, cost_fn)] = dict_metrics
         # >>> algo x n_seeds x n_iterations x 1
-
+    breakpoint()
     save_dir = Path("plots")
     save_dir.mkdir(parents=True, exist_ok=True)
     draw_metric_v2(

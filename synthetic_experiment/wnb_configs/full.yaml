@@ -6,22 +6,22 @@ metric:
     name: loss
 parameters:
     seed: 
-        values: [2, 3, 5, 7, 11]
+        values: [2]
     task: 
         values: [topk]
     env_name: 
         values: [Ackley, Alpine, Beale, Branin, Cosine8, EggHolder, Griewank, Hartmann, HolderTable, Levy, Powell, SixHumpCamel, StyblinskiTang, SynGP]
     env_noise:  
-        values: [0.0, 0.01, 0.1]
+        values: [0.01]
     env_discretized: 
-        values: [False, True]
+        values: [False]
     algo: 
-        values: [HES-TS-AM-1, HES-TS-AM-10, HES-TS-AM-20, HES-TS-1, HES-TS-2, HES-TS-3, HES-AM-1, HES-AM-2, HES-AM-3, HES-1, HES-2, HES-3, qMSL, qSR, qEI, qPI, qUCB, qKG]
+        values: [HES-TS-AM-1, HES-TS-AM-20, HES-AM-1, HES-1, qMSL, qSR, qEI, qPI, qUCB, qKG]
     cost_fn: 
         values: [euclidean, manhattan, r-spotlight, non-markovian]
     plot:  
-        values: [True]
+        values: [False]
     gpu_id:  
         values: [0]
     cont:
-        values: [True]
+        values: [False]

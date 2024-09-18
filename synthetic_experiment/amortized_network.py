@@ -125,16 +125,7 @@ class AmortizedNetwork(nn.Module):
         if self.discrete:
             output = output.reshape(output.shape[0], -1, self.num_categories)
             output = output.softmax(dim=-1)
-            # output = torch.nn.functional.gumbel_softmax(output, hard=False)
-            # y_soft = output.softmax(dim=-1)
-            # index = y_soft.max(dim=-1, keepdim=True)[1]
-            # y_hard = torch.zeros_like(
-            #     output, memory_format=torch.legacy_contiguous_format
-            # ).scatter_(-1, index, 1.0)
-            # output = y_hard - y_soft.detach() + y_soft
-            dist = OneHotCategoricalStraightThrough(probs=output)
-            output1 = dist.mode + dist.probs - dist.probs.detach()
-            return output1, hidden_state
+            return output, hidden_state
 
         return self.project_output(output), hidden_state
 
@@ -163,4 +154,5 @@ class Project2Range(nn.Module):
         Returns:
             The projected tensor with the same dimention as the input.
         """
-        return torch.sigmoid(x) * self.range + self.min
+        # return torch.sigmoid(x) * self.range + self.min
+        return torch.sigmoid(x)

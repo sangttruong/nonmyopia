@@ -7,31 +7,31 @@
 r"""Multi-step H-Entropy Search with one-shot optimization."""
 
 from __future__ import annotations
-from typing import Dict, List, Optional, Tuple, Type
 
 import copy
+from typing import Dict, List, Optional, Tuple, Type
+
 import torch
 import torch.nn as nn
-from torch import Tensor
 from botorch import settings
 from botorch.acquisition import (
     qExpectedImprovement,
     qKnowledgeGradient,
     qMultiStepLookahead,
+    qNegIntegratedPosteriorVariance,
     qProbabilityOfImprovement,
     qSimpleRegret,
     qUpperConfidenceBound,
-    qNegIntegratedPosteriorVariance,
 )
 from botorch.acquisition.monte_carlo import MCAcquisitionFunction
 from botorch.exceptions import UnsupportedError
-from botorch.sampling.base import MCSampler
-from botorch.sampling.normal import NormalMCSampler
 from botorch.models.utils.assorted import fantasize as fantasize_flag
 from botorch.posteriors import Posterior
-from botorch.sampling.normal import SobolQMCNormalSampler
+from botorch.sampling.base import MCSampler
+from botorch.sampling.normal import NormalMCSampler, SobolQMCNormalSampler
 from botorch.sampling.pathwise.posterior_samplers import draw_matheron_paths
 from botorch.utils.sampling import draw_sobol_normal_samples
+from torch import Tensor
 from torch.quasirandom import SobolEngine
 
 
@@ -51,7 +51,7 @@ class qBOAcqf(MCAcquisitionFunction):
         n_fantasy_at_design_pts: Optional[List[int]] = [64],
         sampler: Optional[MCSampler] = None,
         best_f: Optional[float] = None,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(model=model)
         self.name = name
@@ -63,9 +63,9 @@ class qBOAcqf(MCAcquisitionFunction):
 
         if self.name == "qKG":
             self.bo_acqf = qKnowledgeGradient(
-                model=self.model, 
+                model=self.model,
                 num_fantasies=n_fantasy_at_design_pts[0],
-                sampler=sampler
+                sampler=sampler,
             )
 
         elif self.name == "qEI":
@@ -101,7 +101,7 @@ class qBOAcqf(MCAcquisitionFunction):
             self.bo_acqf = qNegIntegratedPosteriorVariance(
                 model=self.model, mc_points=0, sampler=sampler
             )
-            
+
         else:
             raise NotImplementedError
 
@@ -112,45 +112,49 @@ class qBOAcqf(MCAcquisitionFunction):
         maps: List[nn.Module],
         embedder: nn.Module = None,
         prev_cost: float = 0.0,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Tensor]:
-        
+        breakpoint()
         n_restarts = prev_X.shape[0]
         x_dim = prev_X.shape[1]
-        
+
         actions = torch.concat(maps)
         if embedder is not None:
             actions = embedder.encode(actions)
-            
+
         action_shape = [
             n_restarts,
             -1,
             x_dim,
         ]
         actions = actions.reshape(*action_shape)
-        acqf_loss =  - self.bo_acqf(actions)
+        acqf_loss = -self.bo_acqf(actions)
         # >>> batch_size
 
         pX = prev_X[:, None, ...]
         if embedder is not None:
             pX = embedder.encode(pX)
-            
+
         if self.name == "qMSL":
             acqf_cost = 0
             for cX in self.bo_acqf.get_multi_step_tree_input_representation(actions):
                 acqf_cost = acqf_cost + self.cost_function(
-                    prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
+                    prev_X=pX.expand_as(cX),
+                    current_X=cX,
+                    previous_cost=acqf_cost + prev_cost,
                 )
                 pX = cX[None, ...]
         elif self.name == "qKG":
-            cX = actions[..., :-self.bo_acqf.num_fantasies, :]
+            cX = actions[..., : -self.bo_acqf.num_fantasies, :]
             acqf_cost = self.cost_function(
                 prev_X=pX.expand_as(cX), current_X=cX, previous_cost=prev_cost
             )
             pX = cX
-            cX = actions[..., -self.bo_acqf.num_fantasies:, :]
+            cX = actions[..., -self.bo_acqf.num_fantasies :, :]
             acqf_cost = acqf_cost + self.cost_function(
-                prev_X=pX.expand_as(cX), current_X=cX, previous_cost=acqf_cost + prev_cost
+                prev_X=pX.expand_as(cX),
+                current_X=cX,
+                previous_cost=acqf_cost + prev_cost,
             )
         else:
             acqf_cost = self.cost_function(
@@ -166,15 +170,16 @@ class qBOAcqf(MCAcquisitionFunction):
             X_returned = [self.bo_acqf.extract_candidates(actions)]
         else:
             X_returned = [actions]
-            
+
         return {
             "acqf_loss": acqf_loss,
             "acqf_cost": acqf_cost,
             "X": X_returned,
             "actions": actions,
-            "hidden_state": None
+            "hidden_state": None,
         }
-        
+
+
 class qMultiStepHEntropySearch(MCAcquisitionFunction):
     """qMultiStep H-Entropy Search Class."""
 
@@ -192,7 +197,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         design_samplers: Optional[MCSampler] = None,
         action_sampler: Optional[MCSampler] = None,
         enable_ts: Optinal[bool] = False,
-        **kwargs
+        **kwargs,
     ) -> None:
         """Batch multip-step H-Entropy Search using one-shot optimization.
 
@@ -268,7 +273,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         prev_hid_state: Tensor,
         maps: List[nn.Module],
         embedder: nn.Module = None,
-        prev_cost: float = 0.0
+        prev_cost: float = 0.0,
     ) -> Dict[str, Tensor]:
         """
         Evaluate qMultiStepEHIG objective (q-MultistepHES).
@@ -339,6 +344,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             # >>> n_samples x num_x_{step} x 1 x dim x (num_categories)
 
             if embedder is not None:
+                # Cat ==> Con
                 X = embedder.encode(X)
                 # >>> num_x_{step} * x_dim
 
@@ -354,7 +360,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
                         ppd = fantasized_model.posterior(X)
                     ys = self.design_samplers[step](ppd).to(X)
                     # >>> n_samples * num_x_{step} * y_dim
-                    
+
                     # Update conditions
                     fantasized_model = fantasized_model.condition_on_observations(
                         X=fantasized_model.transform_inputs(X), Y=ys
@@ -385,6 +391,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             actions = maps[self.algo_lookahead_steps]
 
         if embedder is not None:
+            # Cat ==> Con
             actions = embedder.encode(actions)
         action_shape = self.n_fantasy_at_design_pts[::-1] + [
             n_restarts,
@@ -393,17 +400,22 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         ]
         actions = actions.reshape(*action_shape)
         if self.enable_ts:
-            action_yis = self.f(actions.squeeze(dim=list(range(actions.dim() - 3)))).unsqueeze(0)
+            action_yis = self.f(
+                actions.squeeze(dim=list(range(actions.dim() - 3)))
+            ).unsqueeze(0)
         else:
-            action_yis = self.action_sampler(fantasized_model.posterior(actions)).squeeze(dim=-1)
+            action_yis = self.action_sampler(
+                fantasized_model.posterior(actions)
+            ).squeeze(dim=-1)
         # >> Tensor[*[n_samples]*i, n_restarts, n_actions]
 
         # Calculate loss value
         acqf_loss = self.loss_function(actions, action_yis)
-
+        
         # Calculate cost value
         first_prev_X = prev_X[:, None, ...]
         if embedder is not None:
+            # Cat ==> Con
             first_prev_X = embedder.encode(first_prev_X)
         acqf_cost = self.cost_function(
             prev_X=first_prev_X, current_X=X_returned[0], previous_cost=previous_cost
@@ -436,6 +448,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
             "actions": actions,
             "hidden_state": hidden_state_returned,
         }
+
 
 class PosteriorMeanSampler(NormalMCSampler):
     r"""Sampler for MC base samples using iid N(0,1) samples.
@@ -605,8 +618,12 @@ class qCostFunction(nn.Module):
             + torch.rand_like(diff) * self.max_noise
         )
         if self.discount > 0.0:
-            diff = diff * (1 - self.discount * (previous_cost + diff > self.discount_threshold).float())
-            
+            diff = diff * (
+                1
+                - self.discount
+                * (previous_cost + diff > self.discount_threshold).float()
+            )
+
         return diff
 
 

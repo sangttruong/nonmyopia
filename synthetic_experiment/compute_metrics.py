@@ -1,16 +1,16 @@
-from main import Parameters, make_env
-from utils import set_seed, str2bool, eval_func
-from env_embedder import DiscreteEmbbeder
+import os
+from argparse import ArgumentParser
 
 import numpy as np
 import torch
-from botorch.models import SingleTaskGP
-from gpytorch.mlls import ExactMarginalLogLikelihood
-from botorch import fit_gpytorch_model
-from tqdm import tqdm
-import os
-from argparse import ArgumentParser
 import wandb
+from botorch import fit_gpytorch_model
+from botorch.models import SingleTaskGP
+from env_embedder import DiscreteEmbbeder
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from main import make_env, Parameters
+from tqdm import tqdm
+from utils import eval_func, set_seed, str2bool
 
 
 def compute_metrics(
@@ -42,7 +42,6 @@ def compute_metrics(
             buffer["y"][: iteration + 1],
             # input_transform=Normalize(
             #     d=parms.x_dim, bounds=parms.bounds.T),
-            # outcome_transform=Standardize(1),
         ).to(device, dtype=parms.torch_dtype)
 
         if iteration == parms.algo_n_iterations - 1:
@@ -82,14 +81,14 @@ if __name__ == "__main__":
     parser = ArgumentParser()
     parser.add_argument("--seed", type=int, default=2)
     parser.add_argument("--task", type=str, default="topk")
-    parser.add_argument("--env_name", type=str, default="SynGP")
-    parser.add_argument("--env_noise", type=float, default=0.0)
+    parser.add_argument("--env_name", type=str, default="HolderTable")
+    parser.add_argument("--env_noise", type=float, default=0.01)
     parser.add_argument("--env_discretized", type=str2bool, default=False)
-    parser.add_argument("--algo", type=str, default="HES-TS-AM-20")
-    parser.add_argument("--cost_fn", type=str, default="euclidean")
+    parser.add_argument("--algo", type=str, default="qSR")
+    parser.add_argument("--cost_fn", type=str, default="r-spotlight")
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
-    parser.add_argument("--cont", type=str2bool, default=True)
+    parser.add_argument("--cont", type=str2bool, default=False)
     args = parser.parse_args()
 
     set_seed(args.seed)
@@ -133,7 +132,9 @@ if __name__ == "__main__":
         # Load saved surr_model
         surr_model_state_dicts = []
         for step in range(local_parms.n_initial_points, local_parms.algo_n_iterations):
-            surr_model_state_dict_file = os.path.join(base_path, f"surr_model_{step}.pt")
+            surr_model_state_dict_file = os.path.join(
+                base_path, f"surr_model_{step}.pt"
+            )
             if not os.path.exists(surr_model_state_dict_file):
                 raise RuntimeError(f"File {surr_model_state_dict_file} does not exist")
 

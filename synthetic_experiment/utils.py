@@ -1,11 +1,14 @@
-import os
-import torch
-import random
 import argparse
-import numpy as np
-from tueplots import bundles
-import matplotlib.pyplot as plt
+import os
+import random
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from acqfs import qBOAcqf
+from botorch.sampling.normal import SobolQMCNormalSampler
 from botorch.test_functions.synthetic import (
     Ackley,  # XD Ackley function - Minimum
     Beale,  # 2D Beale function - Minimum
@@ -21,12 +24,10 @@ from botorch.test_functions.synthetic import (
     SixHumpCamel,  # 2D SixHumpCamel function - Minimum
     StyblinskiTang,  # XD StyblinskiTang function - Minimum
 )
-from botorch.sampling.normal import SobolQMCNormalSampler
-
-from acqfs import qBOAcqf
 from synthetic_functions.alpine import AlpineN1
-from synthetic_functions.syngp import SynGP
 from synthetic_functions.env_wrapper import EnvWrapper
+from synthetic_functions.syngp import SynGP
+from tueplots import bundles
 
 plt.rcParams.update(bundles.iclr2023())
 
@@ -221,7 +222,7 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
         optimizer = torch.optim.AdamW([A], lr=parms.acq_opt_lr)
 
         # Get prevX, prevY
-        prev_X = buffer["x"][iteration:iteration + 1].expand(parms.n_restarts, -1)
+        prev_X = buffer["x"][iteration : iteration + 1].expand(parms.n_restarts, -1)
         if embedder is not None:
             # Discretize: Continuous -> Discrete
             prev_X = embedder.decode(prev_X)
@@ -231,7 +232,7 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
             # >>> n_restarts x x_dim x n_categories
 
         prev_y = (
-            buffer["y"][iteration:iteration + 1]
+            buffer["y"][iteration : iteration + 1]
             .expand(parms.n_restarts, -1)
             .to(dtype=parms.torch_dtype)
         )
@@ -274,7 +275,7 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
     u_posterior = env(A_chosen).item()
 
     ######################################################################
-    regret = 1 - u_posterior
+    regret = 3 - u_posterior
 
     return (u_observed, u_posterior, regret), A_chosen.cpu()
 
