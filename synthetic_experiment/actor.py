@@ -267,16 +267,20 @@ class Actor:
 
                 if len(local_maps) == 0:
                     prev_points = encoded_prev_X[0]
+                    n_points = self.parms.n_restarts * self.parms.n_actions
                 else:
                     prev_points = local_maps[-1]
+                    n_points = nf_design_pts[-1] * self.parms.n_actions
 
-                a = generate_random_points_batch(
-                    prev_points,
-                    self.parms.cost_func_hypers["radius"],
-                    nf_design_pts[-1] * self.parms.n_actions,
-                ).to(
-                    device=self.parms.device,
-                    dtype=self.parms.torch_dtype,
+                a = (
+                    generate_random_points_batch(
+                        prev_points, self.parms.cost_func_hypers["radius"], n_points
+                    )
+                    .reshape(-1, self.parms.x_dim)
+                    .to(
+                        device=self.parms.device,
+                        dtype=self.parms.torch_dtype,
+                    )
                 )
 
                 if embedder is not None:
