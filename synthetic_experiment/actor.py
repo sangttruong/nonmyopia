@@ -265,8 +265,13 @@ class Actor:
                         x = -torch.log(1 / x - 1)
                     self.maps.append(x.requires_grad_(True))
 
+                if len(local_maps) == 0:
+                    prev_points = encoded_prev_X[0]
+                else:
+                    prev_points = local_maps[-1]
+
                 a = generate_random_points_batch(
-                    local_maps[-1],
+                    prev_points,
                     self.parms.cost_func_hypers["radius"],
                     nf_design_pts[-1] * self.parms.n_actions,
                 ).to(
