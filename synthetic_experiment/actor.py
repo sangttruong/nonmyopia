@@ -69,7 +69,7 @@ class Actor:
     def reset_parameters(
         self,
         buffer,
-        bo_iter,
+        bo_iter=0,
         embedder=None,
         prev_chosen_idx=0,
     ):
