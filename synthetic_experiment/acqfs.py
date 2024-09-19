@@ -259,12 +259,18 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
     def dump_model(self):
         """Dump model."""
         self._model = copy.deepcopy(self.model)
+        if self.enable_ts:
+            # Draw new f ~ p(f|D)
+            self.f = draw_matheron_paths(self.model, torch.Size([1]))
 
     def clean_dump_model(self):
         """Clean dump model."""
         del self._model
         torch.cuda.empty_cache()
         self._model = None
+        if self.enable_ts:
+            del self.f
+            self.f = None
 
     def forward(
         self,
@@ -306,10 +312,6 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         X_returned = []
         hidden_state_returned = []
         for step in range(self.algo_lookahead_steps):
-            if self.enable_ts:
-                # Draw new f ~ p(f|D)
-                self.f = draw_matheron_paths(self.model, torch.Size([1]))
-
             # condition on X[step], then sample, then condition on (x,prev_X y)
             if use_amortized_map:
                 X, hidden_state = maps(

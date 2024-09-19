@@ -7,6 +7,7 @@
 r"""Implement an actor."""
 import gc
 import math
+import pickle
 
 import torch
 from acqfs import qBOAcqf, qMultiStepHEntropySearch
@@ -14,7 +15,11 @@ from amortized_network import AmortizedNetwork, Project2Range
 
 from botorch.sampling.normal import SobolQMCNormalSampler
 from tqdm import tqdm
-from utils import draw_loss_and_cost
+from utils import (
+    draw_loss_and_cost,
+    generate_random_points_batch,
+    rotate_around_point_highperf,
+)
 
 
 class Actor:
@@ -64,7 +69,9 @@ class Actor:
     def reset_parameters(
         self,
         buffer,
+        bo_iter,
         embedder=None,
+        prev_chosen_idx=0,
     ):
         r"""Reset actor parameters.
 
@@ -101,6 +108,32 @@ class Actor:
 
         if self.parms.amortized:
             optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
+
+            # X_randomizeds = []
+            # for s in range(self.algo_lookahead_steps):
+            #     if s == 0:
+            #         prev_points = encoded_prev_X[0]
+            #         n_points = 1000
+            #     else:
+            #         prev_points = X_randomizeds[-1]
+            #         n_points = 1
+
+            #     X_randomized = generate_random_points_batch(
+            #         prev_points, self.parms.cost_func_hypers["radius"], n_points
+            #     )
+            #     X_randomizeds.append(X_randomized.reshape(-1, self.parms.x_dim).to(
+            #         device=self.parms.device,
+            #         dtype=self.parms.torch_dtype,
+            #     ))
+
+            # A_randomized = generate_random_points_batch(
+            #     X_randomizeds[-1],
+            #     self.parms.cost_func_hypers["radius"],
+            #     1,
+            # ).reshape(-1, self.parms.x_dim).to(
+            #     device=self.parms.device,
+            #     dtype=self.parms.torch_dtype,
+            # )
 
             A_randomized = torch.rand(
                 (1000, self.parms.x_dim),
@@ -141,6 +174,7 @@ class Actor:
                 X_randomizeds.append(X_randomized)
 
             std = self.parms.cost_func_hypers["radius"]
+            self.acqf.dump_model()
 
             for _ in tqdm(range(100)):
                 optimizer.zero_grad()
@@ -171,8 +205,9 @@ class Actor:
                     param.grad = grad
                 optimizer.step()
 
+            self.acqf.clean_dump_model()
+
         else:
-            self.maps = []
             if self.parms.algo_ts:
                 nf_design_pts = [1] * self.algo_lookahead_steps
             else:
@@ -190,57 +225,131 @@ class Actor:
                         self.algo_lookahead_steps - 4
                     )
 
-            for s in range(self.algo_lookahead_steps):
-                x = torch.rand(
-                    math.prod(nf_design_pts[:s]) * self.parms.n_restarts,
-                    self.parms.x_dim,
+            if bo_iter == 0 or not self.parms.algo_ts:
+                self.maps = []
+
+                local_maps = []
+                for s in range(self.algo_lookahead_steps):
+                    if s == 0:
+                        prev_points = encoded_prev_X[0]
+                        n_points = self.parms.n_restarts
+                    else:
+                        prev_points = local_maps[-1]
+                        n_points = nf_design_pts[s - 1]
+
+                    x = generate_random_points_batch(
+                        prev_points, self.parms.cost_func_hypers["radius"], n_points
+                    )
+                    local_maps.append(x)
+
+                for s in range(self.algo_lookahead_steps):
+                    x = (
+                        local_maps[s]
+                        .reshape(-1, self.parms.x_dim)
+                        .to(
+                            device=self.parms.device,
+                            dtype=self.parms.torch_dtype,
+                        )
+                    )
+                    if embedder is not None:
+                        x = embedder.decode(x)
+                        x = torch.nn.functional.one_hot(
+                            x, num_classes=self.parms.num_categories
+                        ).to(self.parms.torch_dtype)
+                    else:
+                        x = torch.clamp(
+                            x,
+                            max=0.99,
+                            min=0.01,
+                        )
+                        x = -torch.log(1 / x - 1)
+                    self.maps.append(x.requires_grad_(True))
+
+                a = generate_random_points_batch(
+                    local_maps[-1],
+                    self.parms.cost_func_hypers["radius"],
+                    nf_design_pts[-1] * self.parms.n_actions,
+                ).to(
                     device=self.parms.device,
                     dtype=self.parms.torch_dtype,
                 )
 
-                ub = torch.clamp(
-                    encoded_prev_X[0] + self.parms.cost_func_hypers["radius"] * (s + 1),
-                    max=1,
-                )
-                lb = torch.clamp(
-                    encoded_prev_X[0] - self.parms.cost_func_hypers["radius"] * (s + 1),
-                    min=0,
-                )
-
-                x = (x * (ub - lb) + lb).detach()
-
                 if embedder is not None:
-                    x = embedder.decode(x)
-                    x = torch.nn.functional.one_hot(
-                        x, num_classes=self.parms.num_categories
+                    a = embedder.decode(a)
+                    a = torch.nn.functional.one_hot(
+                        a, num_classes=self.parms.num_categories
                     ).to(self.parms.torch_dtype)
-                self.maps.append(x.requires_grad_(True))
+                else:
+                    a = torch.clamp(
+                        a,
+                        max=0.99,
+                        min=0.01,
+                    )
+                    a = -torch.log(1 / a - 1)
+                self.maps.append(a.requires_grad_(True))
+            else:
+                # Rotate previous best trajectory
+                self.maps = [torch.sigmoid(x.requires_grad_(False)) for x in self.maps]
+                # 1. Pick the best trajectory
+                prev_chosen_idx = prev_chosen_idx.long()
+                prev_points = encoded_prev_X[0]
+                # >>> n_restarts x x_dim
 
-            a = torch.rand(
-                math.prod(nf_design_pts) * self.parms.n_restarts * self.parms.n_actions,
-                self.parms.x_dim,
-                device=self.parms.device,
-                dtype=self.parms.torch_dtype,
-            )
-            ub = torch.clamp(
-                encoded_prev_X[0]
-                + self.parms.cost_func_hypers["radius"]
-                * (self.algo_lookahead_steps + 1),
-                max=1,
-            )
-            lb = torch.clamp(
-                encoded_prev_X[0]
-                - self.parms.cost_func_hypers["radius"]
-                * (self.algo_lookahead_steps + 1),
-                min=0,
-            )
-            a = (a * (ub - lb) + lb).detach()
-            if embedder is not None:
-                a = embedder.decode(a)
-                a = torch.nn.functional.one_hot(
-                    a, num_classes=self.parms.num_categories
-                ).to(self.parms.torch_dtype)
-            self.maps.append(a.requires_grad_(True))
+                random_angles = torch.zeros(self.parms.n_restarts).to(encoded_prev_X)
+                random_angles[1:] = torch.deg2rad(
+                    torch.randint(low=0, high=360, size=(self.parms.n_restarts - 1,))
+                )
+                # >>> n_restarts
+
+                ##### Work for TS only #####
+                self.maps[0][:] = self.maps[1][prev_chosen_idx]
+
+                for lah in range(2, self.algo_lookahead_steps + 1):
+                    lah_points = self.maps[lah].reshape(
+                        *nf_design_pts[:lah], self.parms.n_restarts, self.parms.x_dim
+                    )
+                    best_traj_lah = lah_points[..., prev_chosen_idx, :]
+                    # >>> ... x 1 x x_dim
+
+                    list_rotated = []
+                    for ridx, angle in enumerate(random_angles):
+                        new_rotated_points = rotate_around_point_highperf(
+                            best_traj_lah.reshape(-1, self.parms.x_dim),
+                            angle,
+                            self.maps[0][prev_chosen_idx],
+                        )
+
+                        new_rotated_points = new_rotated_points.reshape(
+                            *nf_design_pts[:lah], 1, self.parms.x_dim
+                        )
+                        new_rotated_points = torch.clamp(
+                            new_rotated_points,
+                            max=0.99,
+                            min=0.01,
+                        )
+                        list_rotated.append(new_rotated_points)
+
+                    self.maps[lah - 1] = torch.stack(list_rotated, dim=-2).reshape(
+                        -1, self.parms.x_dim
+                    )
+
+                a = generate_random_points_batch(
+                    self.maps[self.algo_lookahead_steps - 1],
+                    self.parms.cost_func_hypers["radius"],
+                    nf_design_pts[-1] * self.parms.n_actions,
+                ).to(
+                    device=self.parms.device,
+                    dtype=self.parms.torch_dtype,
+                )
+                a = torch.clamp(
+                    a,
+                    max=0.99,
+                    min=0.01,
+                )
+                self.maps[self.algo_lookahead_steps] = a.reshape(-1, self.parms.x_dim)
+                self.maps = [
+                    (-torch.log(1 / x - 1)).requires_grad_(True) for x in self.maps
+                ]
             self._parameters = self.maps
 
     def construct_acqf(self, surr_model, buffer, **kwargs):
@@ -352,9 +461,16 @@ class Actor:
         if self.parms.algo.startswith("HES"):
             self.acqf.dump_model()
 
+        ########## TESTING ###########
+        saved_trajectory = []
+        saved_loss = []
+        saved_cost = []
+        ##############################
+
         for ep in range(self.parms.acq_opt_iter):
             if not self.parms.amortized and not self.parms.env_discretized:
                 local_maps = [torch.sigmoid(x) for x in self.maps]
+                saved_trajectory.append([x.cpu().detach().tolist() for x in local_maps])
             else:
                 local_maps = self.maps
 
@@ -367,13 +483,15 @@ class Actor:
                 prev_cost=prev_cost,
             )
 
-            acqf_loss = return_dict["acqf_loss"].mean()
-            acqf_cost = return_dict["acqf_cost"].mean()
+            acqf_loss = return_dict["acqf_loss"]
+            acqf_cost = return_dict["acqf_cost"]
+            saved_loss.append(return_dict["acqf_loss"].tolist())
+            saved_cost.append(return_dict["acqf_cost"].tolist())
             # >> n_restart
 
-            losses.append(acqf_loss.item())
-            costs.append(acqf_cost.item())
-            loss = (return_dict["acqf_loss"] + return_dict["acqf_cost"]).mean()
+            losses.append(acqf_loss.mean().item())
+            costs.append(acqf_cost.mean().item())
+            loss = (acqf_loss + acqf_cost).mean()
 
             if loss < (best_loss + best_cost).mean():
                 best_loss = return_dict["acqf_loss"].detach()
@@ -402,7 +520,10 @@ class Actor:
             optimizer.zero_grad()
 
             if ep % 50 == 0:
-                print(f"Epoch {ep:05d}\tLoss {loss.item():.5f}")
+                idx = torch.argmin(acqf_loss + acqf_cost)
+                print(
+                    f"Epoch {ep:05d}\tLoss {acqf_loss[idx].item():.5f}\tCost: {acqf_cost[idx].item():.5f}"
+                )
 
             if early_stop > 50:
                 break
@@ -412,6 +533,17 @@ class Actor:
 
         # Choose which restart produce the lowest loss
         idx = torch.argmin(best_loss + best_cost)
+
+        ########## TESTING ###########
+        pickle.dump(
+            (saved_trajectory, idx),
+            open(self.parms.save_dir + f"/trajectory_{iteration}.pkl", "wb"),
+        )
+        pickle.dump(
+            (saved_loss, saved_cost),
+            open(self.parms.save_dir + f"/lossncost_{iteration}.pkl", "wb"),
+        )
+        ##############################
 
         # Best acqf loss
         acqf_loss = best_loss[idx]
@@ -447,4 +579,5 @@ class Actor:
             "next_X": next_X,
             "actions": actions,
             "hidden_state": hidden_state,
+            "chosen_idx": idx,
         }

@@ -59,8 +59,6 @@ class Parameters:
         self.n_samples = 64  # 1
         self.amortized = False
         self.hidden_dim = 32
-        self.acq_opt_lr = 0.001 if self.amortized else 1e-3
-        self.acq_opt_iter = 500 if self.amortized else 500
         self.n_restarts = 64
 
         if self.algo.startswith("HES"):
@@ -72,11 +70,14 @@ class Parameters:
         elif self.algo == "qMSL":
             self.n_restarts = 4
             self.n_samples = 4
-            self.algo_lookahead_steps = 3  # Equivalent 4 in HES
+            self.algo_lookahead_steps = 2  # Equivalent 3 in HES
         elif self.algo == "qKG":
             self.algo_lookahead_steps = 1
         else:
             self.algo_lookahead_steps = 0
+
+        self.acq_opt_lr = 0.001 if self.amortized else 1e-2
+        self.acq_opt_iter = 500 if self.amortized else 500
 
         self.kernel = None
         if self.env_name == "Ackley":
@@ -345,6 +346,11 @@ def run_exp(parms, env) -> None:
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
+            chosen_idx=torch.full(
+                (parms.algo_n_iterations,),
+                fill_value,
+                dtype=parms.torch_dtype,
+            ),
         ),
         batch_size=[parms.algo_n_iterations],
         device=parms.device,
@@ -394,7 +400,9 @@ def run_exp(parms, env) -> None:
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
     fit_gpytorch_mll(mll)
     actor.construct_acqf(surr_model=surr_model, buffer=buffer[:continue_iter])
-    actor.reset_parameters(buffer=buffer[:continue_iter], embedder=embedder)
+
+    if parms.amortized:
+        actor.reset_parameters(buffer=buffer[:continue_iter], embedder=embedder)
 
     # Run BO loop
     for i in range(continue_iter, parms.algo_n_iterations):
@@ -413,9 +421,15 @@ def run_exp(parms, env) -> None:
         if actor.algo_lookahead_steps > 1 and (
             parms.algo_n_iterations - i < actor.algo_lookahead_steps
         ):
-            actor.algo_lookahead_steps -= 1
-            if not parms.amortized:
-                actor.reset_parameters(buffer=buffer[:i], embedder=embedder)
+            actor.algo_lookahead_steps = parms.algo_n_iterations - i
+
+        if not parms.amortized:
+            actor.reset_parameters(
+                buffer=buffer[:i],
+                bo_iter=i - parms.n_initial_points,
+                embedder=embedder,
+                prev_chosen_idx=buffer["chosen_idx"][i - 1],
+            )
 
         # Construct acqf
         actor.construct_acqf(surr_model=surr_model, buffer=buffer[:i])
@@ -431,6 +445,7 @@ def run_exp(parms, env) -> None:
         if parms.amortized:
             buffer["h"][i] = output["hidden_state"]
         buffer["cost"][i] = output["cost"]
+        buffer["chosen_idx"][i] = output["chosen_idx"]
         buffer["runtime"][i] = query_end_time - query_start_time
 
         # Save buffer to file after each iteration

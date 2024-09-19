@@ -83,7 +83,6 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
 
     # Wrapper for normalizing output
     f = EnvWrapper(name, f_)
-    f.noise_std = noise_std * (f.range_y[1] - f.range_y[0]) / 100
 
     return f
 
@@ -289,3 +288,64 @@ def draw_loss_and_cost(save_dir, losses, costs, iteration):
     plt.legend()
     plt.savefig(f"{save_dir}/losses_and_costs_{iteration}.pdf")
     plt.close()
+
+
+def generate_random_points_batch(inputs, radius, n):
+    # Get the shape of the inputs (excluding the last dimension)
+    batch_shape = inputs.shape[:-1]
+    dim = inputs.shape[-1]  # Dimensionality of the points
+
+    # Expand O to the shape [n, batch0, batch1, ..., dim] for broadcasting
+    O_expanded = inputs.unsqueeze(0).expand(n, *batch_shape, dim)
+
+    # Generate random directions for each point
+    directions = torch.randn(n, *batch_shape, dim).to(inputs)  # Generate random normals
+    directions = directions / torch.norm(
+        directions, dim=-1, keepdim=True
+    )  # Normalize to unit length
+
+    # Generate random radii between 0 and radius for each point
+    radii = (
+        torch.rand(n, *batch_shape).pow(1 / dim).unsqueeze(-1).to(inputs) * radius
+    )  # Scale radius
+
+    # Calculate the random points by scaling the direction by the radius and adding to O
+    random_points = O_expanded + radii * directions
+
+    return random_points
+
+
+def rotate_around_point_highperf(xy, radians, origin=(0, 0)):
+    """Rotate a batch of points around a given origin using PyTorch.
+
+    Args:
+        xy (torch.Tensor): A 2D tensor of shape (N, 2), where N is the number of points.
+        radians (torch.Tensor or float): Rotation angle in radians. If a scalar, all points
+                                         are rotated by the same angle. If a tensor, should be of shape (N,).
+        origin (tuple or torch.Tensor): A 2D point or a tensor of shape (N, 2) specifying the origin(s).
+
+    Returns:
+        torch.Tensor: A tensor of shape (N, 2) with rotated points.
+    """
+    # Ensure origin is broadcastable to xy
+    if origin.shape == (2,):
+        origin = origin.expand_as(xy)
+
+    # Separate coordinates
+    adjusted_xy = xy - origin
+
+    # Compute cos and sin of the rotation angles
+    cos_rad = torch.cos(radians)
+    sin_rad = torch.sin(radians)
+
+    # Handle batch dimensions correctly
+    if cos_rad.dim() == 0:
+        cos_rad = cos_rad.expand(xy.shape[0])
+        sin_rad = sin_rad.expand(xy.shape[0])
+
+    # Apply rotation matrix
+    qx = origin[:, 0] + cos_rad * adjusted_xy[:, 0] + sin_rad * adjusted_xy[:, 1]
+    qy = origin[:, 1] - sin_rad * adjusted_xy[:, 0] + cos_rad * adjusted_xy[:, 1]
+
+    # Combine qx and qy into a result tensor
+    return torch.stack((qx, qy), dim=1)

@@ -65,7 +65,7 @@ def eval_and_plot_2D_with_posterior(
     ax[1].set_title(label="Posterior mean")
 
     # Plot function in 2D ####################################################
-    X_domain, Y_domain = parms.bounds.cpu().numpy()
+    X_domain, Y_domain = bounds_plot_x, bounds_plot_y
     X, Y = np.linspace(*X_domain, n_space), np.linspace(*Y_domain, n_space)
     X, Y = np.meshgrid(X, Y)
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
@@ -216,7 +216,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=2)
     parser.add_argument("--task", type=str, default="topk")
     parser.add_argument("--env_name", type=str, default="SynGP")
-    parser.add_argument("--env_noise", type=float, default=0.0)
+    parser.add_argument("--env_noise", type=float, default=0.01)
     parser.add_argument("--env_discretized", type=str2bool, default=False)
     parser.add_argument("--algo", type=str, default="HES-TS-AM-20")
     parser.add_argument("--cost_fn", type=str, default="r-spotlight")
