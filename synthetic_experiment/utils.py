@@ -315,37 +315,31 @@ def generate_random_points_batch(inputs, radius, n):
     return random_points
 
 
-def rotate_around_point_highperf(xy, radians, origin=(0, 0)):
-    """Rotate a batch of points around a given origin using PyTorch.
+def generate_random_rotation_matrix(D):
+    # Generate a random matrix
+    random_matrix = torch.randn(D, D)
 
-    Args:
-        xy (torch.Tensor): A 2D tensor of shape (N, 2), where N is the number of points.
-        radians (torch.Tensor or float): Rotation angle in radians. If a scalar, all points
-                                         are rotated by the same angle. If a tensor, should be of shape (N,).
-        origin (tuple or torch.Tensor): A 2D point or a tensor of shape (N, 2) specifying the origin(s).
+    # Perform QR decomposition to get an orthogonal matrix
+    Q, _ = torch.linalg.qr(random_matrix)
 
-    Returns:
-        torch.Tensor: A tensor of shape (N, 2) with rotated points.
-    """
-    # Ensure origin is broadcastable to xy
-    if origin.shape == (2,):
-        origin = origin.expand_as(xy)
+    # Ensure the determinant is 1 (proper rotation)
+    if torch.det(Q) < 0:
+        # Flip the sign of the random column if the determinant is -1
+        Q[:, random.randint(0, D - 1)] *= -1
 
-    # Separate coordinates
-    adjusted_xy = xy - origin
+    return Q
 
-    # Compute cos and sin of the rotation angles
-    cos_rad = torch.cos(radians)
-    sin_rad = torch.sin(radians)
 
-    # Handle batch dimensions correctly
-    if cos_rad.dim() == 0:
-        cos_rad = cos_rad.expand(xy.shape[0])
-        sin_rad = sin_rad.expand(xy.shape[0])
+def rotate_points(inputs, R, p):
+    # Translate inputs so that p becomes the origin
+    translated_inputs = inputs - p
 
-    # Apply rotation matrix
-    qx = origin[:, 0] + cos_rad * adjusted_xy[:, 0] + sin_rad * adjusted_xy[:, 1]
-    qy = origin[:, 1] - sin_rad * adjusted_xy[:, 0] + cos_rad * adjusted_xy[:, 1]
+    # Apply the rotation matrix to the translated inputs
+    rotated_translated = torch.matmul(
+        translated_inputs, R.transpose(-1, -2).to(translated_inputs)
+    )
 
-    # Combine qx and qy into a result tensor
-    return torch.stack((qx, qy), dim=1)
+    # Translate points back to the original position relative to p
+    rotated_points = rotated_translated + p
+
+    return rotated_points

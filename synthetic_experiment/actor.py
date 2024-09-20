@@ -18,7 +18,8 @@ from tqdm import tqdm
 from utils import (
     draw_loss_and_cost,
     generate_random_points_batch,
-    rotate_around_point_highperf,
+    generate_random_rotation_matrix,
+    rotate_points,
 )
 
 
@@ -304,11 +305,17 @@ class Actor:
                 prev_points = encoded_prev_X[0]
                 # >>> n_restarts x x_dim
 
-                random_angles = torch.zeros(self.parms.n_restarts).to(encoded_prev_X)
-                random_angles[1:] = torch.deg2rad(
-                    torch.randint(low=0, high=360, size=(self.parms.n_restarts - 1,))
+                random_R_matrices = [torch.eye(self.parms.x_dim).to(encoded_prev_X)]
+                random_R_matrices.extend(
+                    [
+                        generate_random_rotation_matrix(self.parms.x_dim).to(
+                            encoded_prev_X
+                        )
+                        for _ in range(self.parms.n_restarts - 1)
+                    ]
                 )
-                # >>> n_restarts
+                random_R_matrices = torch.stack(random_R_matrices, dim=0)
+                # >>> n_restarts x x_dim x x_dim
 
                 ##### Work for TS only #####
                 self.maps[0][:] = self.maps[1][prev_chosen_idx]
@@ -318,29 +325,21 @@ class Actor:
                         *nf_design_pts[:lah], self.parms.n_restarts, self.parms.x_dim
                     )
                     best_traj_lah = lah_points[..., prev_chosen_idx, :]
-                    # >>> ... x 1 x x_dim
+                    # >>> ... x x_dim
 
-                    list_rotated = []
-                    for ridx, angle in enumerate(random_angles):
-                        new_rotated_points = rotate_around_point_highperf(
-                            best_traj_lah.reshape(-1, self.parms.x_dim),
-                            angle,
-                            self.maps[0][prev_chosen_idx],
-                        )
+                    list_rotated = rotate_points(
+                        best_traj_lah.reshape(-1, self.parms.x_dim),
+                        random_R_matrices,
+                        self.maps[0][prev_chosen_idx],
+                    ).transpose(0, 1)
 
-                        new_rotated_points = new_rotated_points.reshape(
-                            *nf_design_pts[:lah], 1, self.parms.x_dim
-                        )
-                        new_rotated_points = torch.clamp(
-                            new_rotated_points,
-                            max=0.99,
-                            min=0.01,
-                        )
-                        list_rotated.append(new_rotated_points)
-
-                    self.maps[lah - 1] = torch.stack(list_rotated, dim=-2).reshape(
-                        -1, self.parms.x_dim
+                    list_rotated = torch.clamp(
+                        list_rotated,
+                        max=0.99,
+                        min=0.01,
                     )
+
+                    self.maps[lah - 1] = list_rotated.reshape(-1, self.parms.x_dim)
 
                 a = generate_random_points_batch(
                     self.maps[self.algo_lookahead_steps - 1],
