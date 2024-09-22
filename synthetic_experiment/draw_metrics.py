@@ -21,12 +21,13 @@ algos_name = [
     # "HES-1",
     # "HES-2",
     # "HES-3",
-    # "MSL-3",
+    "MSL-3",
     "SR",
-    # "EI",
-    # "PI",
-    # "UCB",
-    # "KG",
+    "EI",
+    "PI",
+    "UCB",
+    "KG",
+    "HES-TS-20",
 ]
 
 algos = [
@@ -42,31 +43,35 @@ algos = [
     # "HES-1",
     # "HES-2",
     # "HES-3",
-    # "qMSL",
+    "qMSL",
     "qSR",
-    # "qEI",
-    # "qPI",
-    # "qUCB",
-    # "qKG",
+    "qEI",
+    "qPI",
+    "qUCB",
+    "qKG",
+    "HES-TS-20",
 ]
 
-seeds = [2, 3, 5, 7, 11]
+seeds = [
+    2,
+    # 3, 5, 7, 11
+]
 
 env_names = [
-    # "Ackley",
-    # "Alpine",
-    # "Beale",
-    # "Branin",
-    # "Cosine8",
-    # "EggHolder",
-    # "Griewank",
-    # "Hartmann",
+    "Ackley",
+    "Alpine",
+    "Beale",
+    "Branin",
+    "Cosine8",
+    "EggHolder",
+    "Griewank",
+    "Hartmann",
     "HolderTable",
-    # "Levy",
-    # "Powell",
-    # "SixHumpCamel",
-    # "StyblinskiTang",
-    # "SynGP",
+    "Levy",
+    "Powell",
+    "SixHumpCamel",
+    "StyblinskiTang",
+    "SynGP",
 ]
 
 env_noises = [
@@ -75,13 +80,12 @@ env_noises = [
     # 0.1,
 ]
 
-env_discretizeds = [False, True]
-
-cost_functions = [
-    # "euclidean", "manhattan",
-    "r-spotlight",
-    # "non-markovian"
+env_discretizeds = [
+    False,
+    # True
 ]
+
+cost_functions = ["euclidean", "manhattan", "r-spotlight", "non-markovian"]
 
 cost_function_names = {
     "euclidean": "Euclidean cost",
@@ -131,8 +135,8 @@ def get_env_info(env_name, device):
         x_dim = 2
         bounds = [-100, 100]
         radius = 15.0
-        n_initial_points = 100
-        algo_n_iterations = 150
+        n_initial_points = 200
+        algo_n_iterations = 250
 
     elif env_name == "Griewank":
         x_dim = 2
@@ -193,14 +197,14 @@ def get_env_info(env_name, device):
     else:
         raise NotImplementedError
 
-    if self.x_dim == 2:
-        self.radius = 0.075
-    elif self.x_dim == 4:
-        self.radius = 0.1
-    elif self.x_dim == 6:
-        self.radius = 0.125
-    elif self.x_dim == 8:
-        self.radius = 0.15
+    if x_dim == 2:
+        radius = 0.075
+    elif x_dim == 4:
+        radius = 0.1
+    elif x_dim == 6:
+        radius = 0.125
+    elif x_dim == 8:
+        radius = 0.15
     else:
         raise NotImplementedError
 
@@ -218,7 +222,7 @@ def draw_time(
     save_file,
 ):
     plt.figure(figsize=(4, 3))
-
+    data_tuple = []
     for idx, (algo, metrics) in enumerate(dict_metrics.items()):
         # mean = np.mean(metrics)
         # std = np.std(metrics)
@@ -227,21 +231,23 @@ def draw_time(
             mean = np.random.choice(metrics.flatten(), size=100, replace=True)
             list_means.append(np.mean(mean))
 
-        mean = np.mean(list_means)
-        std = np.std(list_means)
+        data_tuple.append([algo, np.mean(list_means), np.std(list_means)])
 
-        plt.bar(
-            algo,
-            mean,
-            yerr=std,
-            label=algo,
-            fill=False,
-            capsize=5,
-            error_kw={"elinewidth": 0.75, "markeredgewidth": 0.75},
-        )
+    data_tuple.sort(key=lambda x: x[1])
+    algos = []
+    for i, (algo, mean, std) in enumerate(data_tuple):
+        if algo == "HES-TS-20":
+            algo = "Our"
+        elif algo == "MSL-3":
+            algo = "MSL"
+        algos.append(algo)
+        plt.errorbar(i, mean, yerr=std, elinewidth=0.75, fmt="o", ms=5, color="black")
 
-    plt.ylabel("Time (s)")
-    plt.title(f"{env_name}", fontsize=11)
+    plt.xticks(ticks=list(range(len(algos))), labels=algos, rotation=90)
+    plt.tick_params(axis="both", labelsize=18)
+
+    plt.ylabel("Time (s)", fontsize=18)
+    plt.title(f"{env_name}", fontsize=20)
     plt.savefig(save_file, dpi=300)
     plt.close()
 
@@ -299,7 +305,7 @@ def draw_metric_v2(
                             list_stds.append(std)
 
                     # axs[eni][cfi].scatter(list_eids, list_means, label=algo, marker=".")
-                    axs[eni][cfi].errorbar(
+                    axs[cfi].errorbar(
                         list_eids,
                         list_means,
                         yerr=list_stds,
@@ -307,24 +313,24 @@ def draw_metric_v2(
                         fmt="o",
                         ms=5,
                         label=algo,
+                        alpha=0.5,
                     )
-
-                axs[eni][cfi].set_xticks(
-                    ticks=list(range(len(env_names))), labels=env_names, rotation=75
-                )
-                axs[eni][cfi].tick_params(axis="both", labelsize=12)
-                axs[eni][cfi].set_title(
-                    f"Noise {env_noise} - {cost_function_names[cost_fn]}", fontsize=14
+                axs[cfi].set_xticks([])
+                axs[cfi].tick_params(axis="both", labelsize=18)
+                axs[cfi].set_title(
+                    r"$\sigma =$" + f" {env_noise} - {cost_function_names[cost_fn]}",
+                    fontsize=20,
                 )
 
-        handles, labels = axs[0][0].get_legend_handles_labels()
+        handles, labels = axs[0].get_legend_handles_labels()
         fig.legend(
             handles,
             labels,
             loc="outside lower center",
             ncol=7,
-            bbox_to_anchor=(0.5, -0.075),
-            fontsize=14,
+            # bbox_to_anchor=(0.5, -0.075),
+            bbox_to_anchor=(0.5, -0.2),
+            fontsize=20,
         )
         # fig.suptitle(metric_name, fontsize=12)
         plt.savefig(save_files[mi], dpi=300)
@@ -426,13 +432,14 @@ if __name__ == "__main__":
                     continue
 
                 # >>> n_iterations x 3
+                yA = 3 - metrics[-1, 1]  # Get the yA
                 fr = metrics[-1, -1]  # Get the final regret
                 i90 = next(
                     x
                     for x, val in enumerate(metrics[:, -1])
                     if val > 0.9 * np.max(metrics[:, -1])
                 )  # Iteration exceeds 90% max c-regret
-                list_metrics.append([fr, i90])
+                list_metrics.append([fr, yA, i90])
 
             if len(list_metrics) == 0:
                 print(
@@ -451,11 +458,19 @@ if __name__ == "__main__":
 
         all_results[(env_name, env_noise, env_discretized, cost_fn)] = dict_metrics
         # >>> algo x n_seeds x n_iterations x 1
-    breakpoint()
+
     save_dir = Path("plots")
     save_dir.mkdir(parents=True, exist_ok=True)
     draw_metric_v2(
-        ["Final Cummulative Regret", "Iteration @ 90\% Cummulative Regret"],
+        [
+            "Final Cummulative Regret",
+            "Final Regret",
+            "Iteration @ 90\% Cummulative Regret",
+        ],
         all_results,
-        ["plots/final_cregret.png", "plots/iteration_at_90perc_cregret.png"],
+        [
+            "plots/final_cregret.png",
+            "plots/final_regret.png",
+            "plots/iteration_at_90perc_cregret.png",
+        ],
     )

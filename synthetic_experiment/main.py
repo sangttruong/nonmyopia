@@ -113,8 +113,8 @@ class Parameters:
         elif self.env_name == "EggHolder":
             self.x_dim = 2
             self.bounds = [-100, 100]
-            self.n_initial_points = 100
-            self.algo_n_iterations = 150
+            self.n_initial_points = 200
+            self.algo_n_iterations = 250
 
         elif self.env_name == "Griewank":
             self.x_dim = 2
