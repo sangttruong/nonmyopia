@@ -127,6 +127,9 @@ class AmortizedNetwork(nn.Module):
             output = output.softmax(dim=-1)
             return output, hidden_state
 
+        noise = torch.normal(
+            mean=torch.zeros_like(output), std=torch.ones_like(output) * 0.01
+        )
         return self.project_output(output), hidden_state
 
 
