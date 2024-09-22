@@ -47,7 +47,7 @@ def eval_and_plot_2D_with_posterior(
     fig, axs = plt.subplots(
         parms.n_restarts,
         len(plotting_epochs),
-        figsize=(4 * parms.n_restarts, 4 * len(plotting_epochs)),
+        figsize=(4 * len(plotting_epochs), 4 * parms.n_restarts),
     )
     bounds_plot_x, bounds_plot_y = np.array([0, 1]), np.array([0, 1])
     for nr in range(parms.n_restarts):

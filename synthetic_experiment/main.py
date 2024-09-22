@@ -58,15 +58,16 @@ class Parameters:
 
         self.n_samples = 64  # 1
         self.amortized = False
-        self.hidden_dim = 32
+        self.hidden_dim = 64
         self.n_restarts = 64
 
         if self.algo.startswith("HES"):
-            self.n_restarts = 16
             self.algo = "HES"
             self.algo_lookahead_steps = int(args.algo.split("-")[-1])
             self.algo_ts = "TS" in args.algo
             self.amortized = "AM" in args.algo
+            # if not self.algo_ts:
+            self.n_restarts = 16
         elif self.algo == "qMSL":
             self.n_restarts = 4
             self.n_samples = 4
@@ -236,16 +237,35 @@ class Parameters:
             axis=0,
         )
 
-        if self.env_name == "SynGP":
-            self.initial_points[-1] = [0.725, 0.75]
-        elif self.env_name == "HolderTable":
+        if self.env_name == "Alpine":
             self.initial_points[-1] = [0.5, 0.5]
+        elif self.env_name == "Ackley":
+            self.initial_points[-1] = [0.2, 0.8]
+        elif self.env_name == "Beale":
+            self.initial_points[-1] = [0.95, 0.95]
+        elif self.env_name == "Branin":
+            self.initial_points[-1] = [0.5, 0.9]
+        elif self.env_name == "Cosine8":
+            self.initial_points[-1] = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
         elif self.env_name == "EggHolder":
             self.initial_points[-1] = [0.5, 0.5]
-        elif self.env_name == "Alpine":
+        elif self.env_name == "Griewank":
             self.initial_points[-1] = [0.5, 0.5]
+        elif self.env_name == "Hartmann":
+            self.initial_points[-1] = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+        elif self.env_name == "HolderTable":
+            self.initial_points[-1] = [0.5, 0.5]
+        elif self.env_name == "Levy":
+            self.initial_points[-1] = [0.2, 0.2]
+        elif self.env_name == "Powell":
+            self.initial_points[-1] = [0.5, 0.5, 0.5, 0.5]
+        elif self.env_name == "SixHumpCamel":
+            self.initial_points[-1] = [0.8, 0.1]
+        elif self.env_name == "StyblinskiTang":
+            self.initial_points[-1] = [0.5, 0.5]
+        elif self.env_name == "SynGP":
+            self.initial_points[-1] = [0.725, 0.75]
 
-        # * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
         self.env_noise = args.env_noise
         self.bounds = torch.tensor(
             self.bounds, dtype=self.torch_dtype, device=self.device
@@ -300,22 +320,6 @@ def run_exp(parms, env) -> None:
         parms (Parameter): List of input parameters
         env: Environment
     """
-    data_x = torch.tensor(
-        parms.initial_points,
-        device=parms.device,
-        dtype=parms.torch_dtype,
-    )
-    # >>> n_initial_points x dim
-
-    data_y = env(data_x).reshape(-1, 1)
-    # >>> n_initial_points x 1
-
-    data_hidden_state = torch.ones(
-        [parms.n_initial_points, parms.hidden_dim],
-        device=parms.device,
-        dtype=parms.torch_dtype,
-    )
-
     actor = Actor(parms=parms)
     fill_value = float("nan")
     continue_iter = 0
@@ -355,6 +359,12 @@ def run_exp(parms, env) -> None:
         batch_size=[parms.algo_n_iterations],
         device=parms.device,
     )
+    data_x = torch.tensor(
+        parms.initial_points,
+        device=parms.device,
+        dtype=parms.torch_dtype,
+    )
+    # >>> n_initial_points x dim
 
     if parms.env_discretized:
         embedder = DiscreteEmbbeder(
@@ -363,8 +373,26 @@ def run_exp(parms, env) -> None:
                 [torch.zeros(parms.x_dim), torch.ones(parms.x_dim)], dim=1
             ),
         ).to(device=parms.device, dtype=parms.torch_dtype)
+        # Discretize: Continuous -> Discrete
+        data_x = embedder.decode(data_x)
+        data_x = torch.nn.functional.one_hot(
+            data_x, num_classes=parms.num_categories
+        ).to(dtype=parms.torch_dtype)
+        # >>> n_restarts x x_dim x n_categories
+
+        # Cat ==> Con
+        data_x = embedder.encode(data_x)
     else:
         embedder = None
+
+    data_y = env(data_x).reshape(-1, 1)
+    # >>> n_initial_points x 1
+
+    data_hidden_state = torch.randn(
+        [parms.n_initial_points, parms.hidden_dim],
+        device=parms.device,
+        dtype=parms.torch_dtype,
+    )
 
     if parms.cont:
         # Load buffers from previous iterations

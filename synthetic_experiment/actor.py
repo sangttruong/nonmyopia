@@ -91,21 +91,23 @@ class Actor:
         )
         # Inititalize required variables
         prev_X = buffer["x"][-1:].expand(self.parms.n_restarts, -1)
-        if embedder is not None:
-            # Discretize: Continuous -> Discrete
-            prev_X = embedder.decode(prev_X)
-            prev_X = torch.nn.functional.one_hot(
-                prev_X, num_classes=self.parms.num_categories
-            ).to(dtype=self.parms.torch_dtype)
-            # >>> n_restarts x x_dim x n_categories
-
-            # Cat ==> Con
-            encoded_prev_X = embedder.encode(prev_X)
-        else:
-            encoded_prev_X = prev_X
-
         prev_y = buffer["y"][-1:].expand(self.parms.n_restarts, -1)
         prev_hid_state = buffer["h"][-1:].expand(self.parms.n_restarts, -1)
+
+        if self.parms.algo_ts:
+            nf_design_pts = [1] * self.algo_lookahead_steps
+        else:
+            if self.algo_lookahead_steps == 0:
+                nf_design_pts = []
+            elif self.algo_lookahead_steps == 1:
+                nf_design_pts = [64]
+            elif self.algo_lookahead_steps == 2:
+                nf_design_pts = [64, 8]  # [64, 64]
+            elif self.algo_lookahead_steps == 3:
+                nf_design_pts = [64, 4, 2]  # [64, 32, 8]
+            elif self.algo_lookahead_steps >= 4:
+                nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
+                nf_design_pts = nf_design_pts + [1] * (self.algo_lookahead_steps - 4)
 
         if self.parms.amortized:
             optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
@@ -113,126 +115,109 @@ class Actor:
             # X_randomizeds = []
             # for s in range(self.algo_lookahead_steps):
             #     if s == 0:
-            #         prev_points = encoded_prev_X[0]
-            #         n_points = 1000
+            #         prev_points = prev_X[0:1]
+            #         n_points = self.parms.n_restarts
             #     else:
             #         prev_points = X_randomizeds[-1]
-            #         n_points = 1
+            #         n_points = nf_design_pts[s - 1]
 
-            #     X_randomized = generate_random_points_batch(
-            #         prev_points, self.parms.cost_func_hypers["radius"], n_points
+            #     x = generate_random_points_batch(
+            #         prev_points, self.parms.cost_func_hypers["radius"], 1
             #     )
-            #     X_randomizeds.append(X_randomized.reshape(-1, self.parms.x_dim).to(
+            #     x = torch.clamp(
+            #         x,
+            #         max=0.99,
+            #         min=0.01,
+            #     )
+
+            #     X_randomizeds.append(x.to(
             #         device=self.parms.device,
             #         dtype=self.parms.torch_dtype,
-            #     ))
+            #     ).detach())
 
-            # A_randomized = generate_random_points_batch(
-            #     X_randomizeds[-1],
-            #     self.parms.cost_func_hypers["radius"],
-            #     1,
-            # ).reshape(-1, self.parms.x_dim).to(
-            #     device=self.parms.device,
-            #     dtype=self.parms.torch_dtype,
+            # if len(X_randomizeds) == 0:
+            #     prev_points = prev_X[0:1]
+            #     n_points = self.parms.n_restarts * self.parms.n_actions
+            # else:
+            #     prev_points = X_randomizeds[-1]
+            #     n_points = nf_design_pts[-1] * self.parms.n_actions
+
+            # A_randomized = (
+            #     generate_random_points_batch(
+            #         prev_points, self.parms.cost_func_hypers["radius"], 1
+            #     )
+            #     .to(
+            #         device=self.parms.device,
+            #         dtype=self.parms.torch_dtype,
+            #     )
             # )
 
-            A_randomized = torch.rand(
-                (1000, self.parms.x_dim),
-                device=self.parms.device,
-                dtype=self.parms.torch_dtype,
-            )
-            ub = torch.clamp(
-                encoded_prev_X[0]
-                + self.parms.cost_func_hypers["radius"]
-                * (self.algo_lookahead_steps + 1),
-                max=1,
-            )
-            lb = torch.clamp(
-                encoded_prev_X[0]
-                - self.parms.cost_func_hypers["radius"]
-                * (self.algo_lookahead_steps + 1),
-                min=0,
-            )
-            A_randomized = (A_randomized * (ub - lb) + lb).detach()
+            # A_randomized = torch.clamp(
+            #     A_randomized,
+            #     max=0.99,
+            #     min=0.01,
+            # ).detach()
 
-            X_randomizeds = []
-            for i in range(self.algo_lookahead_steps):
-                X_randomized = torch.rand(
-                    (1000, self.parms.x_dim),
-                    device=self.parms.device,
-                    dtype=self.parms.torch_dtype,
+            n_samples = 10000
+            d = self.parms.x_dim
+
+            X = [prev_X[0].expand(n_samples, self.parms.x_dim)]
+
+            for i in range(self.algo_lookahead_steps + 1):
+                nextX = (
+                    X[-1]
+                    + (torch.rand(n_samples, d) * 2 - 1).to(X[-1])
+                    * self.parms.cost_func_hypers["radius"]
                 )
-                ub = torch.clamp(
-                    encoded_prev_X[0] + self.parms.cost_func_hypers["radius"] * (i + 1),
-                    max=1,
-                )
-                lb = torch.clamp(
-                    encoded_prev_X[0] - self.parms.cost_func_hypers["radius"] * (i + 1),
-                    min=0,
+                nextX = torch.clamp(nextX, 0, 1)
+                X.append(nextX)
+
+            X = torch.stack(X, dim=0)
+            prev_hid_state = torch.randn(n_samples, self.parms.hidden_dim).to(X[-1])
+
+            for _ in range(100):
+                outputs = []
+                local_prev_hid_state = prev_hid_state
+                prev = X[0]
+                y = (
+                    self.acqf.model(prev)
+                    .sample(sample_shape=torch.Size([1]))
+                    .reshape(-1, 1)
                 )
 
-                X_randomized = (X_randomized * (ub - lb) + lb).detach()
-                X_randomizeds.append(X_randomized)
-
-            std = self.parms.cost_func_hypers["radius"]
-            self.acqf.dump_model()
-
-            for _ in tqdm(range(100)):
-                optimizer.zero_grad()
-                return_dict = self.acqf(
-                    prev_X=prev_X,
-                    prev_y=prev_y,
-                    prev_hid_state=prev_hid_state,
-                    maps=self.maps,
-                    embedder=embedder,
-                )
-
-                loss = 0
-                for i in range(self.algo_lookahead_steps):
-                    mean = return_dict["X"][i].mean(
-                        dim=tuple(range(return_dict["X"][i].dim() - 1))
+                for j in range(self.algo_lookahead_steps):
+                    output, hidden_state = self.maps(
+                        prev, y, local_prev_hid_state, return_actions=False
                     )
-                    dist = torch.distributions.Normal(mean, std)
-                    loss += -dist.log_prob(X_randomizeds[i]).mean()
+                    outputs.append(output)
+                    prev = output
+                    y = (
+                        self.acqf.model(output)
+                        .sample(sample_shape=torch.Size([nf_design_pts[j]]))
+                        .reshape(-1, 1)
+                    )
+                    local_prev_hid_state = hidden_state
 
-                mean = return_dict["actions"].mean(
-                    dim=tuple(range(return_dict["actions"].dim() - 1))
+                output, hidden_state = self.maps(
+                    prev, y, local_prev_hid_state, return_actions=True
                 )
-                dist = torch.distributions.Normal(mean, std)
-                loss += -dist.log_prob(A_randomized).mean()
+                outputs.append(output)
 
-                grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
-                for param, grad in zip(self._parameters, grads):
-                    param.grad = grad
+                outputs = torch.stack(outputs, dim=0)
+                loss = torch.mean(abs(X[1:] - outputs))
+
+                loss.backward()
                 optimizer.step()
-
-            self.acqf.clean_dump_model()
+                optimizer.zero_grad()
 
         else:
-            if self.parms.algo_ts:
-                nf_design_pts = [1] * self.algo_lookahead_steps
-            else:
-                if self.algo_lookahead_steps == 0:
-                    nf_design_pts = []
-                elif self.algo_lookahead_steps == 1:
-                    nf_design_pts = [64]
-                elif self.algo_lookahead_steps == 2:
-                    nf_design_pts = [64, 8]  # [64, 64]
-                elif self.algo_lookahead_steps == 3:
-                    nf_design_pts = [64, 4, 2]  # [64, 32, 8]
-                elif self.algo_lookahead_steps >= 4:
-                    nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
-                    nf_design_pts = nf_design_pts + [1] * (
-                        self.algo_lookahead_steps - 4
-                    )
-
             if bo_iter == 0 or not self.parms.algo_ts:
                 self.maps = []
 
                 local_maps = []
                 for s in range(self.algo_lookahead_steps):
                     if s == 0:
-                        prev_points = encoded_prev_X[0]
+                        prev_points = prev_X[0]
                         n_points = self.parms.n_restarts
                     else:
                         prev_points = local_maps[-1]
@@ -257,6 +242,7 @@ class Actor:
                         x = torch.nn.functional.one_hot(
                             x, num_classes=self.parms.num_categories
                         ).to(self.parms.torch_dtype)
+                        # x = torch.log(x)
                     else:
                         x = torch.clamp(
                             x,
@@ -267,7 +253,7 @@ class Actor:
                     self.maps.append(x.requires_grad_(True))
 
                 if len(local_maps) == 0:
-                    prev_points = encoded_prev_X[0]
+                    prev_points = prev_X[0]
                     n_points = self.parms.n_restarts * self.parms.n_actions
                 else:
                     prev_points = local_maps[-1]
@@ -289,6 +275,7 @@ class Actor:
                     a = torch.nn.functional.one_hot(
                         a, num_classes=self.parms.num_categories
                     ).to(self.parms.torch_dtype)
+                    # a = torch.log(a)
                 else:
                     a = torch.clamp(
                         a,
@@ -299,18 +286,33 @@ class Actor:
                 self.maps.append(a.requires_grad_(True))
             else:
                 # Rotate previous best trajectory
-                self.maps = [torch.sigmoid(x.requires_grad_(False)) for x in self.maps]
+                if embedder is not None:
+                    self.maps = [
+                        embedder.encode(x.requires_grad_(False)) for x in self.maps
+                    ]
+                    local_maps = []
+                    for maps in self.maps:
+                        local_maps.append(
+                            torch.nn.functional.one_hot(
+                                embedder.decode(maps),
+                                num_classes=self.parms.num_categories,
+                            ).to(self.parms.torch_dtype)
+                        )
+                    self.maps = [embedder.encode(x) for x in local_maps]
+                else:
+                    self.maps = [
+                        torch.sigmoid(x.requires_grad_(False)) for x in self.maps
+                    ]
+
                 # 1. Pick the best trajectory
                 prev_chosen_idx = prev_chosen_idx.long()
-                prev_points = encoded_prev_X[0]
+                prev_points = prev_X[0]
                 # >>> n_restarts x x_dim
 
-                random_R_matrices = [torch.eye(self.parms.x_dim).to(encoded_prev_X)]
+                random_R_matrices = [torch.eye(self.parms.x_dim).to(prev_X)]
                 random_R_matrices.extend(
                     [
-                        generate_random_rotation_matrix(self.parms.x_dim).to(
-                            encoded_prev_X
-                        )
+                        generate_random_rotation_matrix(self.parms.x_dim).to(prev_X)
                         for _ in range(self.parms.n_restarts - 1)
                     ]
                 )
@@ -355,9 +357,19 @@ class Actor:
                     min=0.01,
                 )
                 self.maps[self.algo_lookahead_steps] = a.reshape(-1, self.parms.x_dim)
-                self.maps = [
-                    (-torch.log(1 / x - 1)).requires_grad_(True) for x in self.maps
-                ]
+                if embedder is not None:
+                    self.maps = [
+                        torch.nn.functional.one_hot(
+                            embedder.decode(x), num_classes=self.parms.num_categories
+                        )
+                        .to(self.parms.torch_dtype)
+                        .requires_grad_(True)
+                        for x in self.maps
+                    ]
+                else:
+                    self.maps = [
+                        (-torch.log(1 / x - 1)).requires_grad_(True) for x in self.maps
+                    ]
             self._parameters = self.maps
 
     def construct_acqf(self, surr_model, buffer, **kwargs):
@@ -479,9 +491,10 @@ class Actor:
             if not self.parms.amortized and not self.parms.env_discretized:
                 local_maps = [torch.sigmoid(x) for x in self.maps]
                 saved_trajectory.append([x.cpu().detach().tolist() for x in local_maps])
+            # elif not self.parms.amortized and self.parms.env_discretized:
+            #     local_maps = [x.softmax(dim=-1) for x in self.maps]
             else:
                 local_maps = self.maps
-
             return_dict = self.acqf.forward(
                 prev_X=prev_X,
                 prev_y=prev_y,
@@ -496,6 +509,11 @@ class Actor:
             saved_loss.append(return_dict["acqf_loss"].tolist())
             saved_cost.append(return_dict["acqf_cost"].tolist())
             # >> n_restart
+
+            if self.parms.amortized or self.parms.env_discretized:
+                saved_trajectory.append(
+                    [x.cpu().detach().tolist() for x in return_dict["X"]]
+                )
 
             losses.append(acqf_loss.mean().item())
             costs.append(acqf_cost.mean().item())
@@ -562,6 +580,26 @@ class Actor:
 
         # Get best actions
         actions = best_actions[..., idx, :, :]
+        if embedder is not None:
+            # Discretize: Continuous -> Discrete
+            next_X = embedder.decode(next_X)
+            next_X = torch.nn.functional.one_hot(
+                next_X, num_classes=self.parms.num_categories
+            ).to(dtype=self.parms.torch_dtype)
+            # >>> n_restarts x x_dim x n_categories
+
+            # Cat ==> Con
+            next_X = embedder.encode(next_X)
+
+            # Discretize: Continuous -> Discrete
+            actions = embedder.decode(actions)
+            actions = torch.nn.functional.one_hot(
+                actions, num_classes=self.parms.num_categories
+            ).to(dtype=self.parms.torch_dtype)
+            # >>> n_restarts x x_dim x n_categories
+
+            # Cat ==> Con
+            actions = embedder.encode(actions)
 
         # Get next hidden state of X_0 at idx
         if self.parms.amortized:

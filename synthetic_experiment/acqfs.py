@@ -119,7 +119,9 @@ class qBOAcqf(MCAcquisitionFunction):
         x_dim = prev_X.shape[1]
 
         actions = torch.concat(maps)
+        pX = prev_X[:, None, ...]
         if embedder is not None:
+            pX = embedder.encode(pX)
             actions = embedder.encode(actions)
 
         action_shape = [
@@ -130,10 +132,6 @@ class qBOAcqf(MCAcquisitionFunction):
         actions = actions.reshape(*action_shape)
         acqf_loss = -self.bo_acqf(actions)
         # >>> batch_size
-
-        pX = prev_X[:, None, ...]
-        if embedder is not None:
-            pX = embedder.encode(pX)
 
         if self.name == "qMSL":
             acqf_cost = 0
