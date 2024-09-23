@@ -615,7 +615,7 @@ class qCostFunction(nn.Module):
         diff = torch.cdist(current_X, prev_X, p=self.p_norm)
         diff = (
             torch.max(self.k * (diff - self.radius), torch.zeros_like(diff))
-            + torch.rand_like(diff) * self.max_noise
+            + torch.randn_like(diff) * self.max_noise
         )
         if self.discount > 0.0:
             diff = diff * (

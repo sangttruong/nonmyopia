@@ -62,12 +62,13 @@ class Parameters:
         self.n_restarts = 64
 
         if self.algo.startswith("HES"):
+            self.n_restarts = 16
             self.algo = "HES"
             self.algo_lookahead_steps = int(args.algo.split("-")[-1])
             self.algo_ts = "TS" in args.algo
             self.amortized = "AM" in args.algo
-            # if not self.algo_ts:
-            self.n_restarts = 16
+            if self.amortized:
+                self.n_restarts = 64
         elif self.algo == "qMSL":
             self.n_restarts = 4
             self.n_samples = 4
@@ -194,6 +195,7 @@ class Parameters:
         elif args.cost_fn == "r-spotlight":
             self.cost_spotlight_k = 1e3
             self.cost_p_norm = 2
+            self.cost_max_noise = 0
         elif args.cost_fn == "non-markovian":
             self.cost_spotlight_k = 1
             self.cost_p_norm = 2

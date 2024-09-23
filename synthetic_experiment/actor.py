@@ -46,10 +46,7 @@ class Actor:
                     output_bounds=self.parms.bounds,
                     discrete=parms.env_discretized,
                     num_categories=self.parms.num_categories,
-                )
-                self.maps = self.maps.to(
-                    dtype=self.parms.torch_dtype, device=self.parms.device
-                )
+                ).to(dtype=self.parms.torch_dtype, device=self.parms.device)
                 print(
                     "Number of AmortizedNet params:",
                     sum(p.numel() for p in self.maps.parameters() if p.requires_grad),
@@ -92,7 +89,6 @@ class Actor:
         # Inititalize required variables
         prev_X = buffer["x"][-1:].expand(self.parms.n_restarts, -1)
         prev_y = buffer["y"][-1:].expand(self.parms.n_restarts, -1)
-        prev_hid_state = buffer["h"][-1:].expand(self.parms.n_restarts, -1)
 
         if self.parms.algo_ts:
             nf_design_pts = [1] * self.algo_lookahead_steps
@@ -110,80 +106,73 @@ class Actor:
                 nf_design_pts = nf_design_pts + [1] * (self.algo_lookahead_steps - 4)
 
         if self.parms.amortized:
-            optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
-
-            # X_randomizeds = []
-            # for s in range(self.algo_lookahead_steps):
-            #     if s == 0:
-            #         prev_points = prev_X[0:1]
-            #         n_points = self.parms.n_restarts
-            #     else:
-            #         prev_points = X_randomizeds[-1]
-            #         n_points = nf_design_pts[s - 1]
-
-            #     x = generate_random_points_batch(
-            #         prev_points, self.parms.cost_func_hypers["radius"], 1
-            #     )
-            #     x = torch.clamp(
-            #         x,
-            #         max=0.99,
-            #         min=0.01,
-            #     )
-
-            #     X_randomizeds.append(x.to(
-            #         device=self.parms.device,
-            #         dtype=self.parms.torch_dtype,
-            #     ).detach())
-
-            # if len(X_randomizeds) == 0:
-            #     prev_points = prev_X[0:1]
-            #     n_points = self.parms.n_restarts * self.parms.n_actions
-            # else:
-            #     prev_points = X_randomizeds[-1]
-            #     n_points = nf_design_pts[-1] * self.parms.n_actions
-
-            # A_randomized = (
-            #     generate_random_points_batch(
-            #         prev_points, self.parms.cost_func_hypers["radius"], 1
-            #     )
-            #     .to(
-            #         device=self.parms.device,
-            #         dtype=self.parms.torch_dtype,
-            #     )
-            # )
-
-            # A_randomized = torch.clamp(
-            #     A_randomized,
-            #     max=0.99,
-            #     min=0.01,
-            # ).detach()
-
-            n_samples = 10000
+            prev_hid_state = buffer["h"][-1:].clone().expand(self.parms.n_restarts, -1)
+            optimizer = torch.optim.AdamW(
+                self._parameters, lr=0.01
+            )  # self.parms.acq_opt_lr)
+            n_samples = self.parms.n_restarts  # 1000
             d = self.parms.x_dim
 
-            X = [prev_X[0].expand(n_samples, self.parms.x_dim)]
+            X = []
+            for s in range(self.algo_lookahead_steps):
+                if s == 0:
+                    prev_points = prev_X[0:1]
+                    n_points = n_samples
+                else:
+                    prev_points = X[-1]
+                    n_points = nf_design_pts[s - 1]
 
-            for i in range(self.algo_lookahead_steps + 1):
-                nextX = (
-                    X[-1]
-                    + (torch.rand(n_samples, d) * 2 - 1).to(X[-1])
-                    * self.parms.cost_func_hypers["radius"]
+                x = generate_random_points_batch(
+                    prev_points, self.parms.cost_func_hypers["radius"], n_points
                 )
-                nextX = torch.clamp(nextX, 0, 1)
-                X.append(nextX)
+                x = torch.clamp(
+                    x,
+                    max=0.99,
+                    min=0.01,
+                )
 
+                X.append(
+                    x.to(
+                        device=self.parms.device,
+                        dtype=self.parms.torch_dtype,
+                    ).reshape(-1, self.parms.x_dim)
+                )
+
+            if len(X) == 0:
+                prev_points = prev_X[0:1]
+                n_points = n_samples * self.parms.n_actions
+            else:
+                prev_points = X[-1]
+                n_points = nf_design_pts[-1] * self.parms.n_actions
+
+            A = (
+                generate_random_points_batch(
+                    prev_points, self.parms.cost_func_hypers["radius"], n_points
+                )
+                .to(
+                    device=self.parms.device,
+                    dtype=self.parms.torch_dtype,
+                )
+                .reshape(-1, self.parms.x_dim)
+            )
+
+            X.append(
+                torch.clamp(
+                    A,
+                    max=0.99,
+                    min=0.01,
+                ).detach()
+            )
             X = torch.stack(X, dim=0)
-            prev_hid_state = torch.randn(n_samples, self.parms.hidden_dim).to(X[-1])
 
-            for _ in range(100):
+            self.hidden_noise = torch.randn(n_samples, self.parms.hidden_dim).to(X[-1])
+            prev_hid_state = prev_hid_state + self.hidden_noise
+
+            for ep in range(300):
                 outputs = []
                 local_prev_hid_state = prev_hid_state
-                prev = X[0]
-                y = (
-                    self.acqf.model(prev)
-                    .sample(sample_shape=torch.Size([1]))
-                    .reshape(-1, 1)
-                )
+                prev = prev_X[0].expand(n_samples, self.parms.x_dim)
+                y = prev_y[0].expand(n_samples, self.parms.y_dim)
 
                 for j in range(self.algo_lookahead_steps):
                     output, hidden_state = self.maps(
@@ -204,7 +193,9 @@ class Actor:
                 outputs.append(output)
 
                 outputs = torch.stack(outputs, dim=0)
-                loss = torch.mean(abs(X[1:] - outputs))
+                loss = torch.mean(abs(X - outputs))
+                if ep % 10 == 0:
+                    print("Loss:", loss.item())
 
                 loss.backward()
                 optimizer.step()
@@ -242,7 +233,6 @@ class Actor:
                         x = torch.nn.functional.one_hot(
                             x, num_classes=self.parms.num_categories
                         ).to(self.parms.torch_dtype)
-                        # x = torch.log(x)
                     else:
                         x = torch.clamp(
                             x,
@@ -275,7 +265,6 @@ class Actor:
                     a = torch.nn.functional.one_hot(
                         a, num_classes=self.parms.num_categories
                     ).to(self.parms.torch_dtype)
-                    # a = torch.log(a)
                 else:
                     a = torch.clamp(
                         a,
@@ -456,6 +445,12 @@ class Actor:
         prev_hid_state = buffer["h"][iteration - 1 : iteration].expand(
             self.parms.n_restarts, -1
         )
+        if self.parms.amortized:
+            # if iteration - self.parms.n_initial_points > 0:
+            #     self.hidden_noise = torch.randn(self.parms.n_restarts, self.parms.hidden_dim).to(prev_X) * 1e-2
+            #     self.hidden_noise[0] = 0.0
+            if iteration - self.parms.n_initial_points == 0:
+                prev_hid_state = prev_hid_state + self.hidden_noise
         prev_cost = (
             buffer["cost"][self.parms.n_initial_points : iteration].sum()
             if iteration > self.parms.n_initial_points
@@ -465,15 +460,16 @@ class Actor:
         # Optimize the acquisition function
         # optimizer = torch.optim.LBFGS(self._parameters, lr=self.parms.acq_opt_lr)
         optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
-        lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=self.parms.acq_opt_iter
-        )
+        # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        #     optimizer, T_max=self.parms.acq_opt_iter
+        # )
         best_loss = torch.tensor([float("inf")], device=self.parms.device)
         best_cost = torch.tensor([float("inf")], device=self.parms.device)
         best_next_X = None
         best_actions = None
         best_hidden_state = None
         best_map = None
+        best_KL = torch.tensor([float("inf")], device=self.parms.device)
         early_stop = 0
         losses = []
         costs = []
@@ -482,19 +478,32 @@ class Actor:
             self.acqf.dump_model()
 
         ########## TESTING ###########
-        saved_trajectory = []
-        saved_loss = []
-        saved_cost = []
+        # saved_trajectory = []
+        # saved_loss = []
+        # saved_cost = []
         ##############################
+
+        if self.parms.amortized:
+            original_sd = self.maps.state_dict()
+            original_maps = AmortizedNetwork(
+                input_dim=self.parms.x_dim + self.parms.y_dim,
+                output_dim=self.parms.x_dim,
+                hidden_dim=self.parms.hidden_dim,
+                n_actions=self.parms.n_actions,
+                output_bounds=self.parms.bounds,
+                discrete=self.parms.env_discretized,
+                num_categories=self.parms.num_categories,
+            ).to(dtype=self.parms.torch_dtype, device=self.parms.device)
+            original_maps.load_state_dict(original_sd)
+            cosine_loss_fn = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
 
         for ep in range(self.parms.acq_opt_iter):
             if not self.parms.amortized and not self.parms.env_discretized:
                 local_maps = [torch.sigmoid(x) for x in self.maps]
-                saved_trajectory.append([x.cpu().detach().tolist() for x in local_maps])
-            # elif not self.parms.amortized and self.parms.env_discretized:
-            #     local_maps = [x.softmax(dim=-1) for x in self.maps]
+                # saved_trajectory.append([x.cpu().detach().tolist() for x in local_maps])
             else:
                 local_maps = self.maps
+
             return_dict = self.acqf.forward(
                 prev_X=prev_X,
                 prev_y=prev_y,
@@ -506,20 +515,51 @@ class Actor:
 
             acqf_loss = return_dict["acqf_loss"]
             acqf_cost = return_dict["acqf_cost"]
-            saved_loss.append(return_dict["acqf_loss"].tolist())
-            saved_cost.append(return_dict["acqf_cost"].tolist())
+            # saved_loss.append(return_dict["acqf_loss"].tolist())
+            # saved_cost.append(return_dict["acqf_cost"].tolist())
             # >> n_restart
 
-            if self.parms.amortized or self.parms.env_discretized:
-                saved_trajectory.append(
-                    [x.cpu().detach().tolist() for x in return_dict["X"]]
+            if self.parms.amortized:
+                with torch.no_grad():
+                    original_return_dict = self.acqf.forward(
+                        prev_X=prev_X,
+                        prev_y=prev_y,
+                        prev_hid_state=prev_hid_state,
+                        maps=original_maps,
+                        embedder=embedder,
+                        prev_cost=prev_cost,
+                    )
+                KL = 0
+                for lhi in range(self.algo_lookahead_steps):
+                    KL = (
+                        KL
+                        + 1
+                        - cosine_loss_fn(
+                            original_return_dict["X"][lhi], return_dict["X"][lhi]
+                        ).flatten()
+                    )
+                KL = (
+                    KL
+                    + 1
+                    - cosine_loss_fn(
+                        original_return_dict["actions"], return_dict["actions"]
+                    ).flatten()
                 )
+
+            # if self.parms.amortized or self.parms.env_discretized:
+            #     saved_trajectory.append(
+            #         [x.cpu().detach().tolist() for x in return_dict["X"]]
+            #     )
 
             losses.append(acqf_loss.mean().item())
             costs.append(acqf_cost.mean().item())
-            loss = (acqf_loss + acqf_cost).mean()
+            loss = acqf_loss + acqf_cost + KL
 
-            if loss < (best_loss + best_cost).mean():
+            chosen_idx = torch.argmin(loss)
+            if (
+                ep == 0
+                or loss[chosen_idx] < (best_loss + best_cost + best_KL)[chosen_idx]
+            ):
                 best_loss = return_dict["acqf_loss"].detach()
                 best_cost = return_dict["acqf_cost"].detach()
                 best_next_X = [x.detach() for x in return_dict["X"]]
@@ -530,25 +570,26 @@ class Actor:
                     else None
                 )
                 if self.parms.amortized:
+                    best_KL = KL.detach()
                     best_map = self.maps.state_dict()
                 early_stop = 0
             else:
                 if iteration > self.parms.n_initial_points or ep >= 200:
                     early_stop += 1
 
+            loss = loss.mean()
             grads = torch.autograd.grad(loss, self._parameters, allow_unused=True)
             for param, grad in zip(self._parameters, grads):
                 param.grad = grad
 
             # optimizer.step(lambda: loss)
             optimizer.step()
-            lr_scheduler.step()
+            # lr_scheduler.step()
             optimizer.zero_grad()
 
             if ep % 50 == 0:
-                idx = torch.argmin(acqf_loss + acqf_cost)
                 print(
-                    f"Epoch {ep:05d}\tLoss {acqf_loss[idx].item():.5f}\tCost: {acqf_cost[idx].item():.5f}"
+                    f"Epoch {ep:05d}\tLoss {acqf_loss[chosen_idx].item():.5f}\tCost: {acqf_cost[chosen_idx].item():.5f}"
                 )
 
             if early_stop > 50:
@@ -558,17 +599,17 @@ class Actor:
             self.acqf.clean_dump_model()
 
         # Choose which restart produce the lowest loss
-        idx = torch.argmin(best_loss + best_cost)
+        idx = torch.argmin(best_loss + best_cost + best_KL)
 
         ########## TESTING ###########
-        pickle.dump(
-            (saved_trajectory, idx),
-            open(self.parms.save_dir + f"/trajectory_{iteration}.pkl", "wb"),
-        )
-        pickle.dump(
-            (saved_loss, saved_cost),
-            open(self.parms.save_dir + f"/lossncost_{iteration}.pkl", "wb"),
-        )
+        # pickle.dump(
+        #     (saved_trajectory, idx),
+        #     open(self.parms.save_dir + f"/trajectory_{iteration}.pkl", "wb"),
+        # )
+        # pickle.dump(
+        #     (saved_loss, saved_cost),
+        #     open(self.parms.save_dir + f"/lossncost_{iteration}.pkl", "wb"),
+        # )
         ##############################
 
         # Best acqf loss

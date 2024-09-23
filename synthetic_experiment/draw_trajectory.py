@@ -27,6 +27,8 @@ plt.rcParams.update(bundles.neurips2024())
 def eval_and_plot_2D_with_posterior(
     env,
     traj,
+    losses,
+    costs,
     chosen_idx,
     surr_model,
     parms,
@@ -104,7 +106,11 @@ def eval_and_plot_2D_with_posterior(
                 title_color = "red"
             else:
                 title_color = "black"
-            ax.set_title(f"Restart {nr} - Epoch {pe}", color=title_color)
+            loss = losses[pe][nr]
+            cost = costs[pe][nr]
+            ax.set_title(
+                f"Restart {nr} - Epoch {pe}- {loss} - {cost}", color=title_color
+            )
 
             iter_traj = traj[pe]
             list_traj = [np.array(x) for x in iter_traj]
@@ -245,6 +251,8 @@ if __name__ == "__main__":
     eval_and_plot_2D_with_posterior(
         env=env,
         traj=traj,
+        losses=losses,
+        costs=costs,
         chosen_idx=chosen_traj_idx,
         surr_model=surr_model,
         parms=parms,

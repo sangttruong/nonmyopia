@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 
 from torch.distributions import OneHotCategoricalStraightThrough
+from utils import generate_random_rotation_matrix
 
 
 class AmortizedNetwork(nn.Module):
@@ -44,7 +45,7 @@ class AmortizedNetwork(nn.Module):
         self.output_bounds = output_bounds
         self.discrete = discrete
         self.num_categories = num_categories
-        self.p = 0.2
+        self.p = 0.0
         if self.discrete:
             self.embedding_x = nn.Linear(self.num_categories, self.hidden_dim)
             self.embedding_y = nn.Linear(1, self.hidden_dim)
@@ -85,8 +86,10 @@ class AmortizedNetwork(nn.Module):
         self.postpro_X = nn.Sequential(
             nn.Linear(self.hidden_dim * 2, self.hidden_dim),
             nn.ELU(),
+            nn.Dropout(p=self.p),
             nn.Linear(self.hidden_dim, self.hidden_dim),
             nn.ELU(),
+            nn.Dropout(p=self.p),
             nn.Linear(self.hidden_dim, output_x_dim),
         )
 
@@ -127,10 +130,42 @@ class AmortizedNetwork(nn.Module):
             output = output.softmax(dim=-1)
             return output, hidden_state
 
-        noise = torch.normal(
-            mean=torch.zeros_like(output), std=torch.ones_like(output) * 0.01
-        )
-        return self.project_output(output), hidden_state
+        output = self.project_output(output)
+
+        angle_degrees = torch.randn(output.shape[0]) * 1e-1
+        output = rotate_points(output, angle_degrees)
+
+        return output, hidden_state
+
+
+def rotate_points(inputs, angle_degrees):
+    # Convert angle from degrees to radians
+    thetas = torch.deg2rad(torch.tensor(angle_degrees))
+
+    # Define the rotation matrix
+    Q = [
+        torch.tensor(
+            [
+                [torch.cos(theta), -torch.sin(theta)],
+                [torch.sin(theta), torch.cos(theta)],
+            ]
+        ).to(inputs)
+        for theta in thetas
+    ]
+    Q = torch.stack(Q)
+
+    D = inputs.shape[-1]
+    dims = torch.stack([torch.randperm(D)[:2] for _ in thetas])
+    M = torch.stack([torch.eye(D) for _ in thetas]).to(inputs)
+
+    for i in range(thetas.shape[0]):
+        M[i, dims[i, 0], dims[i, 0]] = Q[i, 0, 0]
+        M[i, dims[i, 0], dims[i, 1]] = Q[i, 0, 1]
+        M[i, dims[i, 1], dims[i, 0]] = Q[i, 1, 0]
+        M[i, dims[i, 1], dims[i, 1]] = Q[i, 1, 1]
+
+    rotated_points = torch.einsum("bd,bdd->bd", inputs, M.transpose(-1, -2))
+    return rotated_points
 
 
 class Project2Range(nn.Module):
