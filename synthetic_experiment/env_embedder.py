@@ -32,14 +32,10 @@ class DiscreteEmbbeder:
             sentence (torch.Tensor): A tensor of shape `... x num_categories` one
                 hot vector
         """
-        assert torch.any(sentence >= 0)
-        assert torch.any(sentence < self.num_categories)
         return (self.cat_range * sentence).sum(dim=-1)
 
     def decode(self, sentence, *args, **kwargs):
         # Con2Cat
-        assert torch.any(sentence >= self.bounds[..., 0])
-        assert torch.any(sentence <= self.bounds[..., 1])
         cat = (sentence - self.bounds[..., 0]) / self.range_size
         cat = cat.long()
         cat[cat >= self.num_categories] = self.num_categories - 1

@@ -17,6 +17,8 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 import time
 from argparse import ArgumentParser
 
+import gpytorch
+
 import numpy as np
 import torch
 import wandb
@@ -67,7 +69,7 @@ class Parameters:
             self.algo_lookahead_steps = int(args.algo.split("-")[-1])
             self.algo_ts = "TS" in args.algo
             self.amortized = "AM" in args.algo
-            if self.amortized:
+            if self.algo_ts:
                 self.n_restarts = 64
         elif self.algo == "qMSL":
             self.n_restarts = 4
@@ -139,8 +141,8 @@ class Parameters:
         elif self.env_name == "Levy":
             self.x_dim = 2
             self.bounds = [-10, 10]
-            self.n_initial_points = 75
-            self.algo_n_iterations = 125
+            self.n_initial_points = 100
+            self.algo_n_iterations = 150
 
         elif self.env_name == "Powell":
             self.x_dim = 4
@@ -258,13 +260,13 @@ class Parameters:
         elif self.env_name == "HolderTable":
             self.initial_points[-1] = [0.5, 0.5]
         elif self.env_name == "Levy":
-            self.initial_points[-1] = [0.2, 0.2]
+            self.initial_points[-1] = [0.15, 0.4]
         elif self.env_name == "Powell":
             self.initial_points[-1] = [0.5, 0.5, 0.5, 0.5]
         elif self.env_name == "SixHumpCamel":
             self.initial_points[-1] = [0.8, 0.1]
         elif self.env_name == "StyblinskiTang":
-            self.initial_points[-1] = [0.5, 0.5]
+            self.initial_points[-1] = [0.6, 0.3]
         elif self.env_name == "SynGP":
             self.initial_points[-1] = [0.725, 0.75]
 
@@ -419,20 +421,9 @@ def run_exp(parms, env) -> None:
     # Set start iteration
     continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
 
-    # Warm-up parameters
-    surr_model = SingleTaskGP(
-        buffer["x"][:continue_iter],
-        buffer["y"][:continue_iter],
-        # input_transform=Normalize(
-        #     d=parms.x_dim, bounds=parms.bounds.T),
-        covar_module=parms.kernel,
-    ).to(parms.device)
-    mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
-    fit_gpytorch_mll(mll)
-    actor.construct_acqf(surr_model=surr_model, buffer=buffer[:continue_iter])
-
-    if parms.amortized:
-        actor.reset_parameters(buffer=buffer[:continue_iter], embedder=embedder)
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+        noise_prior=gpytorch.priors.NormalPrior(0, 1e-2)
+    )
 
     # Run BO loop
     for i in range(continue_iter, parms.algo_n_iterations):
@@ -440,8 +431,7 @@ def run_exp(parms, env) -> None:
         surr_model = SingleTaskGP(
             buffer["x"][:i],
             buffer["y"][:i],
-            # input_transform=Normalize(
-            #     d=parms.x_dim, bounds=parms.bounds.T),
+            likelihood=likelihood,
             covar_module=parms.kernel,
         ).to(parms.device)
         mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
@@ -453,16 +443,16 @@ def run_exp(parms, env) -> None:
         ):
             actor.algo_lookahead_steps = parms.algo_n_iterations - i
 
-        if not parms.amortized:
+        # Construct acqf
+        actor.construct_acqf(surr_model=surr_model, buffer=buffer[:i])
+
+        if not parms.amortized or i == continue_iter:
             actor.reset_parameters(
                 buffer=buffer[:i],
                 bo_iter=i - parms.n_initial_points,
                 embedder=embedder,
                 prev_chosen_idx=buffer["chosen_idx"][i - 1],
             )
-
-        # Construct acqf
-        actor.construct_acqf(surr_model=surr_model, buffer=buffer[:i])
 
         # Query and observe next point
         query_start_time = time.time()

@@ -140,7 +140,7 @@ class AmortizedNetwork(nn.Module):
 
 def rotate_points(inputs, angle_degrees):
     # Convert angle from degrees to radians
-    thetas = torch.deg2rad(torch.tensor(angle_degrees))
+    thetas = torch.deg2rad(angle_degrees)
 
     # Define the rotation matrix
     Q = [

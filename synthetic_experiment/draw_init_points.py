@@ -14,9 +14,6 @@ import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from botorch import fit_gpytorch_model
-from botorch.models import SingleTaskGP
-from gpytorch.mlls import ExactMarginalLogLikelihood
 from main import Parameters
 
 from tueplots import bundles

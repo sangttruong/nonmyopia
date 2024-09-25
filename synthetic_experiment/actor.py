@@ -181,7 +181,7 @@ class Actor:
                     outputs.append(output)
                     prev = output
                     y = (
-                        self.acqf.model(output)
+                        self.acqf.model(output.unsqueeze(-2))
                         .sample(sample_shape=torch.Size([nf_design_pts[j]]))
                         .reshape(-1, 1)
                     )
@@ -469,7 +469,7 @@ class Actor:
         best_actions = None
         best_hidden_state = None
         best_map = None
-        best_KL = torch.tensor([float("inf")], device=self.parms.device)
+        best_KL = 0
         early_stop = 0
         losses = []
         costs = []
@@ -545,6 +545,8 @@ class Actor:
                         original_return_dict["actions"], return_dict["actions"]
                     ).flatten()
                 )
+            else:
+                KL = 0
 
             # if self.parms.amortized or self.parms.env_discretized:
             #     saved_trajectory.append(
@@ -556,10 +558,7 @@ class Actor:
             loss = acqf_loss + acqf_cost + KL
 
             chosen_idx = torch.argmin(loss)
-            if (
-                ep == 0
-                or loss[chosen_idx] < (best_loss + best_cost + best_KL)[chosen_idx]
-            ):
+            if ep == 0 or loss[chosen_idx] < (best_loss + best_cost + best_KL).min():
                 best_loss = return_dict["acqf_loss"].detach()
                 best_cost = return_dict["acqf_cost"].detach()
                 best_next_X = [x.detach() for x in return_dict["X"]]

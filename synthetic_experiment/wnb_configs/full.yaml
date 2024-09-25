@@ -6,17 +6,17 @@ metric:
     name: loss
 parameters:
     seed: 
-        values: [2]
+        values: [2, 3, 5]
     task: 
         values: [topk]
     env_name: 
-        values: [Ackley, Alpine, Beale, Branin, Cosine8, EggHolder, Griewank, Hartmann, HolderTable, Levy, Powell, SixHumpCamel, StyblinskiTang, SynGP]
+        values: [Ackley, Alpine, Cosine8, EggHolder, Hartmann, HolderTable, Levy, Powell, StyblinskiTang, SynGP]
     env_noise:  
-        values: [0.01]
+        values: [0.0, 0.01, 0.05]
     env_discretized: 
         values: [False]
     algo: 
-        values: [HES-TS-AM-1, HES-TS-AM-20, HES-AM-1, HES-1, qMSL, qSR, qEI, qPI, qUCB, qKG]
+        values: [HES-TS-AM-20, HES-TS-20, qSR, qEI, qPI, qUCB, qKG, qMSL]
     cost_fn: 
         values: [euclidean, manhattan, r-spotlight, non-markovian]
     plot:  

@@ -29,7 +29,7 @@ from synthetic_functions.env_wrapper import EnvWrapper
 from synthetic_functions.syngp import SynGP
 from tueplots import bundles
 
-plt.rcParams.update(bundles.iclr2023())
+plt.rcParams.update(bundles.neurips2024())
 
 
 def set_seed(seed):

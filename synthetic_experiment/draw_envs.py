@@ -7,6 +7,8 @@
 r"""Evaluate and plot."""
 from argparse import ArgumentParser
 
+import gpytorch
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -223,10 +225,12 @@ if __name__ == "__main__":
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
+    parser.add_argument("--iter", type=int, required=True)
     args = parser.parse_args()
 
     set_seed(args.seed)
     parms = Parameters(args)
+    parms.algo_n_iterations = args.iter
 
     # Init environment
     env = make_env(
@@ -245,11 +249,13 @@ if __name__ == "__main__":
     buffer = torch.load(buffer_file, map_location=parms.device).to(
         dtype=parms.torch_dtype
     )
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+        noise_prior=gpytorch.priors.NormalPrior(0, 1e-2)
+    )
     surr_model = SingleTaskGP(
         buffer["x"][: parms.algo_n_iterations + 1],
         buffer["y"][: parms.algo_n_iterations + 1],
-        # input_transform=Normalize(
-        #     d=parms.x_dim, bounds=parms.bounds.T),
+        likelihood=likelihood,
     ).to(parms.device, dtype=parms.torch_dtype)
 
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)

@@ -8,6 +8,8 @@ os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
 from argparse import ArgumentParser
 
+import gpytorch
+
 import numpy as np
 import torch
 import wandb
@@ -42,13 +44,14 @@ def compute_metrics(
         np.array: Shape (n_iterations, 3) where the columns are (u_observed, u_posterior, c_regret)
     """
     metrics = []
-
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+        noise_prior=gpytorch.priors.NormalPrior(0, 1e-2)
+    )
     for iteration in tqdm(range(parms.n_initial_points - 1, parms.algo_n_iterations)):
         surr_model = SingleTaskGP(
             buffer["x"][: iteration + 1],
             buffer["y"][: iteration + 1],
-            # input_transform=Normalize(
-            #     d=parms.x_dim, bounds=parms.bounds.T),
+            likelihood=likelihood,
         ).to(device, dtype=parms.torch_dtype)
 
         if iteration == parms.algo_n_iterations - 1:
