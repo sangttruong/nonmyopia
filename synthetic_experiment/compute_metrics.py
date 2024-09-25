@@ -6,6 +6,7 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+import warnings
 from argparse import ArgumentParser
 
 import gpytorch
@@ -47,14 +48,15 @@ def compute_metrics(
     likelihood = gpytorch.likelihoods.GaussianLikelihood(
         noise_prior=gpytorch.priors.NormalPrior(0, 1e-2)
     )
-    for iteration in tqdm(range(parms.n_initial_points - 1, parms.algo_n_iterations)):
+    final_run = len(surr_model_state_dicts) + parms.n_initial_points
+    for iteration in tqdm(range(parms.n_initial_points - 1, final_run)):
         surr_model = SingleTaskGP(
             buffer["x"][: iteration + 1],
             buffer["y"][: iteration + 1],
             likelihood=likelihood,
         ).to(device, dtype=parms.torch_dtype)
 
-        if iteration == parms.algo_n_iterations - 1:
+        if iteration == final_run - 1:
             # Fit GP
             mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
             fit_gpytorch_model(mll)
@@ -155,8 +157,12 @@ if __name__ == "__main__":
         if len(surr_model_state_dicts) != (
             local_parms.algo_n_iterations - local_parms.n_initial_points
         ):
-            raise RuntimeError(
-                f"There are some error, please check saved models in {base_path}"
+            # raise RuntimeError(
+            #     f"There are some error, please check saved models in {base_path}"
+            # )
+            current_run = len(surr_model_state_dicts) + local_parms.n_initial_points
+            warnings.warn(
+                f"The run has not been completed. Picking results from {current_run} / {local_parms.algo_n_iterations}."
             )
 
         # Initialize Embedder in case of discretization
