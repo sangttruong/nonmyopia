@@ -72,9 +72,10 @@ class Parameters:
             if self.algo_ts:
                 self.n_restarts = 64
         elif self.algo == "qMSL":
-            self.n_restarts = 4
-            self.n_samples = 4
-            self.algo_lookahead_steps = 2  # Equivalent 3 in HES
+            self.n_restarts = 64
+            self.algo_ts = True
+            self.n_samples = 1
+            self.algo_lookahead_steps = 20  # Equivalent 3 in HES
         elif self.algo == "qKG":
             self.algo_lookahead_steps = 1
         else:
