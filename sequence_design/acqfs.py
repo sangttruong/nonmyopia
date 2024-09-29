@@ -15,12 +15,12 @@ from botorch.acquisition import (
     qSimpleRegret,
     qUpperConfidenceBound,
 )
-from configs import ALLOWED_TOKENS, TEMPLATED_RESPONSE
+from configs import ALLOWED_POS, ALLOWED_TOKENS, TEMPLATED_RESPONSE
 from datasets import Dataset
 from embed_text_package.embed_text import Embedder
 from lampo.reward_model import RewardModelTemplate
 from torch.utils.data import DataLoader
-from utils import random_mutation
+from utils import get_embedding_from_server, random_mutation, verify_seq
 
 
 class Acqf(RewardModelTemplate):
@@ -38,17 +38,10 @@ class Acqf(RewardModelTemplate):
         sequences = [x[0] for x in messages]
         num_sequences = [x[1] for x in messages]
 
-        ds = Dataset.from_dict({"text": sequences})
-        ds_emb = (
-            self.embedder.get_embeddings(
-                DataLoader(ds, batch_size=1),
-                self.embedder.which_model,
-                ["text"],
-            )
-            .data["text"]
-            .to_pylist()
+        ds_emb = get_embedding_from_server(
+            server_url="http://hyperturing2:1337", list_sequences=sequences
         )
-        output = self.bo_acqf(torch.Tensor(ds_emb).unsqueeze(-2))
+        output = self.bo_acqf(torch.tensor(ds_emb).unsqueeze(-2))
         for i, ns in enumerate(num_sequences):
             if ns != 1:
                 output[i] = -10
@@ -58,9 +51,6 @@ class Acqf(RewardModelTemplate):
         """
         If you want to load something
         """
-        self.embedder = Embedder()
-        self.embedder.load("google/gemma-7b")
-
         self.model = joblib.load(f"{self.config['output_dir']}/reward_model.joblib")
 
     def unload(self):
@@ -133,7 +123,7 @@ class qMultiStepHEntropySearch(Acqf):
     def bo_acqf(self, X):
         y = (
             self.model.sample(
-                torch.tensor(X),
+                X,
                 sample_size=64,
             )
             .mean(0)
@@ -164,7 +154,7 @@ def spotlight_cost_fn(msg) -> bool:
     if latest_sequence == "" and semi_latest_sequence == "":
         return 0
 
-    return editdistance.eval(latest_sequence, semi_latest_sequence) == 1
+    return verify_seq(semi_latest_sequence, latest_sequence)
 
 
 def random_edit_seq(responses):

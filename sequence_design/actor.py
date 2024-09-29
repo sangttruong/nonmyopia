@@ -1,10 +1,10 @@
 import copy
 import os
+import pickle
 from datetime import datetime
 
 import torch
 import yaml
-
 from configs import TEMPLATED_LOOKAHEAD_PROMPT
 from datasets import Dataset
 from peft import AutoPeftModelForCausalLM
@@ -13,6 +13,7 @@ from torch.utils.data import DataLoader
 from utils import (
     check_health,
     format_prompt,
+    get_embedding_from_server,
     run_server,
     shutdown_server,
     start_process,
@@ -35,7 +36,7 @@ class Actor:
                 f"Acquisition function `{self.config.algo}` is not implemented!"
             )
 
-    def query(self, iteration, prevX, prevY, embedder, reward_model, n_restarts=3):
+    def query(self, iteration, prevX, prevY, reward_model, n_restarts=3):
         # Query the next sequence
         X = prevX[-1]
         n_sequences = len(X)
@@ -49,23 +50,17 @@ class Actor:
 
             for step in range(self.algo_lookahead_steps):
                 next_X = self.policy.generate(local_prevX, local_prevy)
-                next_X_ds = Dataset.from_dict({"text": next_X})
-                next_X_ds_emb = (
-                    embedder.get_embeddings(
-                        DataLoader(next_X_ds, batch_size=1),
-                        self.config.embedding_model_name_or_path,
-                        ["text"],
-                    )
-                    .data["text"]
-                    .to_pylist()
+                next_X_ds_emb = get_embedding_from_server(
+                    server_url=self.config.embedding_model, list_sequences=next_X
                 )
 
                 next_y = (
                     reward_model.sample(
-                        torch.tensor(next_X_ds_emb),
+                        torch.tensor(next_X_ds_emb).unsqueeze(-2),
                         sample_size=self.config.sample_size,
                     )
                     .mean(0)
+                    .reshape(-1)
                     .float()
                     .detach()
                     .cpu()
@@ -76,15 +71,8 @@ class Actor:
                 local_prevy.append(next_y)
 
             action_X = self.policy.generate(local_prevX, local_prevy)
-            action_X_ds = Dataset.from_dict({"text": action_X})
-            action_X_ds_emb = (
-                embedder.get_embeddings(
-                    DataLoader(action_X_ds, batch_size=1),
-                    self.config.embedding_model_name_or_path,
-                    ["text"],
-                )
-                .data["text"]
-                .to_pylist()
+            action_X_ds_emb = get_embedding_from_server(
+                server_url=self.config.embedding_model, list_sequences=action_X
             )
             action_y = (
                 reward_model.sample(torch.tensor(action_X_ds_emb))
@@ -106,6 +94,9 @@ class Actor:
 
         for bi, si in zip(best_idx, list(range(n_sequences))):
             output.append(X_returned[bi][iteration + 1][si])
+
+        with open(f"{self.config.output_dir}/trajectory_{iteration}.pkl", "wb") as f:
+            pickle.dump((best_idx, rewards, X_returned), f)
 
         return output
 

@@ -61,9 +61,18 @@ class BayesianRidgeModel(BatchedMultiOutputGPyTorchModel):
         X = X.view(-1, X_shape[-1])
         y_mean, y_std = self.br_model.predict(X.cpu().detach().numpy(), return_std=True)
 
+        y_mean = torch.tensor(y_mean).to(X)
+        y_std = torch.tensor(y_std).to(X)
+
+        y_mean_norm = self._normalize_output_(y_mean)
+        y_std_norm = (
+            self._normalize_output_(y_mean + y_std)
+            - self._normalize_output_(y_mean - y_std)
+        ) / 2
+
         return MultivariateNormal(
-            torch.tensor(y_mean).to(X).reshape(X_shape[:-1]),
-            torch.tensor(y_std).to(X).reshape(X_shape[:-1]).unsqueeze(-1)
+            y_mean_norm.reshape(X_shape[:-1]),
+            y_std_norm.reshape(X_shape[:-1]).unsqueeze(-1)
             * torch.eye(X_shape[-2]).to(X).expand(X_shape[:-1] + (X_shape[-2],)),
         )
 
@@ -75,7 +84,7 @@ class BayesianRidgeModel(BatchedMultiOutputGPyTorchModel):
         X_shape = X.shape
         X = X.view(-1, X_shape[-1])
         y_mean = self.br_model.predict(X.cpu().detach().numpy())
-        return torch.tensor(y_mean).to(X)
+        return self._normalize_output_(torch.tensor(y_mean).to(X))
 
     def sample(self, X: Tensor, sample_size: int = 1, **kwargs):
         """
@@ -85,7 +94,7 @@ class BayesianRidgeModel(BatchedMultiOutputGPyTorchModel):
         posterior_pred = posteriors.sample(
             sample_shape=torch.Size([sample_size])
         ).squeeze(-1)
-        return posterior_pred
+        return self._normalize_output_(posterior_pred)
 
     def posterior(
         self,
@@ -102,6 +111,9 @@ class BayesianRidgeModel(BatchedMultiOutputGPyTorchModel):
         if posterior_transform is not None:
             return posterior_transform(posterior)
         return posterior
+
+    def _normalize_output_(self, output):
+        return torch.sigmoid(output) * 6 - 3
 
     def get_fantasy_model(
         self, inputs: Tensor, targets: Tensor, **kwargs: Any
