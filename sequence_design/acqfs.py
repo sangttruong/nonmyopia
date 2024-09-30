@@ -151,7 +151,7 @@ def spotlight_cost_fn(msg) -> bool:
     semi_latest_sequence = re.findall("[A-Z]{220,}", msg[msg_idx])
     semi_latest_sequence = semi_latest_sequence[-1] if semi_latest_sequence else ""
 
-    if latest_sequence == "" and semi_latest_sequence == "":
+    if len(msg[-1]) > 400 or (latest_sequence == "" and semi_latest_sequence == ""):
         return 0
 
     return verify_seq(semi_latest_sequence, latest_sequence)

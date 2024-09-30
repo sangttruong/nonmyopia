@@ -192,7 +192,7 @@ def create_lookahead_sequences(args, tokenizer, oracle, ds):
 
                 # Random mutation 10 times
                 mutated_sequences = [
-                    random_mutation(currentX, diff_prob=0.9) for i in range(1)
+                    random_mutation(currentX, diff_prob=0.94) for i in range(1)
                 ]
                 mutation_emb = get_embedding_from_server(
                     server_url=args.embedding_model, list_sequences=mutated_sequences
@@ -285,7 +285,7 @@ def random_sampling(dataset, num_samples, *args, **kwargs):
     if "is_init" in kwargs:
         if kwargs["is_init"]:
             idx = find_idx_in_dataset(dataset, "text", MAX_SEQ)
-            indices.append(idx)
+            indices.extend([idx] * 1)
     return dataset.select(indices)
 
 
