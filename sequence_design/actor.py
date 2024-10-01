@@ -3,8 +3,16 @@ import os
 import pickle
 from datetime import datetime
 
+import numpy as np
 import torch
 import yaml
+from botorch.acquisition import (
+    qExpectedImprovement,
+    qKnowledgeGradient,
+    qProbabilityOfImprovement,
+    qSimpleRegret,
+    qUpperConfidenceBound,
+)
 from configs import TEMPLATED_LOOKAHEAD_PROMPT
 from datasets import Dataset
 from peft import AutoPeftModelForCausalLM
@@ -74,14 +82,61 @@ class Actor:
             action_X_ds_emb = get_embedding_from_server(
                 server_url=self.config.embedding_model, list_sequences=action_X
             )
-            action_y = (
-                reward_model.sample(torch.tensor(action_X_ds_emb))
-                .mean(0)
-                .float()
-                .detach()
-                .cpu()
-                .tolist()
-            )
+            if self.config.algo == "HES-TS-AM":
+                action_y = (
+                    reward_model.sample(
+                        torch.tensor(action_X_ds_emb).unsqueeze(-2),
+                        sample_size=self.config.sample_size,
+                    )
+                    .mean(0)
+                    .squeeze(-1)
+                    .float()
+                    .detach()
+                    .cpu()
+                    .tolist()
+                )
+
+            elif self.config.algo == "qSR":
+                bo_acqf = qSimpleRegret(model=reward_model)
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
+            elif self.config.algo == "qEI":
+                best_f = np.array(prevY)
+                best_f = np.max(best_f, axis=0)
+                bo_acqf = qExpectedImprovement(
+                    model=reward_model, best_f=torch.tensor(best_f)
+                )
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
+            elif self.config.algo == "qPI":
+                best_f = np.array(prevY)
+                best_f = np.max(best_f, axis=0)
+                self.bo_acqf = qProbabilityOfImprovement(
+                    model=reward_model, best_f=torch.tensor(best_f)
+                )
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
+            elif self.config.algo == "qUCB":
+                bo_acqf = qUpperConfidenceBound(model=reward_model, beta=0.1)
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
+            elif self.config.algo == "qKG":
+                bo_acqf = qKnowledgeGradient(
+                    model=reward_model,
+                    num_fantasies=1,
+                )
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
             local_prevX.append(action_X)
             local_prevy.append(action_y)
 

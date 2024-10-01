@@ -93,7 +93,10 @@ def random_mutation(sequence, diff_prob=0.5):
         if INIT_SEQ[i] != sequence[i]:
             diff_pos.append(i)
 
-    edit_idx = random.choice(list(set(ALLOWED_POS) - set(diff_pos)))
+    possible_pos = list(set(ALLOWED_POS) - set(diff_pos))
+    if len(possible_pos) == 0:
+        return sequence
+    edit_idx = random.choice(possible_pos)
     current_token = sequence[edit_idx]
 
     # Find possible tokens to edit
