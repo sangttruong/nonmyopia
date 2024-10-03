@@ -55,7 +55,6 @@ class Actor:
         for rid in range(n_restarts):
             local_prevX = copy.deepcopy(prevX)
             local_prevy = copy.deepcopy(prevY)
-
             for step in range(self.algo_lookahead_steps):
                 next_X = self.policy.generate(local_prevX, local_prevy)
                 next_X_ds_emb = get_embedding_from_server(

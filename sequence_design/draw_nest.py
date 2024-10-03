@@ -98,9 +98,9 @@ for hop in tqdm(range(0, K_steps + 1)):
                     else:
                         next_nodes[neighbor] += freq
                     if neighbor not in reward_by_node:
-                        reward_by_node[neighbor] = G.nodes[neighbor][
-                            "reward"
-                        ] / 5 + F(hop)
+                        reward_by_node[neighbor] = G.nodes[neighbor]["reward"] / 5 + F(
+                            hop
+                        )
                     rewards.extend([reward_by_node[neighbor]] * freq)
 
         visited = list(set(visited + list(hop_nodes.keys())))
@@ -124,7 +124,7 @@ list_means = []
 for nodehop in list_rws:
     mean = np.mean(nodehop)
     list_means.append(mean)
-plt.plot(list(range(1, len(list_means)+1)), list_means)
+plt.plot(list(range(1, len(list_means) + 1)), list_means)
 plt.xlabel("Edit distance")
 plt.ylabel("Flourecescence Level")
 plt.savefig(f"plots/mutants_2p{K_steps}_hop.pdf")
