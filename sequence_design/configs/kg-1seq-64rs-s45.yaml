@@ -7,10 +7,10 @@ n_restarts: 64
 output_dir: ckpts/ready-KG-1seq-128rs-s45
 
 # Acquisition function
-algo: qKG # 'HES', 'qKG', 'qEI', 'qPI', 'qSR', 'qUCB', 'qMSL', 'qNIPV'
+algo: HES-TS-AM # 'HES', 'qKG', 'qEI', 'qPI', 'qSR', 'qUCB', 'qMSL', 'qNIPV'
 algo_ts: True
 algo_n_iterations: 16
-algo_lookahead_steps: 0
+algo_lookahead_steps: 1
 
 # Cost function
 cost_spotlight_k: 100
@@ -28,7 +28,7 @@ use_fast_tokenizer: True
 max_new_tokens: 1024
 vllm_gpu_util: 0.9
 sample_size: 4 # Sampling reward value
-ppo_gpu: 4
-main_process_port: 29505
-reward_model_port: 8005
+ppo_gpu: 2
+main_process_port: 29507
+reward_model_port: 8007
 continue_iter: 0

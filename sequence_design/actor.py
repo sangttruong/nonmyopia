@@ -115,7 +115,7 @@ class Actor:
             elif self.config.algo == "qPI":
                 best_f = np.array(prevY)
                 best_f = np.max(best_f, axis=0)
-                self.bo_acqf = qProbabilityOfImprovement(
+                bo_acqf = qProbabilityOfImprovement(
                     model=reward_model, best_f=torch.tensor(best_f)
                 )
                 action_y = (
