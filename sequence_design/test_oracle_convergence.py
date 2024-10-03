@@ -6,19 +6,19 @@ from datasets import load_dataset
 from sklearn.linear_model import BayesianRidge, LinearRegression, Ridge
 from sklearn.metrics import r2_score, root_mean_squared_error
 from tqdm import tqdm
-from tueplots import bundles
+from tueplots import bundles, figsizes
 
 plt.rcParams.update(bundles.iclr2024())
 
 
 hf_embedding_names = [
-    "ura-hcmut/proteinea_fluorescence-Llama-2-7b-hf-embedding",
-    "ura-hcmut/proteinea_fluorescence-Mistral-7B-v0.1-embedding",
-    "ura-hcmut/proteinea_fluorescence-Meta-Llama-3-8B-embedding",
-    "ura-hcmut/proteinea_fluorescence-gemma-7b-embedding",
-    "ura-hcmut/proteinea_fluorescence-esm2_t36_3B_UR50D-embedding",
-    "ura-hcmut/proteinea_fluorescence-esm2_t33_650M_UR50D-embedding",
-    "ura-hcmut/proteinea_fluorescence-llama-molinst-protein-7b-embedding",
+    "stair-lab/proteinea_fluorescence-Llama-2-7b-hf-embedding",
+    "stair-lab/proteinea_fluorescence-Mistral-7B-v0.1-embedding",
+    "stair-lab/proteinea_fluorescence-Meta-Llama-3-8B-embedding",
+    "stair-lab/proteinea_fluorescence-gemma-7b-embedding",
+    "stair-lab/proteinea_fluorescence-esm2_t36_3B_UR50D-embedding",
+    "stair-lab/proteinea_fluorescence-esm2_t33_650M_UR50D-embedding",
+    "stair-lab/proteinea_fluorescence-llama-molinst-protein-7b-embedding",
 ]
 r2s_emb = {}
 r2s_std_emb = {}
@@ -38,12 +38,12 @@ for i, hf_embedding_name in enumerate(hf_embedding_names):
     ds = load_dataset(hf_embedding_name)
 
     X_train = ds["train"].data["inputs_embeds"].to_numpy()
-    y_train = ds["train"].data["rewards"].to_numpy()
+    y_train = ds["train"].data["reward"].to_numpy()
     if total_X is None:
         total_X = X_train.shape[0]
 
-    X_test = ds["validation"].data["inputs_embeds"].to_numpy()
-    y_test = ds["validation"].data["rewards"].to_numpy()
+    X_test = ds["test"].data["inputs_embeds"].to_numpy()
+    y_test = ds["test"].data["reward"].to_numpy()
     X_test = np.stack(X_test)
     y_test = np.stack(y_test)
 
@@ -104,7 +104,7 @@ plt.ylim(top=1)
 plt.ylabel(r"$R^2$")
 plt.xlabel("Number of training data")
 plt.legend()
-plt.savefig("R2_convergence.png", dpi=300)
+plt.savefig("plots/R2_convergence.png", dpi=300)
 plt.close()
 
 plt.figure(figsize=figsizes.iclr2024(nrows=1, ncols=1)["figure.figsize"])
@@ -120,5 +120,5 @@ plt.ylim(bottom=0)
 plt.ylabel(r"$RMSE$")
 plt.xlabel("Number of training data")
 plt.legend()
-plt.savefig("RMSE_convergence.png", dpi=300)
+plt.savefig("plots/RMSE_convergence.png", dpi=300)
 plt.close()
