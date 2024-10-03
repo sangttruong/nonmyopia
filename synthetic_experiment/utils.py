@@ -46,6 +46,8 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
     r"""Make environment."""
     if name == "Ackley":
         f_ = Ackley(dim=x_dim, negate=True, noise_std=noise_std)
+    elif name == "Ackley4D":
+        f_ = Ackley(dim=x_dim, negate=True, noise_std=noise_std)
     elif name == "Alpine":
         f_ = AlpineN1(dim=x_dim, noise_std=noise_std)
     elif name == "Beale":

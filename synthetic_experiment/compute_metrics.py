@@ -148,7 +148,8 @@ if __name__ == "__main__":
                 base_path, f"surr_model_{step}.pt"
             )
             if not os.path.exists(surr_model_state_dict_file):
-                raise RuntimeError(f"File {surr_model_state_dict_file} does not exist")
+                break
+                # raise RuntimeError(f"File {surr_model_state_dict_file} does not exist")
 
             surr_model_state_dicts.append(
                 torch.load(surr_model_state_dict_file, map_location=local_parms.device)

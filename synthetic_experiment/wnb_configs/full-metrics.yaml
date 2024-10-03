@@ -8,7 +8,7 @@ parameters:
     seed: 
         values: [2, 3, 5]
     env_name: 
-        values: [Ackley, Alpine, Cosine8, EggHolder, Hartmann, HolderTable, Levy, Powell, StyblinskiTang, SynGP]
+        values: [Ackley, Ackley4D, Alpine, Cosine8, Hartmann, HolderTable, Levy, StyblinskiTang, SynGP]
     env_noise:  
         values: [0.0, 0.01, 0.05]
     env_discretized: 
