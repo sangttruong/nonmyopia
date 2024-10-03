@@ -91,6 +91,12 @@ class Parameters:
             self.n_initial_points = 50
             self.algo_n_iterations = 100
 
+        elif self.env_name == "Ackley4D":
+            self.x_dim = 4
+            self.bounds = [-2, 2]
+            self.n_initial_points = 100
+            self.algo_n_iterations = 200
+
         elif self.env_name == "Alpine":
             self.x_dim = 2
             self.bounds = [0, 10]
@@ -246,12 +252,14 @@ class Parameters:
             self.initial_points[-1] = [0.5, 0.5]
         elif self.env_name == "Ackley":
             self.initial_points[-1] = [0.2, 0.8]
+        elif self.env_name == "Ackley4D":
+            self.initial_points[-1] = [0.2, 0.8, 0.2, 0.8]
         elif self.env_name == "Beale":
             self.initial_points[-1] = [0.95, 0.95]
         elif self.env_name == "Branin":
             self.initial_points[-1] = [0.5, 0.9]
         elif self.env_name == "Cosine8":
-            self.initial_points[-1] = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+            self.initial_points[-1] = [0.8625] * 8
         elif self.env_name == "EggHolder":
             self.initial_points[-1] = [0.5, 0.5]
         elif self.env_name == "Griewank":
