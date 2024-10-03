@@ -1,11 +1,14 @@
-import os
-import torch
-import random
 import argparse
-import numpy as np
-from tueplots import bundles
-import matplotlib.pyplot as plt
+import os
+import random
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from acqfs import qBOAcqf
+from botorch.sampling.normal import SobolQMCNormalSampler
 from botorch.test_functions.synthetic import (
     Ackley,  # XD Ackley function - Minimum
     Beale,  # 2D Beale function - Minimum
@@ -21,14 +24,12 @@ from botorch.test_functions.synthetic import (
     SixHumpCamel,  # 2D SixHumpCamel function - Minimum
     StyblinskiTang,  # XD StyblinskiTang function - Minimum
 )
-from botorch.sampling.normal import SobolQMCNormalSampler
-
-from acqfs import qBOAcqf
 from synthetic_functions.alpine import AlpineN1
-from synthetic_functions.syngp import SynGP
 from synthetic_functions.env_wrapper import EnvWrapper
+from synthetic_functions.syngp import SynGP
+from tueplots import bundles
 
-plt.rcParams.update(bundles.iclr2023())
+plt.rcParams.update(bundles.neurips2024())
 
 
 def set_seed(seed):
@@ -44,6 +45,8 @@ def set_seed(seed):
 def make_env(name, x_dim, bounds, noise_std=0.0):
     r"""Make environment."""
     if name == "Ackley":
+        f_ = Ackley(dim=x_dim, negate=True, noise_std=noise_std)
+    elif name == "Ackley4D":
         f_ = Ackley(dim=x_dim, negate=True, noise_std=noise_std)
     elif name == "Alpine":
         f_ = AlpineN1(dim=x_dim, noise_std=noise_std)
@@ -82,7 +85,6 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
 
     # Wrapper for normalizing output
     f = EnvWrapper(name, f_)
-    f.noise_std = noise_std * (f.range_y[1] - f.range_y[0]) / 100
 
     return f
 
@@ -221,7 +223,7 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
         optimizer = torch.optim.AdamW([A], lr=parms.acq_opt_lr)
 
         # Get prevX, prevY
-        prev_X = buffer["x"][iteration:iteration + 1].expand(parms.n_restarts, -1)
+        prev_X = buffer["x"][iteration : iteration + 1].expand(parms.n_restarts, -1)
         if embedder is not None:
             # Discretize: Continuous -> Discrete
             prev_X = embedder.decode(prev_X)
@@ -231,7 +233,7 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
             # >>> n_restarts x x_dim x n_categories
 
         prev_y = (
-            buffer["y"][iteration:iteration + 1]
+            buffer["y"][iteration : iteration + 1]
             .expand(parms.n_restarts, -1)
             .to(dtype=parms.torch_dtype)
         )
@@ -274,7 +276,7 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
     u_posterior = env(A_chosen).item()
 
     ######################################################################
-    regret = 1 - u_posterior
+    regret = 3 - u_posterior
 
     return (u_observed, u_posterior, regret), A_chosen.cpu()
 
@@ -288,3 +290,58 @@ def draw_loss_and_cost(save_dir, losses, costs, iteration):
     plt.legend()
     plt.savefig(f"{save_dir}/losses_and_costs_{iteration}.pdf")
     plt.close()
+
+
+def generate_random_points_batch(inputs, radius, n):
+    # Get the shape of the inputs (excluding the last dimension)
+    batch_shape = inputs.shape[:-1]
+    dim = inputs.shape[-1]  # Dimensionality of the points
+
+    # Expand O to the shape [n, batch0, batch1, ..., dim] for broadcasting
+    O_expanded = inputs.unsqueeze(0).expand(n, *batch_shape, dim)
+
+    # Generate random directions for each point
+    directions = torch.randn(n, *batch_shape, dim).to(inputs)  # Generate random normals
+    directions = directions / torch.norm(
+        directions, dim=-1, keepdim=True
+    )  # Normalize to unit length
+
+    # Generate random radii between 0 and radius for each point
+    radii = (
+        torch.rand(n, *batch_shape).pow(1 / dim).unsqueeze(-1).to(inputs) * radius
+    )  # Scale radius
+
+    # Calculate the random points by scaling the direction by the radius and adding to O
+    random_points = O_expanded + radii * directions
+
+    return random_points
+
+
+def generate_random_rotation_matrix(D):
+    # Generate a random matrix
+    random_matrix = torch.randn(D, D)
+
+    # Perform QR decomposition to get an orthogonal matrix
+    Q, _ = torch.linalg.qr(random_matrix)
+
+    # Ensure the determinant is 1 (proper rotation)
+    if torch.det(Q) < 0:
+        # Flip the sign of the random column if the determinant is -1
+        Q[:, random.randint(0, D - 1)] *= -1
+
+    return Q
+
+
+def rotate_points(inputs, R, p):
+    # Translate inputs so that p becomes the origin
+    translated_inputs = inputs - p
+
+    # Apply the rotation matrix to the translated inputs
+    rotated_translated = torch.matmul(
+        translated_inputs, R.transpose(-1, -2).to(translated_inputs)
+    )
+
+    # Translate points back to the original position relative to p
+    rotated_points = rotated_translated + p
+
+    return rotated_points

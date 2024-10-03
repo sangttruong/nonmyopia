@@ -14,19 +14,22 @@ os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
-from utils import set_seed, make_env, str2bool, make_save_dir
-from env_embedder import DiscreteEmbbeder
+import time
+from argparse import ArgumentParser
+
+import gpytorch
+
+import numpy as np
+import torch
+import wandb
 from acqfs import qCostFunction, qLossFunctionTopK
 from actor import Actor
-from gpytorch.mlls import ExactMarginalLogLikelihood
-from botorch.models import SingleTaskGP
 from botorch.fit import fit_gpytorch_mll
+from botorch.models import SingleTaskGP
+from env_embedder import DiscreteEmbbeder
+from gpytorch.mlls import ExactMarginalLogLikelihood
 from tensordict import TensorDict
-from argparse import ArgumentParser
-import numpy as np
-import wandb
-import torch
-import time
+from utils import make_env, make_save_dir, set_seed, str2bool
 
 
 class Parameters:
@@ -57,9 +60,7 @@ class Parameters:
 
         self.n_samples = 64  # 1
         self.amortized = False
-        self.hidden_dim = 32
-        self.acq_opt_lr = 0.001 if self.amortized else 1e-3
-        self.acq_opt_iter = 500 if self.amortized else 500
+        self.hidden_dim = 64
         self.n_restarts = 64
 
         if self.algo.startswith("HES"):
@@ -68,114 +69,123 @@ class Parameters:
             self.algo_lookahead_steps = int(args.algo.split("-")[-1])
             self.algo_ts = "TS" in args.algo
             self.amortized = "AM" in args.algo
+            if self.algo_ts:
+                self.n_restarts = 64
         elif self.algo == "qMSL":
-            self.n_restarts = 4
-            self.n_samples = 4
-            self.algo_lookahead_steps = 3  # Equivalent 4 in HES
+            self.n_restarts = 64
+            self.algo_ts = True
+            self.n_samples = 1
+            self.algo_lookahead_steps = 20  # Equivalent 3 in HES
         elif self.algo == "qKG":
             self.algo_lookahead_steps = 1
         else:
             self.algo_lookahead_steps = 0
 
+        self.acq_opt_lr = 0.001 if self.amortized else 1e-2
+        self.acq_opt_iter = 500 if self.amortized else 500
+
         self.kernel = None
         if self.env_name == "Ackley":
             self.x_dim = 2
             self.bounds = [-2, 2]
-            self.radius = 0.3
             self.n_initial_points = 50
             self.algo_n_iterations = 100
+
+        elif self.env_name == "Ackley4D":
+            self.x_dim = 4
+            self.bounds = [-2, 2]
+            self.n_initial_points = 100
+            self.algo_n_iterations = 200
 
         elif self.env_name == "Alpine":
             self.x_dim = 2
             self.bounds = [0, 10]
-            self.radius = 0.75
             self.n_initial_points = 100
             self.algo_n_iterations = 150
 
         elif self.env_name == "Beale":
             self.x_dim = 2
             self.bounds = [-4.5, 4.5]
-            self.radius = 0.65
             self.n_initial_points = 100
             self.algo_n_iterations = 150
 
         elif self.env_name == "Branin":
             self.x_dim = 2
             self.bounds = [[-5, 10], [0, 15]]
-            self.radius = 1.2
             self.n_initial_points = 20
             self.algo_n_iterations = 70
 
         elif self.env_name == "Cosine8":
             self.x_dim = 8
             self.bounds = [-1, 1]
-            self.radius = 0.3
             self.n_initial_points = 200
             self.algo_n_iterations = 300
 
         elif self.env_name == "EggHolder":
             self.x_dim = 2
             self.bounds = [-100, 100]
-            self.radius = 15.0
-            self.n_initial_points = 100
-            self.algo_n_iterations = 150
+            self.n_initial_points = 200
+            self.algo_n_iterations = 250
 
         elif self.env_name == "Griewank":
             self.x_dim = 2
             self.bounds = [-600, 600]
-            self.radius = 85.0
             self.n_initial_points = 20
             self.algo_n_iterations = 70
 
         elif self.env_name == "Hartmann":
             self.x_dim = 6
             self.bounds = [0, 1]
-            self.radius = 0.15
             self.n_initial_points = 500
             self.algo_n_iterations = 600
 
         elif self.env_name == "HolderTable":
             self.x_dim = 2
             self.bounds = [0, 10]
-            self.radius = 0.75
             self.n_initial_points = 100
             self.algo_n_iterations = 150
 
         elif self.env_name == "Levy":
             self.x_dim = 2
             self.bounds = [-10, 10]
-            self.radius = 1.5
-            self.n_initial_points = 75
-            self.algo_n_iterations = 125
+            self.n_initial_points = 100
+            self.algo_n_iterations = 150
 
         elif self.env_name == "Powell":
             self.x_dim = 4
             self.bounds = [-4, 5]
-            self.radius = 0.9
             self.n_initial_points = 100
             self.algo_n_iterations = 200
 
         elif self.env_name == "SixHumpCamel":
             self.x_dim = 2
             self.bounds = [[-3, 3], [-2, 2]]
-            self.radius = 0.4
             self.n_initial_points = 40
             self.algo_n_iterations = 90
 
         elif self.env_name == "StyblinskiTang":
             self.x_dim = 2
             self.bounds = [-5, 5]
-            self.radius = 0.75
             self.n_initial_points = 45
             self.algo_n_iterations = 95
 
         elif self.env_name == "SynGP":
             self.x_dim = 2
             self.bounds = [-1, 1]
-            self.radius = 0.15
             self.n_initial_points = 25
             self.algo_n_iterations = 75
 
+        else:
+            raise NotImplementedError
+
+        if self.x_dim == 2:
+            self.radius = 0.075
+        elif self.x_dim == 4:
+            self.radius = 0.1
+        elif self.x_dim == 6:
+            self.radius = 0.125
+        elif self.x_dim == 8:
+            self.radius = 0.15
         else:
             raise NotImplementedError
 
@@ -192,8 +202,9 @@ class Parameters:
             self.cost_spotlight_k = 1
             self.cost_p_norm = 1
         elif args.cost_fn == "r-spotlight":
-            self.cost_spotlight_k = 1e5
+            self.cost_spotlight_k = 1e3
             self.cost_p_norm = 2
+            self.cost_max_noise = 0
         elif args.cost_fn == "non-markovian":
             self.cost_spotlight_k = 1
             self.cost_p_norm = 2
@@ -207,10 +218,13 @@ class Parameters:
         if self.bounds.ndim < 2 or self.bounds.shape[0] < self.x_dim:
             self.bounds = np.tile(self.bounds, [self.x_dim, 1])
 
+        local_bounds = np.zeros_like(self.bounds)
+        local_bounds[..., 1] = 1
+
         n_partitions = int(self.n_initial_points ** (1 / self.x_dim))
         remaining_points = self.n_initial_points - n_partitions**self.x_dim
         ranges = np.linspace(
-            self.bounds[..., 0], self.bounds[..., 1], n_partitions + 1
+            local_bounds[..., 0], local_bounds[..., 1], n_partitions + 1
         ).T
         range_bounds = np.stack((ranges[:, :-1], ranges[:, 1:]), axis=-1)
         cartesian_idxs = np.array(
@@ -226,15 +240,45 @@ class Parameters:
                     size=[n_partitions**self.x_dim, self.x_dim],
                 ),
                 np.random.uniform(
-                    low=self.bounds[..., 0],
-                    high=self.bounds[..., 1],
+                    low=local_bounds[..., 0],
+                    high=local_bounds[..., 1],
                     size=[remaining_points, self.x_dim],
                 ),
             ),
             axis=0,
         )
 
-        # * np.max(self.bounds[..., 1] - self.bounds[..., 0]) / 100
+        if self.env_name == "Alpine":
+            self.initial_points[-1] = [0.5, 0.5]
+        elif self.env_name == "Ackley":
+            self.initial_points[-1] = [0.2, 0.8]
+        elif self.env_name == "Ackley4D":
+            self.initial_points[-1] = [0.2, 0.8, 0.2, 0.8]
+        elif self.env_name == "Beale":
+            self.initial_points[-1] = [0.95, 0.95]
+        elif self.env_name == "Branin":
+            self.initial_points[-1] = [0.5, 0.9]
+        elif self.env_name == "Cosine8":
+            self.initial_points[-1] = [0.8625] * 8
+        elif self.env_name == "EggHolder":
+            self.initial_points[-1] = [0.5, 0.5]
+        elif self.env_name == "Griewank":
+            self.initial_points[-1] = [0.5, 0.5]
+        elif self.env_name == "Hartmann":
+            self.initial_points[-1] = [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]
+        elif self.env_name == "HolderTable":
+            self.initial_points[-1] = [0.5, 0.5]
+        elif self.env_name == "Levy":
+            self.initial_points[-1] = [0.15, 0.4]
+        elif self.env_name == "Powell":
+            self.initial_points[-1] = [0.5, 0.5, 0.5, 0.5]
+        elif self.env_name == "SixHumpCamel":
+            self.initial_points[-1] = [0.8, 0.1]
+        elif self.env_name == "StyblinskiTang":
+            self.initial_points[-1] = [0.6, 0.3]
+        elif self.env_name == "SynGP":
+            self.initial_points[-1] = [0.725, 0.75]
+
         self.env_noise = args.env_noise
         self.bounds = torch.tensor(
             self.bounds, dtype=self.torch_dtype, device=self.device
@@ -289,22 +333,6 @@ def run_exp(parms, env) -> None:
         parms (Parameter): List of input parameters
         env: Environment
     """
-    data_x = torch.tensor(
-        parms.initial_points,
-        device=parms.device,
-        dtype=parms.torch_dtype,
-    )
-    # >>> n_initial_points x dim
-
-    data_y = env(data_x).reshape(-1, 1)
-    # >>> n_initial_points x 1
-
-    data_hidden_state = torch.ones(
-        [parms.n_initial_points, parms.hidden_dim],
-        device=parms.device,
-        dtype=parms.torch_dtype,
-    )
-
     actor = Actor(parms=parms)
     fill_value = float("nan")
     continue_iter = 0
@@ -335,18 +363,49 @@ def run_exp(parms, env) -> None:
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
+            chosen_idx=torch.full(
+                (parms.algo_n_iterations,),
+                fill_value,
+                dtype=parms.torch_dtype,
+            ),
         ),
         batch_size=[parms.algo_n_iterations],
         device=parms.device,
     )
+    data_x = torch.tensor(
+        parms.initial_points,
+        device=parms.device,
+        dtype=parms.torch_dtype,
+    )
+    # >>> n_initial_points x dim
 
     if parms.env_discretized:
         embedder = DiscreteEmbbeder(
             num_categories=parms.num_categories,
-            bounds=parms.bounds,
+            bounds=torch.stack(
+                [torch.zeros(parms.x_dim), torch.ones(parms.x_dim)], dim=1
+            ),
         ).to(device=parms.device, dtype=parms.torch_dtype)
+        # Discretize: Continuous -> Discrete
+        data_x = embedder.decode(data_x)
+        data_x = torch.nn.functional.one_hot(
+            data_x, num_classes=parms.num_categories
+        ).to(dtype=parms.torch_dtype)
+        # >>> n_restarts x x_dim x n_categories
+
+        # Cat ==> Con
+        data_x = embedder.encode(data_x)
     else:
         embedder = None
+
+    data_y = env(data_x).reshape(-1, 1)
+    # >>> n_initial_points x 1
+
+    data_hidden_state = torch.randn(
+        [parms.n_initial_points, parms.hidden_dim],
+        device=parms.device,
+        dtype=parms.torch_dtype,
+    )
 
     if parms.cont:
         # Load buffers from previous iterations
@@ -371,19 +430,9 @@ def run_exp(parms, env) -> None:
     # Set start iteration
     continue_iter = continue_iter if continue_iter != 0 else parms.n_initial_points
 
-    # Warm-up parameters
-    surr_model = SingleTaskGP(
-        buffer["x"][:continue_iter],
-        buffer["y"][:continue_iter],
-        # input_transform=Normalize(
-        #     d=parms.x_dim, bounds=parms.bounds.T),
-        # outcome_transform=Standardize(1),
-        covar_module=parms.kernel,
-    ).to(parms.device)
-    mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
-    fit_gpytorch_mll(mll)
-    actor.construct_acqf(surr_model=surr_model, buffer=buffer[:continue_iter])
-    actor.reset_parameters(buffer=buffer[:continue_iter], embedder=embedder)
+    likelihood = gpytorch.likelihoods.GaussianLikelihood(
+        noise_prior=gpytorch.priors.NormalPrior(0, 1e-2)
+    )
 
     # Run BO loop
     for i in range(continue_iter, parms.algo_n_iterations):
@@ -391,9 +440,7 @@ def run_exp(parms, env) -> None:
         surr_model = SingleTaskGP(
             buffer["x"][:i],
             buffer["y"][:i],
-            # input_transform=Normalize(
-            #     d=parms.x_dim, bounds=parms.bounds.T),
-            # outcome_transform=Standardize(1),
+            likelihood=likelihood,
             covar_module=parms.kernel,
         ).to(parms.device)
         mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
@@ -403,12 +450,18 @@ def run_exp(parms, env) -> None:
         if actor.algo_lookahead_steps > 1 and (
             parms.algo_n_iterations - i < actor.algo_lookahead_steps
         ):
-            actor.algo_lookahead_steps -= 1
-            if not parms.amortized:
-                actor.reset_parameters(buffer=buffer[:i], embedder=embedder)
+            actor.algo_lookahead_steps = parms.algo_n_iterations - i
 
         # Construct acqf
         actor.construct_acqf(surr_model=surr_model, buffer=buffer[:i])
+
+        if not parms.amortized or i == continue_iter:
+            actor.reset_parameters(
+                buffer=buffer[:i],
+                bo_iter=i - parms.n_initial_points,
+                embedder=embedder,
+                prev_chosen_idx=buffer["chosen_idx"][i - 1],
+            )
 
         # Query and observe next point
         query_start_time = time.time()
@@ -421,6 +474,7 @@ def run_exp(parms, env) -> None:
         if parms.amortized:
             buffer["h"][i] = output["hidden_state"]
         buffer["cost"][i] = output["cost"]
+        buffer["chosen_idx"][i] = output["chosen_idx"]
         buffer["runtime"][i] = query_end_time - query_start_time
 
         # Save buffer to file after each iteration
@@ -432,31 +486,19 @@ def run_exp(parms, env) -> None:
         print("Model saved to file.")
 
         # Report to wandb
-        wandb.log(
-            {
-                "x": buffer["x"][i],
-                "y": buffer["y"][i],
-                "cost": buffer["cost"][i],
-                "runtime": buffer["runtime"][i],
-            }
-        )
+        logging_data = {
+            "x": buffer["x"][i].tolist(),
+            "y": buffer["y"][i].tolist(),
+            "cost": buffer["cost"][i].item(),
+            "runtime": buffer["runtime"][i].item(),
+        }
+        print(logging_data)
+        wandb.log(logging_data)
 
 
 if __name__ == "__main__":
-    default_config = {
-        "seed": 2,
-        "task": "topk",
-        "env_name": "SynGP",
-        "env_noise": 0.0,
-        "env_discretized": False,
-        "algo": "HES",
-        "cost_fn": "euclidean",
-        "plot": False,
-        "gpu_id": 0,
-        "cont": False,
-    }
     # WandB start
-    wandb.init(project="nonmyopia", config=default_config)
+    wandb.init(project="nonmyopia")
 
     # Parse args
     parser = ArgumentParser()
@@ -466,7 +508,7 @@ if __name__ == "__main__":
     parser.add_argument("--env_noise", type=float, default=0.0)
     parser.add_argument("--env_discretized", type=str2bool, default=False)
     parser.add_argument("--algo", type=str, default="HES-TS-AM-20")
-    parser.add_argument("--cost_fn", type=str, default="euclidean")
+    parser.add_argument("--cost_fn", type=str, default="r-spotlight")
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
