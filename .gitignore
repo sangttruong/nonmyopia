@@ -10,3 +10,5 @@ results/
 gp_results/
 plots/
 wandb/
+sequence_design/ckpts*
+sequence_design/data*

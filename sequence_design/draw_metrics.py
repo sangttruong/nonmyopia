@@ -1,3 +1,4 @@
+import argparse
 import os
 import pickle
 
@@ -5,34 +6,37 @@ import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from configs import F, INIT_SEQ
 from matplotlib.ticker import ScalarFormatter
-from tqdm import tqdm
-from tueplots import bundles, cycler, figsizes
-from tueplots.constants.color import palettes
-from utils import compute_ed, get_embedding_from_server, observe_value
+from tueplots import bundles, figsizes
+from utils import (
+    compute_ed,
+    ensure_dir,
+    get_embedding_from_server,
+    import_protein_env,
+    observe_value,
+)
 
 plt.rcParams.update(bundles.iclr2024())
 
 LIST_RESULTS = {
-    "SR-s42": "ckpts/ready-SR-1seq-128rs-s42",
-    "SR-s45": "ckpts/ready-SR-1seq-128rs-s45",
-    "SR-s49": "ckpts/ready-SR-1seq-128rs-s49",
-    "EI-s42": "ckpts/ready-EI-1seq-128rs-s42",
-    "EI-s45": "ckpts/ready-EI-1seq-128rs-s45",
-    "EI-s49": "ckpts/ready-EI-1seq-128rs-s49",
-    "PI-s42": "ckpts/ready-PI-1seq-128rs-s42",
-    "PI-s45": "ckpts/ready-PI-1seq-128rs-s45",
-    "PI-s49": "ckpts/ready-PI-1seq-128rs-s49",
-    "UCB-s42": "ckpts/ready-UCB-1seq-128rs-s42",
-    "UCB-s45": "ckpts/ready-UCB-1seq-128rs-s45",
-    "UCB-s49": "ckpts/ready-UCB-1seq-128rs-s49",
-    "KG-s42": "ckpts/ready-KG-1seq-128rs-s42",
-    "KG-s45": "ckpts/ready-KG-1seq-128rs-s45",
-    "KG-s49": "ckpts/ready-KG-1seq-128rs-s49",
-    "Ours-s42": "ckpts/ready-HES-11-1seq-128rs-s42",
-    "Ours-s45": "ckpts/ready-HES-11-1seq-128rs-s45",
-    "Ours-s49": "ckpts/ready-HES-11-1seq-128rs-s49",
+    "SR-s42": "ckpts_iclr2025/ready-SR-1seq-128rs-s42",
+    "SR-s45": "ckpts_iclr2025/ready-SR-1seq-128rs-s45",
+    "SR-s49": "ckpts_iclr2025/ready-SR-1seq-128rs-s49",
+    "EI-s42": "ckpts_iclr2025/ready-EI-1seq-128rs-s42",
+    "EI-s45": "ckpts_iclr2025/ready-EI-1seq-128rs-s45",
+    "EI-s49": "ckpts_iclr2025/ready-EI-1seq-128rs-s49",
+    "PI-s42": "ckpts_iclr2025/ready-PI-1seq-128rs-s42",
+    "PI-s45": "ckpts_iclr2025/ready-PI-1seq-128rs-s45",
+    "PI-s49": "ckpts_iclr2025/ready-PI-1seq-128rs-s49",
+    "UCB-s42": "ckpts_iclr2025/ready-UCB-1seq-128rs-s42",
+    "UCB-s45": "ckpts_iclr2025/ready-UCB-1seq-128rs-s45",
+    "UCB-s49": "ckpts_iclr2025/ready-UCB-1seq-128rs-s49",
+    "KG-s42": "ckpts_iclr2025/ready-KG-1seq-128rs-s42",
+    "KG-s45": "ckpts_iclr2025/ready-KG-1seq-128rs-s45",
+    "KG-s49": "ckpts_iclr2025/ready-KG-1seq-128rs-s49",
+    "Ours-s42": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s42",
+    "Ours-s45": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s45",
+    "Ours-s49": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s49",
 }
 
 LIST_ALGOS = [
@@ -46,15 +50,19 @@ LIST_ALGOS = [
 
 SEEDS = [42, 45, 49]
 
-oracle = joblib.load(f"ckpts/oracle/model.joblib")
-# MAX_RW = 2.7426433601379405
+oracle = joblib.load(f"ckpts_iclr2025/oracle/model.joblib")
 MAX_RW = 3
-
 CUT_OFF = 16
 
 if __name__ == "__main__":
-    print("Drawing actual scores...")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--mutant_ver", type=str, default="v1")
+    parser.add_argument("--fn_ver", type=str, default="v1")
+    args = parser.parse_args()
 
+    _, INIT_SEQ, _, _, _ = import_protein_env(args.mutant_ver)
+
+    print("Drawing actual scores...")
     fig, axs = plt.subplots(
         nrows=1, ncols=2, figsize=figsizes.iclr2024(nrows=1, ncols=2)["figure.figsize"]
     )
@@ -82,7 +90,6 @@ if __name__ == "__main__":
 
         # min_length = min([len(x) for x in algo_res])
         # algo_res = [x[:min_length] for x in algo_res]
-        # breakpoint()
         algo_res = np.stack(algo_res)
         res_dict[algo] = algo_res
 
@@ -136,6 +143,7 @@ if __name__ == "__main__":
                     oracle,
                     torch.tensor(best_emb),
                     compute_ed(INIT_SEQ, [X_returned[best_idx[0]][-1][0]]),
+                    args.fn_ver,
                 )[0]
                 best_y = MAX_RW - best_y  # regret
                 list_vals.append(best_y)
@@ -181,5 +189,6 @@ if __name__ == "__main__":
         bbox_to_anchor=(0.5, -0.125),
         # fontsize=20,
     )
-    plt.savefig("plots/yA_regret.png", dpi=300)
+    ensure_dir(f"plots/mutant{args.mutant_ver}_fn{args.fn_ver}")
+    plt.savefig(f"plots/mutant{args.mutant_ver}_fn{args.fn_ver}/yA_regret.png", dpi=300)
     plt.close()

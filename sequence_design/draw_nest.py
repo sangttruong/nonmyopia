@@ -1,23 +1,26 @@
-import collections
+import argparse
 import pickle
-import random
 
-import joblib
-import matplotlib.cm as cm
-import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import networkx as nx
 import numpy as np
-import torch
-from configs import F
-from datasets import Dataset, load_dataset
 from Levenshtein import distance
 from tqdm import tqdm
 from tueplots import bundles, figsizes
 
 plt.rcParams.update(bundles.iclr2024())
+parser = argparse.ArgumentParser()
+parser.add_argument("--mutant_ver", type=str, default="v1")
+parser.add_argument("--fn_ver", type=str, default="v1")
+parser.add_argument("--K_steps", type=int, default=12)
+args = parser.parse_args()
 
-K_steps = 12
+K_steps = args.K_steps
+
+if args.fn_ver == "v1":
+    from envs.synthetic_fns import F1 as F
+elif args.fn_ver == "v2":
+    from envs.synthetic_fns import F2 as F
 
 
 def find_node_with_text(graph, text_value):
@@ -35,7 +38,7 @@ def find_node_with_distance(graph, target_seq):
     return list_nodes
 
 
-G = nx.read_gexf(f"mutants/mutants_2p{K_steps}.gexf")
+G = nx.read_gexf(f"mutants/mutants_2p{K_steps}_{args.mutant_ver}.gexf")
 
 max_value = -100
 min_value = 100
@@ -113,8 +116,9 @@ for hop in tqdm(range(0, K_steps + 1)):
 
 import pickle
 
-pickle.dump(reward_by_node, open("updated_rewards.pkl", "wb"))
-
+pickle.dump(
+    reward_by_node, open(f"updated_rewards_{args.mutant_ver}_{args.fn_ver}.pkl", "wb")
+)
 
 # Plot the mean and std of rewards of all nodes that are K steps away from the start node
 overall_size = figsizes.iclr2024(nrows=1, ncols=2)["figure.figsize"]
@@ -127,7 +131,7 @@ for nodehop in list_rws:
 plt.plot(list(range(1, len(list_means) + 1)), list_means)
 plt.xlabel("Edit distance")
 plt.ylabel("Flourecescence Level")
-plt.savefig(f"plots/mutants_2p{K_steps}_hop.pdf")
+plt.savefig(f"plots/mutants_2p{K_steps}_{args.mutant_ver}_{args.fn_ver}_hop.pdf")
 plt.close()
 
 
@@ -161,4 +165,4 @@ cbar = plt.colorbar(nodes)
 cbar.ax.tick_params(labelsize=50)
 cbar.mappable.set_clim(min_value, 3)
 plt.box(False)
-plt.savefig(f"plots/mutants_2p{K_steps}.pdf")
+plt.savefig(f"plots/mutants_2p{K_steps}_{args.mutant_ver}_{args.fn_ver}.pdf")

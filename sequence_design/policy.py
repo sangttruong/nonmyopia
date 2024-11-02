@@ -3,8 +3,6 @@ import random
 import re
 from typing import List
 
-import editdistance
-
 from transformers import AutoTokenizer, GenerationConfig
 from utils import format_prompt, random_mutation, torch_gc, verify_seq
 from vllm import LLM, SamplingParams

@@ -1,8 +1,5 @@
 import pickle
-import random
 import re
-
-import editdistance
 
 import joblib
 import numpy as np
@@ -15,11 +12,8 @@ from botorch.acquisition import (
     qSimpleRegret,
     qUpperConfidenceBound,
 )
-from configs import ALLOWED_POS, ALLOWED_TOKENS, TEMPLATED_RESPONSE
-from datasets import Dataset
-from embed_text_package.embed_text import Embedder
+from configs import TEMPLATED_RESPONSE
 from lampo.reward_model import RewardModelTemplate
-from torch.utils.data import DataLoader
 from utils import get_embedding_from_server, random_mutation, verify_seq
 
 

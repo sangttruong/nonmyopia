@@ -11,16 +11,15 @@ import wandb
 import yaml
 from actor import Actor
 from bayesian_ridge import BayesianRidgeModel
-from configs import INIT_SEQ
-from datasets import concatenate_datasets, Dataset, DatasetDict, load_dataset
+from datasets import concatenate_datasets, Dataset, load_dataset
 from peft import AutoPeftModelForCausalLM
-from torch.utils.data import DataLoader
 from utils import (
     compute_ed,
     create_lookahead_sequences,
     ensure_dir,
     find_idx_in_dataset,
     get_embedding_from_server,
+    import_protein_env,
     observe_value,
     random_sampling,
     read_yaml_to_dynamic_dataclass,
@@ -39,6 +38,9 @@ def main(args: Optional[Dict[str, Any]] = None):
     # Automatically create config class
     Config = read_yaml_to_dynamic_dataclass(args.config)
     config = Config()
+
+    # Import protein environment
+    _, INIT_SEQ, _, _, _ = import_protein_env(config.mutant_ver)
 
     # Set seed & create necessary directory
     set_seed(config.seed)
@@ -83,6 +85,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         oracle,
         torch.Tensor(initial_dataset["inputs_embeds"]),
         compute_ed(INIT_SEQ, initial_dataset["text"]),
+        config.fn_ver,
     )
     initial_dataset = (
         initial_dataset.remove_columns("reward")
@@ -95,6 +98,7 @@ def main(args: Optional[Dict[str, Any]] = None):
     #     oracle,
     #     torch.Tensor(testing_dataset["inputs_embeds"]),
     #     compute_ed(INIT_SEQ, testing_dataset["text"]),
+    #     config.fn_ver,
     # )
     # testing_dataset = (
     #     testing_dataset.remove_columns("reward")
@@ -111,6 +115,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         oracle,
         torch.Tensor(initial_sequences["inputs_embeds"]),
         compute_ed(INIT_SEQ, initial_sequences["text"]),
+        config.fn_ver,
     )
     initial_sequences = (
         initial_sequences.remove_columns("reward")
@@ -149,12 +154,10 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Create SFT dataset for pretraining Policy
     timestamp = datetime.today().isoformat()
-    sft_ds_name = (
-        f"sft_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
-    )
+    sft_ds_name = f"sft_{args.mutant_ver}_{config.fn_ver}_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
     if not os.path.exists(f"data/{sft_ds_name}"):
         sft_ds = create_lookahead_sequences(
-            config, actor.policy.tokenizer, oracle, initial_sequences
+            config, actor.policy.tokenizer, oracle, initial_sequences, config.fn_ver
         )
         sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_train.csv")
         sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_test.csv")
@@ -254,7 +257,10 @@ def main(args: Optional[Dict[str, Any]] = None):
             server_url=config.embedding_model, list_sequences=next_X
         )
         next_y = observe_value(
-            oracle, torch.tensor(observed_emb), compute_ed(INIT_SEQ, next_X)
+            oracle,
+            torch.tensor(observed_emb),
+            compute_ed(INIT_SEQ, next_X),
+            config.fn_ver,
         )
         query_end_time = time.time()
 

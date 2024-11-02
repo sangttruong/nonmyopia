@@ -1,4 +1,3 @@
-import copy
 import gc
 import json
 import os
@@ -14,23 +13,15 @@ import psutil
 import requests
 import torch
 import yaml
-from configs import (
-    ALLOWED_POS,
-    ALLOWED_TOKENS,
-    F,
-    INIT_SEQ,
-    LOOKAHEAD_PROMPT,
-    MAX_SEQ,
-    POLICY_PROMPT,
-    SYSTEM_PROMPT,
-)
+
+from configs import LOOKAHEAD_PROMPT, SYSTEM_PROMPT
 from datasets import Dataset
+from envs.proteins import PROTEINS
+from envs.synthetic_fns import F1, F2
 from Levenshtein import distance
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
-from torch.utils.data import DataLoader
 from tqdm import tqdm
 from transformers.utils import (
-    is_peft_available,
     is_torch_cuda_available,
     is_torch_mps_available,
     is_torch_npu_available,
@@ -38,11 +29,31 @@ from transformers.utils import (
 )
 
 
+def import_protein_env(mutant_ver):
+    global ALLOWED_POS
+    global ALLOWED_TOKENS
+    global INIT_SEQ
+    global MAX_SEQ
+    global POLICY_PROMPT
+
+    protein_info = PROTEINS[mutant_ver]
+    POLICY_PROMPT = protein_info["POLICY_PROMPT"]
+    INIT_SEQ = protein_info["INIT_SEQ"]
+    MAX_SEQ = protein_info["MAX_SEQ"]
+    ALLOWED_POS = protein_info["ALLOWED_POS"]
+    ALLOWED_TOKENS = protein_info["ALLOWED_TOKENS"]
+    return POLICY_PROMPT, INIT_SEQ, MAX_SEQ, ALLOWED_POS, ALLOWED_TOKENS
+
+
 def compute_ed(original, list_str):
     return [distance(original, x) for x in list_str]
 
 
-def observe_value(oracle, embs, eds):
+def observe_value(oracle, embs, eds, fn_ver):
+    if fn_ver == "v1":
+        F = F1
+    elif fn_ver == "v2":
+        F = F2
     outputs = oracle.predict(embs).tolist()
     outputs = [x / 5 + F(ed) for x, ed in zip(outputs, eds)]
     return outputs
@@ -182,7 +193,7 @@ def format_prompt(tokenizer, prevX: List[List[str]], prevY: List[List[float]]):
     return prompts
 
 
-def create_lookahead_sequences(args, tokenizer, oracle, ds):
+def create_lookahead_sequences(args, tokenizer, oracle, ds, fn_ver):
     prevX = [[] for _ in range(args.algo_lookahead_steps + 2)]
     prevY = [[] for _ in range(args.algo_lookahead_steps + 2)]
     for _ in tqdm(range(100), desc="Creating SFT dataset"):
@@ -206,6 +217,7 @@ def create_lookahead_sequences(args, tokenizer, oracle, ds):
                         oracle,
                         torch.tensor(mutation_emb),
                         compute_ed(INIT_SEQ, mutated_sequences),
+                        fn_ver,
                     )
                 )
 
@@ -284,7 +296,6 @@ def random_sampling(dataset, num_samples, *args, **kwargs):
         )
     total_samples = len(dataset)
     indices = random.sample(range(total_samples), num_samples)
-
     if "is_init" in kwargs:
         if kwargs["is_init"]:
             idx = find_idx_in_dataset(dataset, "text", MAX_SEQ)

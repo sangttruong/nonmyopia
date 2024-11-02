@@ -1,16 +1,17 @@
-import unittest
-import torch
 import random
+import unittest
+
 import botorch
 import numpy as np
 import pandas as pd
-from sklearn.datasets import fetch_openml
+import torch
 from botorch.models.transforms.input import Normalize
-from botorch.utils import standardize
 from botorch.posteriors import GPyTorchPosterior
-from torch.distributions.multivariate_normal import MultivariateNormal
+from botorch.utils import standardize
 
 from sequence_design.bayesian_ridge import BayesianRidgeModel
+from sklearn.datasets import fetch_openml
+from torch.distributions.multivariate_normal import MultivariateNormal
 
 
 class TestBayesianRidde(unittest.TestCase):
