@@ -71,6 +71,7 @@ output_dir: Path to store model checkpoints when running PPO.
 ```
 Finally, you can run the code by using the below command
 ```bash
+export MUTANT_VER=v1 # v1, v2, v3, v4, v5
 python main.py --config <config_file>
 ```
 You can find some configuration files in [configs](configs) folder. You can use them as a reference to create your own configuration file.

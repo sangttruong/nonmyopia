@@ -30,7 +30,7 @@ use_fast_tokenizer: True
 max_new_tokens: 1024
 vllm_gpu_util: 0.9
 sample_size: 4 # Sampling reward value
-ppo_gpu: 6
+ppo_gpu: 7
 main_process_port: 29511
 reward_model_port: 8011
 continue_iter: 0

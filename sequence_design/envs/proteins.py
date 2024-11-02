@@ -36,4 +36,29 @@ Protein sequence: {protein}
             "P",
         ],
     },
+    "v3": {
+        "POLICY_PROMPT": """Edit 1 amino acid in the below protein sequence to create a new protein with higher fluorescence. The amino acid must be in set {{S, T}}.
+Protein sequence: {protein}
+""",
+        "INIT_SEQ": "TKGEELFTGVVPILVELDGDVNGHKFTVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVSSLTYGVQCSSRYPDHMKQHDFFKTAMPEGYVQERTLFFKDDGNYKTRAEVKFEGDSLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSSQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK",
+        "MAX_SEQ": "SKGEELFTGVVPILVELDGDVNGHKFSVTGEGEGDATYGKLSLKFICTTGKLPVPWPTLVTTLSYGVQCSSRYPDHMKQHDFFKSAMPEGYVQERTLFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQTALSKDPNEKRDHMVLLEFVSAAGITHGMDELYK",
+        "ALLOWED_POS": [
+            0,
+            26,
+            28,
+            41,
+            60,
+            61,
+            63,
+            84,
+            116,
+            201,
+            203,
+            223
+        ],
+        "ALLOWED_TOKENS": [
+            "S",
+            "T",
+        ]
+    }
 }

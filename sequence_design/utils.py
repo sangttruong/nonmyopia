@@ -28,6 +28,8 @@ from transformers.utils import (
     is_torch_xpu_available,
 )
 
+MUTANT_VER = os.getenv("MUTANT_VER", "")
+assert MUTANT_VER != "", f"Invalid MUTANT_VER: {MUTANT_VER}"
 
 def import_protein_env(mutant_ver):
     global ALLOWED_POS
@@ -44,6 +46,7 @@ def import_protein_env(mutant_ver):
     ALLOWED_TOKENS = protein_info["ALLOWED_TOKENS"]
     return POLICY_PROMPT, INIT_SEQ, MAX_SEQ, ALLOWED_POS, ALLOWED_TOKENS
 
+POLICY_PROMPT, INIT_SEQ, MAX_SEQ, ALLOWED_POS, ALLOWED_TOKENS = import_protein_env(MUTANT_VER)
 
 def compute_ed(original, list_str):
     return [distance(original, x) for x in list_str]

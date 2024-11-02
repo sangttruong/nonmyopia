@@ -31,6 +31,6 @@ max_new_tokens: 1024
 vllm_gpu_util: 0.9
 sample_size: 4 # Sampling reward value
 ppo_gpu: 7
-main_process_port: 29509
-reward_model_port: 8009
-continue_iter: 0
+main_process_port: 29503
+reward_model_port: 8003
+continue_iter: 15
