@@ -12,5 +12,5 @@ def F2(x):
         - np.exp(0.5 * (np.cos(c * x)))
         + a
         + np.exp(1.0)
-        - 0.6
+        - 0.7
     )
