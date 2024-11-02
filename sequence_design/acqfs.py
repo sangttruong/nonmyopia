@@ -4,6 +4,7 @@ import re
 import joblib
 import numpy as np
 import torch
+import random
 import yaml
 from botorch.acquisition import (
     qExpectedImprovement,
@@ -31,9 +32,10 @@ class Acqf(RewardModelTemplate):
         messages = [self.post_process(x[-1]) for x in messages]
         sequences = [x[0] for x in messages]
         num_sequences = [x[1] for x in messages]
-
+        
+        port = random.choice(["1337", "1338", "1339", "1340"])
         ds_emb = get_embedding_from_server(
-            server_url="http://hyperturing2:1337", list_sequences=sequences
+            server_url=f"http://hyperturing2:{port}", list_sequences=sequences
         )
         output = self.bo_acqf(torch.tensor(ds_emb).unsqueeze(-2))
         for i, ns in enumerate(num_sequences):

@@ -154,7 +154,7 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Create SFT dataset for pretraining Policy
     timestamp = datetime.today().isoformat()
-    sft_ds_name = f"sft_{args.mutant_ver}_{config.fn_ver}_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
+    sft_ds_name = f"sft_{config.mutant_ver}_{config.fn_ver}_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
     if not os.path.exists(f"data/{sft_ds_name}"):
         sft_ds = create_lookahead_sequences(
             config, actor.policy.tokenizer, oracle, initial_sequences, config.fn_ver
@@ -164,7 +164,7 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # SFT Training for Policy
     output_dir = os.path.join(
-        f"ckpts/sft_model_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
+        f"ckpts/sft_model_{config.mutant_ver}_{config.fn_ver}_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
     )
     if not os.path.exists(output_dir):
         with open("configs/sft.yaml", "r", encoding="utf8") as stream:
@@ -231,7 +231,7 @@ def main(args: Optional[Dict[str, Any]] = None):
 
         # Train new policy with rolled out dataset
         query_start_time = time.time()
-        actor.train_policy(iteration=i, dataset=prompt_dataset)
+        actor.train_policy(iteration=i, dataset=prompt_dataset, mutant_ver=config.mutant_ver, fn_ver=config.fn_ver)
 
         # -------------------------------------------------------
 
