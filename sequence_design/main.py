@@ -11,13 +11,16 @@ import wandb
 import yaml
 from actor import Actor
 from bayesian_ridge import BayesianRidgeModel
-from datasets import concatenate_datasets, Dataset, DatasetDict, load_dataset
-from embed_text_package.embed_text import Embedder
+from datasets import concatenate_datasets, Dataset, load_dataset
 from peft import AutoPeftModelForCausalLM
-from torch.utils.data import DataLoader
 from utils import (
+    compute_ed,
     create_lookahead_sequences,
     ensure_dir,
+    find_idx_in_dataset,
+    get_embedding_from_server,
+    import_protein_env,
+    observe_value,
     random_sampling,
     read_yaml_to_dynamic_dataclass,
     set_seed,
@@ -36,43 +39,30 @@ def main(args: Optional[Dict[str, Any]] = None):
     Config = read_yaml_to_dynamic_dataclass(args.config)
     config = Config()
 
+    # Import protein environment
+    _, INIT_SEQ, _, _, _ = import_protein_env(config.mutant_ver)
+
     # Set seed & create necessary directory
     set_seed(config.seed)
-
-    # Initializing embedding model
-    embedder = Embedder()
-    embedder.load(config.embedding_model_name_or_path)
 
     # Initializing full dataset
     training_dataset = load_dataset(path=config.dataset, split="train")
     if "inputs_embeds" not in training_dataset.column_names:
-        inputs_embeds_training = (
-            embedder.get_embeddings(
-                DataLoader(training_dataset, batch_size=1),
-                config.embedding_model_name_or_path,
-                ["text"],
-            )
-            .data["text"]
-            .to_pylist()
+        inputs_embeds_training = get_embedding_from_server(
+            server_url=config.embedding_model, list_sequences=training_dataset["text"]
         )
         training_dataset = training_dataset.add_column(
             "inputs_embeds", inputs_embeds_training
         )
 
-    testing_dataset = load_dataset(path=config.dataset, split="test")
-    if "inputs_embeds" not in testing_dataset.column_names:
-        inputs_embeds_testing = (
-            embedder.get_embeddings(
-                DataLoader(testing_dataset, batch_size=1),
-                config.embedding_model_name_or_path,
-                ["text"],
-            )
-            .data["text"]
-            .to_pylist()
-        )
-        testing_dataset = testing_dataset.add_column(
-            "inputs_embeds", inputs_embeds_testing
-        )
+    # testing_dataset = load_dataset(path=config.dataset, split="test")
+    # if "inputs_embeds" not in testing_dataset.column_names:
+    #     inputs_embeds_testing = get_embedding_from_server(
+    #         server_url=config.embedding_model, list_sequences=testing_dataset["text"]
+    #     )
+    #     testing_dataset = testing_dataset.add_column(
+    #         "inputs_embeds", inputs_embeds_testing
+    #     )
 
     # Initializing oracle model
     print("Creating Oracle...")
@@ -88,12 +78,15 @@ def main(args: Optional[Dict[str, Any]] = None):
     # Initializing training buffer
     # Randomly sample from training dataset
     initial_dataset = random_sampling(
-        training_dataset, num_samples=config.initinal_sequences
+        training_dataset, num_samples=config.initinal_sequences, is_init=True
     )
     # Query Oracle for y
-    initial_dataset_reward = oracle.predict(
-        torch.Tensor(initial_dataset["inputs_embeds"])
-    ).tolist()
+    initial_dataset_reward = observe_value(
+        oracle,
+        torch.Tensor(initial_dataset["inputs_embeds"]),
+        compute_ed(INIT_SEQ, initial_dataset["text"]),
+        config.fn_ver,
+    )
     initial_dataset = (
         initial_dataset.remove_columns("reward")
         .add_column("reward", initial_dataset_reward)
@@ -101,17 +94,33 @@ def main(args: Optional[Dict[str, Any]] = None):
     )
 
     # Query Oracle for y
-    testing_dataset_reward = oracle.predict(
-        torch.Tensor(testing_dataset["inputs_embeds"])
-    ).tolist()
-    testing_dataset = (
-        testing_dataset.remove_columns("reward")
-        .add_column("reward", testing_dataset_reward)
-        .cast(testing_dataset.features)
-    )
+    # testing_dataset_reward = observe_value(
+    #     oracle,
+    #     torch.Tensor(testing_dataset["inputs_embeds"]),
+    #     compute_ed(INIT_SEQ, testing_dataset["text"]),
+    #     config.fn_ver,
+    # )
+    # testing_dataset = (
+    #     testing_dataset.remove_columns("reward")
+    #     .add_column("reward", testing_dataset_reward)
+    #     .cast(testing_dataset.features)
+    # )
     # Random choose sequences with reward < 2.0 as inital sequence
-    initial_sequences = random_sampling(
-        testing_dataset, num_samples=config.n_sequences, constrained_reward=1.5
+    # initial_sequences = random_sampling(
+    #     testing_dataset, num_samples=config.n_sequences, constrained_reward=1.0
+    # )
+    init_idx = find_idx_in_dataset(training_dataset, "text", INIT_SEQ)
+    initial_sequences = training_dataset.select([init_idx])
+    initial_rewards = observe_value(
+        oracle,
+        torch.Tensor(initial_sequences["inputs_embeds"]),
+        compute_ed(INIT_SEQ, initial_sequences["text"]),
+        config.fn_ver,
+    )
+    initial_sequences = (
+        initial_sequences.remove_columns("reward")
+        .add_column("reward", initial_rewards)
+        .cast(initial_sequences.features)
     )
 
     # Merge initial_sequences to initial_dataset
@@ -120,6 +129,10 @@ def main(args: Optional[Dict[str, Any]] = None):
     if config.continue_iter:
         with open(f"{config.output_dir}/buffer.pkl", "rb") as f:
             buffer = pickle.load(f)
+        buffer_length = len(buffer["x"])
+        assert (
+            buffer_length == config.continue_iter + 1
+        ), f"Maximal continue iteration = {buffer_length - 1}"
     else:
         config.continue_iter = 0
         buffer = {
@@ -141,19 +154,17 @@ def main(args: Optional[Dict[str, Any]] = None):
 
     # Create SFT dataset for pretraining Policy
     timestamp = datetime.today().isoformat()
-    sft_ds_name = (
-        f"sft_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
-    )
+    sft_ds_name = f"sft_{config.mutant_ver}_{config.fn_ver}_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
     if not os.path.exists(f"data/{sft_ds_name}"):
         sft_ds = create_lookahead_sequences(
-            config, actor.policy.tokenizer, embedder, oracle, initial_sequences
+            config, actor.policy.tokenizer, oracle, initial_sequences, config.fn_ver
         )
         sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_train.csv")
         sft_ds.to_csv(f"data/{sft_ds_name}/{sft_ds_name}_test.csv")
 
     # SFT Training for Policy
     output_dir = os.path.join(
-        f"ckpts/sft_model_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
+        f"ckpts/sft_model_{config.mutant_ver}_{config.fn_ver}_n{config.n_sequences}_lah{config.algo_lookahead_steps}_s{config.seed}"
     )
     if not os.path.exists(output_dir):
         with open("configs/sft.yaml", "r", encoding="utf8") as stream:
@@ -170,7 +181,7 @@ def main(args: Optional[Dict[str, Any]] = None):
         start_process(
             f"CUDA_VISIBLE_DEVICES={config.ppo_gpu} accelerate launch --main_process_port {config.main_process_port} "
             "--config_file configs/single_config.yaml "
-            "/lfs/skampere1/0/nqduc/miniconda3/envs/lf/lib/python3.10/site-packages/trl/commands/scripts/sft.py "
+            "sft.py "
             f"--config {training_config_file}"
         )
 
@@ -199,6 +210,8 @@ def main(args: Optional[Dict[str, Any]] = None):
         X_train = torch.tensor(X_train)
         y_train = torch.tensor(y_train).reshape(-1, 1)
 
+        # Revert to original range for training RM
+        y_train = -torch.log(6 / (y_train + 3) - 1)
         reward_model = BayesianRidgeModel(X_train, y_train)
         joblib.dump(
             reward_model,
@@ -218,10 +231,7 @@ def main(args: Optional[Dict[str, Any]] = None):
 
         # Train new policy with rolled out dataset
         query_start_time = time.time()
-        # We must unload embedder here because we will load separated reward server
-        embedder.unload()
-        actor.train_policy(iteration=i, dataset=prompt_dataset)
-        embedder.load(config.embedding_model_name_or_path)
+        actor.train_policy(iteration=i, dataset=prompt_dataset, mutant_ver=config.mutant_ver, fn_ver=config.fn_ver)
 
         # -------------------------------------------------------
 
@@ -233,7 +243,6 @@ def main(args: Optional[Dict[str, Any]] = None):
             iteration=i,
             prevX=buffer["x"],
             prevY=buffer["y"],
-            embedder=embedder,
             reward_model=reward_model,
             n_restarts=config.n_restarts,
         )
@@ -244,17 +253,15 @@ def main(args: Optional[Dict[str, Any]] = None):
         actor.policy.unload_inference()
 
         # Query Oracle for y
-        observed = Dataset.from_dict({"text": next_X})
-        observed_emb = (
-            embedder.get_embeddings(
-                DataLoader(observed, batch_size=1),
-                config.embedding_model_name_or_path,
-                ["text"],
-            )
-            .data["text"]
-            .to_pylist()
+        observed_emb = get_embedding_from_server(
+            server_url=config.embedding_model, list_sequences=next_X
         )
-        next_y = oracle.predict(torch.tensor(observed_emb)).tolist()
+        next_y = observe_value(
+            oracle,
+            torch.tensor(observed_emb),
+            compute_ed(INIT_SEQ, next_X),
+            config.fn_ver,
+        )
         query_end_time = time.time()
 
         buffer["x"].append(next_X)

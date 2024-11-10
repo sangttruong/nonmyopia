@@ -1,18 +1,26 @@
 import copy
 import os
+import pickle
 from datetime import datetime
 
+import numpy as np
 import torch
 import yaml
-
+from botorch.acquisition import (
+    qExpectedImprovement,
+    qKnowledgeGradient,
+    qProbabilityOfImprovement,
+    qSimpleRegret,
+    qUpperConfidenceBound,
+)
 from configs import TEMPLATED_LOOKAHEAD_PROMPT
 from datasets import Dataset
 from peft import AutoPeftModelForCausalLM
 from policy import Policy
-from torch.utils.data import DataLoader
 from utils import (
     check_health,
     format_prompt,
+    get_embedding_from_server,
     run_server,
     shutdown_server,
     start_process,
@@ -35,7 +43,7 @@ class Actor:
                 f"Acquisition function `{self.config.algo}` is not implemented!"
             )
 
-    def query(self, iteration, prevX, prevY, embedder, reward_model, n_restarts=3):
+    def query(self, iteration, prevX, prevY, reward_model, n_restarts=3):
         # Query the next sequence
         X = prevX[-1]
         n_sequences = len(X)
@@ -46,26 +54,19 @@ class Actor:
         for rid in range(n_restarts):
             local_prevX = copy.deepcopy(prevX)
             local_prevy = copy.deepcopy(prevY)
-
             for step in range(self.algo_lookahead_steps):
                 next_X = self.policy.generate(local_prevX, local_prevy)
-                next_X_ds = Dataset.from_dict({"text": next_X})
-                next_X_ds_emb = (
-                    embedder.get_embeddings(
-                        DataLoader(next_X_ds, batch_size=1),
-                        self.config.embedding_model_name_or_path,
-                        ["text"],
-                    )
-                    .data["text"]
-                    .to_pylist()
+                next_X_ds_emb = get_embedding_from_server(
+                    server_url=self.config.embedding_model, list_sequences=next_X
                 )
 
                 next_y = (
                     reward_model.sample(
-                        torch.tensor(next_X_ds_emb),
+                        torch.tensor(next_X_ds_emb).unsqueeze(-2),
                         sample_size=self.config.sample_size,
                     )
                     .mean(0)
+                    .reshape(-1)
                     .float()
                     .detach()
                     .cpu()
@@ -76,24 +77,64 @@ class Actor:
                 local_prevy.append(next_y)
 
             action_X = self.policy.generate(local_prevX, local_prevy)
-            action_X_ds = Dataset.from_dict({"text": action_X})
-            action_X_ds_emb = (
-                embedder.get_embeddings(
-                    DataLoader(action_X_ds, batch_size=1),
-                    self.config.embedding_model_name_or_path,
-                    ["text"],
+            action_X_ds_emb = get_embedding_from_server(
+                server_url=self.config.embedding_model, list_sequences=action_X
+            )
+            if self.config.algo == "HES-TS-AM":
+                action_y = (
+                    reward_model.sample(
+                        torch.tensor(action_X_ds_emb).unsqueeze(-2),
+                        sample_size=self.config.sample_size,
+                    )
+                    .mean(0)
+                    .squeeze(-1)
+                    .float()
+                    .detach()
+                    .cpu()
+                    .tolist()
                 )
-                .data["text"]
-                .to_pylist()
-            )
-            action_y = (
-                reward_model.sample(torch.tensor(action_X_ds_emb))
-                .mean(0)
-                .float()
-                .detach()
-                .cpu()
-                .tolist()
-            )
+
+            elif self.config.algo == "qSR":
+                bo_acqf = qSimpleRegret(model=reward_model)
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
+            elif self.config.algo == "qEI":
+                best_f = np.array(prevY)
+                best_f = np.max(best_f, axis=0)
+                bo_acqf = qExpectedImprovement(
+                    model=reward_model, best_f=torch.tensor(best_f)
+                )
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
+            elif self.config.algo == "qPI":
+                best_f = np.array(prevY)
+                best_f = np.max(best_f, axis=0)
+                bo_acqf = qProbabilityOfImprovement(
+                    model=reward_model, best_f=torch.tensor(best_f)
+                )
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
+            elif self.config.algo == "qUCB":
+                bo_acqf = qUpperConfidenceBound(model=reward_model, beta=0.1)
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
+            elif self.config.algo == "qKG":
+                bo_acqf = qKnowledgeGradient(
+                    model=reward_model,
+                    num_fantasies=1,
+                )
+                action_y = (
+                    bo_acqf(torch.tensor(action_X_ds_emb).unsqueeze(-2)).cpu().tolist()
+                )
+
             local_prevX.append(action_X)
             local_prevy.append(action_y)
 
@@ -106,6 +147,9 @@ class Actor:
 
         for bi, si in zip(best_idx, list(range(n_sequences))):
             output.append(X_returned[bi][iteration + 1][si])
+
+        with open(f"{self.config.output_dir}/trajectory_{iteration}.pkl", "wb") as f:
+            pickle.dump((best_idx, rewards, X_returned), f)
 
         return output
 
@@ -145,6 +189,8 @@ class Actor:
         self,
         iteration,
         dataset,
+        mutant_ver,
+        fn_ver
     ) -> None:
         timestamp = datetime.today().isoformat()
         algo = self.config.algo
@@ -163,7 +209,7 @@ class Actor:
             loaded_configs["output_dir"] = output_dir
             if iteration == 0:
                 loaded_configs["model_name_or_path"] = (
-                    f"ckpts/sft_model_n{self.config.n_sequences}_lah{self.config.algo_lookahead_steps}_s{self.config.seed}"
+                    f"ckpts/sft_model_{mutant_ver}_{fn_ver}_n{self.config.n_sequences}_lah{self.config.algo_lookahead_steps}_s{self.config.seed}"
                 )
             else:
                 loaded_configs["model_name_or_path"] = os.path.join(

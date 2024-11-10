@@ -3,10 +3,8 @@ import random
 import re
 from typing import List
 
-import editdistance
-
 from transformers import AutoTokenizer, GenerationConfig
-from utils import format_prompt, random_mutation
+from utils import format_prompt, random_mutation, torch_gc, verify_seq
 from vllm import LLM, SamplingParams
 
 
@@ -28,19 +26,20 @@ class Policy:
         )
 
     def __verify_output__(self, X: List[str], Y: List[str]):
-        return [editdistance.eval(x, y) for x, y in zip(X, Y)]
+        return [verify_seq(x, y) for x, y in zip(X, Y)]
 
     def load_inference(self, iteration):
         ckpt_dir = os.path.join(self.config.output_dir, f"{iteration}")
+        torch_gc()
         self.model = LLM(
             ckpt_dir,
-            gpu_memory_utilization=0.5,
-            enforce_eager=True,
+            gpu_memory_utilization=0.75,
         )
 
     def unload_inference(self):
         del self.model
         self.model = None
+        torch_gc()
 
     def post_process(self, generations: List[str]):
         outputs = []
@@ -67,11 +66,9 @@ class Policy:
         outputs = []
 
         for pi, generations in enumerate(list_generations):
-            generations_ed = self.__verify_output__(
-                [X[pi]] * len(generations), generations
-            )
+            is_valids = self.__verify_output__([X[pi]] * len(generations), generations)
             filtered_generations = [
-                g for g, ed in zip(generations, generations_ed) if ed == 1
+                g for g, vl in zip(generations, is_valids) if vl == 1
             ]
 
             if len(filtered_generations) > 0:

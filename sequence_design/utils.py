@@ -1,3 +1,5 @@
+import gc
+import json
 import os
 import pickle
 import random
@@ -11,19 +13,151 @@ import psutil
 import requests
 import torch
 import yaml
-from configs import ALLOWED_TOKENS, LOOKAHEAD_PROMPT, POLICY_PROMPT, SYSTEM_PROMPT
-from datasets import Dataset, DatasetDict, load_dataset
+
+from configs import LOOKAHEAD_PROMPT, SYSTEM_PROMPT
+from datasets import Dataset
+from envs.proteins import PROTEINS
+from envs.synthetic_fns import F1, F2
+from Levenshtein import distance
 from sklearn.metrics import mean_absolute_error, r2_score, root_mean_squared_error
-from torch.utils.data import DataLoader
 from tqdm import tqdm
+from transformers.utils import (
+    is_torch_cuda_available,
+    is_torch_mps_available,
+    is_torch_npu_available,
+    is_torch_xpu_available,
+)
+
+MUTANT_VER = os.getenv("MUTANT_VER", "")
+assert MUTANT_VER != "", f"Invalid MUTANT_VER: {MUTANT_VER}"
+
+def import_protein_env(mutant_ver):
+    global ALLOWED_POS
+    global ALLOWED_TOKENS
+    global INIT_SEQ
+    global MAX_SEQ
+    global POLICY_PROMPT
+
+    protein_info = PROTEINS[mutant_ver]
+    POLICY_PROMPT = protein_info["POLICY_PROMPT"]
+    INIT_SEQ = protein_info["INIT_SEQ"]
+    MAX_SEQ = protein_info["MAX_SEQ"]
+    ALLOWED_POS = protein_info["ALLOWED_POS"]
+    ALLOWED_TOKENS = protein_info["ALLOWED_TOKENS"]
+    return POLICY_PROMPT, INIT_SEQ, MAX_SEQ, ALLOWED_POS, ALLOWED_TOKENS
+
+POLICY_PROMPT, INIT_SEQ, MAX_SEQ, ALLOWED_POS, ALLOWED_TOKENS = import_protein_env(MUTANT_VER)
+
+def compute_ed(original, list_str):
+    return [distance(original, x) for x in list_str]
 
 
-def random_mutation(sequence):
-    sequence_length = len(sequence)
-    edit_idxs = random.choice(list(range(sequence_length)))
-    edit_tokens = random.choice(ALLOWED_TOKENS)
-    new_sequence = sequence[:edit_idxs] + edit_tokens + sequence[edit_idxs + 1 :]
+def observe_value(oracle, embs, eds, fn_ver):
+    if fn_ver == "v1":
+        F = F1
+    elif fn_ver == "v2":
+        F = F2
+    outputs = oracle.predict(embs).tolist()
+    outputs = [x / 5 + F(ed) for x, ed in zip(outputs, eds)]
+    return outputs
+
+
+def torch_gc() -> None:
+    r"""
+    Collects GPU or NPU memory.
+    """
+    gc.collect()
+    if is_torch_xpu_available():
+        torch.xpu.empty_cache()
+    elif is_torch_npu_available():
+        torch.npu.empty_cache()
+    elif is_torch_mps_available():
+        torch.mps.empty_cache()
+    elif is_torch_cuda_available():
+        torch.cuda.empty_cache()
+
+
+def get_embedding_from_server(
+    server_url: str, list_sequences: List[str]
+) -> List[torch.Tensor]:
+    r"""
+    Gets reward scores from the API server.
+    """
+    headers = {"Content-Type": "application/json"}
+    payload = {"messages": list_sequences}
+    response = requests.post(
+        server_url,
+        json=payload,
+        headers=headers,
+        timeout=300,
+    )
+    embeddings = json.loads(response.text)["embedding"]
+    return [embedding for embedding in embeddings]
+
+
+def random_mutation(sequence, diff_prob=0.5):
+    is_diff = random.choices([0, 1], weights=[1 - diff_prob, diff_prob], k=1)[0]
+
+    if not is_diff:
+        return sequence
+
+    # Find different with INIT_SEQ
+    diff_pos = []
+    for i in range(len(INIT_SEQ)):
+        if INIT_SEQ[i] != sequence[i]:
+            diff_pos.append(i)
+
+    possible_pos = list(set(ALLOWED_POS) - set(diff_pos))
+    if len(possible_pos) == 0:
+        return sequence
+    edit_idx = random.choice(possible_pos)
+    current_token = sequence[edit_idx]
+
+    # Find possible tokens to edit
+    possible_tokens = ALLOWED_TOKENS.copy()
+    possible_tokens.remove(current_token)
+
+    # Edit token
+    new_token = random.choice(possible_tokens)
+    new_sequence = sequence[:edit_idx] + new_token + sequence[edit_idx + 1 :]
     return new_sequence
+
+
+def find_diff_index(a, b):
+    if len(a) != len(b):
+        return -1  # Return -1 if strings are not of equal length
+
+    for i in range(len(a)):
+        if a[i] != b[i]:
+            return i  # Return the index of the differing character
+    return -1  # Return -1 if no difference is found
+
+
+def verify_seq(prev_seq, curr_seq):
+    if distance(prev_seq, curr_seq) > 1:
+        return 0  # Reject - Edit distance > 1
+
+    diff_idx = find_diff_index(prev_seq, curr_seq)
+    if not diff_idx:
+        return 1  # Accept - Remain the same
+
+    # Find different with INIT_SEQ
+    diff_pos = []
+    for i in range(len(INIT_SEQ)):
+        if INIT_SEQ[i] != prev_seq[i]:
+            diff_pos.append(i)
+
+    avai_pos = list(set(ALLOWED_POS) - set(diff_pos))
+    if diff_idx not in avai_pos:
+        return 0  # Reject - Edit at wrong location
+
+    possible_tokens = ALLOWED_TOKENS.copy()
+    possible_tokens.remove(prev_seq[diff_idx])
+
+    if curr_seq[diff_idx] not in possible_tokens:
+        return 0  # Reject - Wrong token
+
+    return 1  # Accept
 
 
 def format_prompt(tokenizer, prevX: List[List[str]], prevY: List[List[float]]):
@@ -62,34 +196,38 @@ def format_prompt(tokenizer, prevX: List[List[str]], prevY: List[List[float]]):
     return prompts
 
 
-def create_lookahead_sequences(args, tokenizer, embedder, oracle, ds):
+def create_lookahead_sequences(args, tokenizer, oracle, ds, fn_ver):
     prevX = [[] for _ in range(args.algo_lookahead_steps + 2)]
     prevY = [[] for _ in range(args.algo_lookahead_steps + 2)]
-    for seq in tqdm(ds):
-        prevX[0].append(seq["text"])
-        prevY[0].append(seq["reward"])
+    for _ in tqdm(range(100), desc="Creating SFT dataset"):
+        for seq in tqdm(ds):
+            prevX[0].append(seq["text"])
+            prevY[0].append(seq["reward"])
 
-        for las in range(args.algo_lookahead_steps + 1):
-            currentX = prevX[las][-1]
+            for las in range(args.algo_lookahead_steps + 1):
+                currentX = prevX[las][-1]
 
-            # Random mutation 10 times
-            mutated_sequences = [random_mutation(currentX) for i in range(10)]
-            mutation_ds = Dataset.from_dict({"text": mutated_sequences})
-            mutation_emb = (
-                embedder.get_embeddings(
-                    DataLoader(mutation_ds, batch_size=1),
-                    args.embedding_model_name_or_path,
-                    ["text"],
+                # Random mutation 10 times
+                mutated_sequences = [
+                    random_mutation(currentX, diff_prob=0.94) for i in range(1)
+                ]
+                mutation_emb = get_embedding_from_server(
+                    server_url=args.embedding_model, list_sequences=mutated_sequences
                 )
-                .data["text"]
-                .to_pylist()
-            )
-            mutation_y = oracle.predict(torch.tensor(mutation_emb))
 
-            # Select the best
-            best_idx = mutation_y.argmax()
-            prevX[las + 1].append(mutated_sequences[best_idx])
-            prevY[las + 1].append(mutation_y[best_idx])
+                mutation_y = torch.tensor(
+                    observe_value(
+                        oracle,
+                        torch.tensor(mutation_emb),
+                        compute_ed(INIT_SEQ, mutated_sequences),
+                        fn_ver,
+                    )
+                )
+
+                # Select the best
+                best_idx = mutation_y.argmax()
+                prevX[las + 1].append(mutated_sequences[best_idx])
+                prevY[las + 1].append(mutation_y[best_idx])
 
     list_text = format_prompt(tokenizer, prevX, prevY)
 
@@ -161,7 +299,17 @@ def random_sampling(dataset, num_samples, *args, **kwargs):
         )
     total_samples = len(dataset)
     indices = random.sample(range(total_samples), num_samples)
+    if "is_init" in kwargs:
+        if kwargs["is_init"]:
+            idx = find_idx_in_dataset(dataset, "text", MAX_SEQ)
+            indices.extend([idx] * 1)
     return dataset.select(indices)
+
+
+def find_idx_in_dataset(D, field, value):
+    for i, s in enumerate(D):
+        if s[field] == value:
+            return i
 
 
 def run_server(cmd_string):

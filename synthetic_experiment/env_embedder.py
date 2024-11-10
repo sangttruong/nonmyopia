@@ -10,7 +10,10 @@ class DiscreteEmbbeder:
         for i in range(self.num_categories):
             midpoint = self.bounds[..., 0] + self.range_size * (i + 0.5)
             # rand uniform in range (- range_size/2, + range_size/2)
-            rand = torch.rand(1, device=bounds.device) * self.range_size - self.range_size / 2
+            rand = (
+                torch.rand(1, device=bounds.device) * self.range_size
+                - self.range_size / 2
+            )
             midpoint = midpoint + rand
 
             # clip to bounds
@@ -29,14 +32,10 @@ class DiscreteEmbbeder:
             sentence (torch.Tensor): A tensor of shape `... x num_categories` one
                 hot vector
         """
-        assert torch.any(sentence >= 0)
-        assert torch.any(sentence < self.num_categories)
         return (self.cat_range * sentence).sum(dim=-1)
 
     def decode(self, sentence, *args, **kwargs):
         # Con2Cat
-        assert torch.any(sentence >= self.bounds[..., 0])
-        assert torch.any(sentence <= self.bounds[..., 1])
         cat = (sentence - self.bounds[..., 0]) / self.range_size
         cat = cat.long()
         cat[cat >= self.num_categories] = self.num_categories - 1
@@ -44,6 +43,7 @@ class DiscreteEmbbeder:
         return cat
 
     def to(self, device="cpu", dtype=torch.float32):
+        self.bounds = self.bounds.to(device=device, dtype=dtype)
         self.cat_range = self.cat_range.to(device=device, dtype=dtype)
         self.range_size = self.range_size.to(device=device, dtype=dtype)
         self.device = device

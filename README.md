@@ -48,11 +48,19 @@ python test/test_oracle_convergence.py \
 ```
 Please note that this script does only accept embedded datasets that contain two columns, `inputs_embeds` and `rewards.`
 
-To run the full pipeline, you might want to first look at [full_pipeline.yaml](]sequence_design/configs/full_pipeline.yaml). In this file, you must pay attention to 
+### Create protein sequence dataset
+To create a protein sequence dataset, one can use the script [sequence_design/create_mutation_graph.py](sequence_design/create_mutation_graph.py). This script will generate a graph of all possible mutations of a protein sequence. If you want to add more protein environments, you can add them in this file. The script will automatically create dataset with approriate format on Huggingface repository. To run the script, simply use the below command
+```bash
+python emb_server.py --model google/gemma-7b --host 0.0.0.0 --port 1337 --batch_size=8
+python create_mutation_graph.py --mutant_ver v1
+```
+
+### Run the full pipeline
+To run the full pipeline, you might want to first look at [hes_ts_am-1seq-64rs-s42.yaml](]sequence_design/configs/hes_ts_am-1seq-64rs-s42.yaml). In this file, you must pay attention to 
 ‘’’
-dataset: This is the Huggingface repository of the dataset. Note that the dataset should contain `text` and `reward` columns.
+dataset: This is the Huggingface repository of the dataset. Note that the dataset should contain `text` and `reward` columns. It should be the dataset that you created in the previous step.
 algo: Which acquisition function you want to use.
-embedding_model_name_or_path: Huggingface repo of model used as embedding
+embedding_model: URL of the embedding server used to embed the dataset.
 policy_model_name_or_path: Huggingface repo of model used as generator
 output_dir: Path to store all results.
 ‘’’
@@ -63,14 +71,15 @@ output_dir: Path to store model checkpoints when running PPO.
 ```
 Finally, you can run the code by using the below command
 ```bash
+export MUTANT_VER=v1 # v1, v2, v3, v4, v5
 python main.py --config <config_file>
 ```
-Currently, we have 6 configuration files. Each file is corresponding to each acquisition function.
-H-EntropySearch: [configs/hes_ts_am.yaml](sequence_design/configs/hes_ts_am.yaml)
-Expected Improvement: [configs/ei.yaml](sequence_design/configs/ei.yaml)
-Simple Regret: [configs/sr.yaml](sequence_design/configs/sr.yaml)
-Probability of Improvement: [configs/pi.yaml](sequence_design/configs/pi.yaml)
-Upper Confidence Bound: [configs/ucb.yaml](sequence_design/configs/ucb.yaml)
-Knowledge Gradient: [configs/kg.yaml](sequence_design/configs/kg.yaml)
+You can find some configuration files in [configs](configs) folder. You can use them as a reference to create your own configuration file.
 
 To start WandB sweep, please follow the same procedure as those in synthetic experiments. The WandB configuration file is at [sequence_design/wnb_configs/full.yaml](sequence_design/wnb_configs/full.yaml)
+
+### Draw the metrics
+To draw the metrics, you can use the below command
+```bash
+python draw_metrics.py --mutant_ver $MUTANT_VER --FN_VER $FN_VER
+```

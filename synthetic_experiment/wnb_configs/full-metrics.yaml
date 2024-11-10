@@ -1,0 +1,19 @@
+program: compute_metrics.py
+project: nonmyopia-metrics
+method: grid
+metric:
+    goal: minimize
+    name: c_regret
+parameters:
+    seed: 
+        values: [2, 3, 5]
+    env_name: 
+        values: [Ackley, Ackley4D, Alpine, Cosine8, Hartmann, HolderTable, Levy, StyblinskiTang, SynGP]
+    env_noise:  
+        values: [0.0, 0.01, 0.05]
+    env_discretized: 
+        values: [False]
+    algo: 
+        values: [HES-TS-AM-20, HES-TS-20, qSR, qEI, qPI, qUCB, qKG, qMSL]
+    cost_fn: 
+        values: [euclidean, manhattan, r-spotlight, non-markovian]

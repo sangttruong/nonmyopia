@@ -1,23 +1,24 @@
 # This file is made for analyzing world models
-from utils import set_seed, make_env
-import matplotlib.pyplot as plt
-from gpytorch.mlls import ExactMarginalLogLikelihood
-from gpytorch.constraints import Interval
-from botorch.models.transforms.outcome import Standardize
-from botorch.models.transforms.input import Normalize
-from botorch.models import SingleTaskGP
-from botorch import fit_gpytorch_model
-from argparse import ArgumentParser
-from pathlib import Path
-from tqdm import tqdm
-import numpy as np
-import torch
 import copy
 import os
+from argparse import ArgumentParser
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-from tueplots import bundles
-from gpytorch.priors.torch_priors import GammaPrior
+import torch
+from botorch import fit_gpytorch_model
+from botorch.models import SingleTaskGP
+from botorch.models.transforms.input import Normalize
+from botorch.models.transforms.outcome import Standardize
+from gpytorch.constraints import Interval
 from gpytorch.kernels import MaternKernel, ScaleKernel
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from gpytorch.priors.torch_priors import GammaPrior
+from tqdm import tqdm
+from tueplots import bundles
+from utils import make_env, set_seed
 
 plt.rcParams.update(bundles.neurips2023())
 
@@ -141,14 +142,7 @@ class Parameters:
         return "\n".join(output)
 
 
-def eval(
-    func,
-    model,
-    cfg,
-    eval_fns,
-    data_x=None,
-    n_points=10000
-):
+def eval(func, model, cfg, eval_fns, data_x=None, n_points=10000):
     r"""Evaluate function."""
 
     # Evaluate ###############################################################
@@ -156,7 +150,7 @@ def eval(
         data_x = np.random.uniform(
             low=cfg.bounds[..., 0].cpu(),
             high=cfg.bounds[..., 1].cpu(),
-            size=[n_points, local_parms.x_dim]
+            size=[n_points, local_parms.x_dim],
         )
         data_x = torch.tensor(data_x, dtype=torch.float32, device=cfg.device)
 
@@ -190,10 +184,8 @@ def plot(
     else:
         bounds_plot_x, bounds_plot_y = cfg.bounds.cpu()
 
-    ax[0].set(xlabel="$x_1$", ylabel="$x_2$",
-              xlim=bounds_plot_x, ylim=bounds_plot_y)
-    ax[1].set(xlabel="$x_1$", ylabel="$x_2$",
-              xlim=bounds_plot_x, ylim=bounds_plot_y)
+    ax[0].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_x, ylim=bounds_plot_y)
+    ax[1].set(xlabel="$x_1$", ylabel="$x_2$", xlim=bounds_plot_x, ylim=bounds_plot_y)
 
     ax[0].set_title(label=cfg.env_name)
     ax[1].set_title(label="Posterior mean")
@@ -205,8 +197,7 @@ def plot(
     XY = torch.tensor(np.array([X, Y]))  # >> 2 x 100 x 100
     Z = func(XY.reshape(2, -1).T).reshape(X.shape)
 
-    Z_post = model.posterior(
-        XY.to(cfg.device, cfg.torch_dtype).permute(1, 2, 0)).mean
+    Z_post = model.posterior(XY.to(cfg.device, cfg.torch_dtype).permute(1, 2, 0)).mean
     # >> 100 x 100 x 1
     Z_post = Z_post.squeeze(-1).cpu().detach()
 
@@ -237,22 +228,20 @@ def plot(
         ax[0].scatter(*embedder.decode(data_x).long().T, label="Data")
 
         # Draw grid
-        plt.vlines(np.arange(0, n_space), 0, n_space,
-                   linestyles="dashed", alpha=0.05)
-        plt.hlines(np.arange(0, n_space), 0, n_space,
-                   linestyles="dashed", alpha=0.05)
+        plt.vlines(np.arange(0, n_space), 0, n_space, linestyles="dashed", alpha=0.05)
+        plt.hlines(np.arange(0, n_space), 0, n_space, linestyles="dashed", alpha=0.05)
 
         ax[0].set_xticks(range(0, n_space, 2))
         ax[0].set_yticks(range(0, n_space, 2))
 
     else:
-        ax[0].scatter(data_x[..., 0],
-                      data_x[..., 1], label="Data")
+        ax[0].scatter(data_x[..., 0], data_x[..., 1], label="Data")
 
     fig.legend()
 
     plt.savefig(
-        f"{cfg.save_dir}/{cfg.env_name}_npoints{cfg.n_points}_seed{cfg.seed}.pdf")
+        f"{cfg.save_dir}/{cfg.env_name}_npoints{cfg.n_points}_seed{cfg.seed}.pdf"
+    )
     plt.close()
 
 
@@ -266,11 +255,11 @@ def main(env, local_parms):
     n_partitions = int(local_parms.n_points ** (1 / local_parms.x_dim))
     remaining_points = local_parms.n_points - n_partitions**local_parms.x_dim
 
-    ranges = np.linspace(bounds[..., 0], bounds[..., 1], n_partitions+1).T
+    ranges = np.linspace(bounds[..., 0], bounds[..., 1], n_partitions + 1).T
     range_bounds = np.stack((ranges[:, :-1], ranges[:, 1:]), axis=-1)
-    cartesian_idxs = np.array(np.meshgrid(*([list(range(n_partitions))] * local_parms.x_dim))).T.reshape(
-        -1, local_parms.x_dim
-    )
+    cartesian_idxs = np.array(
+        np.meshgrid(*([list(range(n_partitions))] * local_parms.x_dim))
+    ).T.reshape(-1, local_parms.x_dim)
     cartesian_rb = range_bounds[list(range(local_parms.x_dim)), cartesian_idxs]
     train_X = np.concatenate(
         (
@@ -289,7 +278,8 @@ def main(env, local_parms):
     )
 
     train_X = torch.tensor(
-        train_X, dtype=local_parms.torch_dtype, device=local_parms.device)
+        train_X, dtype=local_parms.torch_dtype, device=local_parms.device
+    )
     train_y = env(train_X).reshape(-1, 1)
 
     surr_model = SingleTaskGP(
@@ -301,8 +291,7 @@ def main(env, local_parms):
     fit_gpytorch_model(mll)
 
     def rmse_fn(y, yhat):
-        return torch.sqrt(
-            torch.nn.functional.mse_loss(y, yhat))
+        return torch.sqrt(torch.nn.functional.mse_loss(y, yhat))
 
     def rsquare_fn(y, yhat):
         # Calculate residual sum of squares (RSS)
@@ -341,10 +330,7 @@ def main(env, local_parms):
     return train_eval_vals, test_eval_vals
 
 
-def plot_means_stds(
-    data,
-    save_file
-):
+def plot_means_stds(data, save_file):
     fig, ax = plt.subplots()
     for env_name in data.keys():
         train_means = data[env_name]["train_means"]
@@ -359,10 +345,10 @@ def plot_means_stds(
         )
         ax.fill_between(
             list(train_means.keys()),
-            np.array(list(train_means.values()))[..., 1] -
-            np.array(list(train_stds.values()))[..., 1],
-            np.array(list(train_means.values()))[..., 1] +
-            np.array(list(train_stds.values()))[..., 1],
+            np.array(list(train_means.values()))[..., 1]
+            - np.array(list(train_stds.values()))[..., 1],
+            np.array(list(train_means.values()))[..., 1]
+            + np.array(list(train_stds.values()))[..., 1],
             alpha=0.2,
         )
 
@@ -374,10 +360,10 @@ def plot_means_stds(
         )
         ax.fill_between(
             list(test_means.keys()),
-            np.array(list(test_means.values()))[..., 1] -
-            np.array(list(test_stds.values()))[..., 1],
-            np.array(list(test_means.values()))[..., 1] +
-            np.array(list(test_stds.values()))[..., 1],
+            np.array(list(test_means.values()))[..., 1]
+            - np.array(list(test_stds.values()))[..., 1],
+            np.array(list(test_means.values()))[..., 1]
+            + np.array(list(test_stds.values()))[..., 1],
             alpha=0.1,
         )
 
@@ -391,8 +377,7 @@ def plot_means_stds(
 if __name__ == "__main__":
     # Parse args
     parser = ArgumentParser()
-    parser.add_argument("--seeds", nargs="+", type=int,
-                        default=[2, 3, 5, 7, 11])
+    parser.add_argument("--seeds", nargs="+", type=int, default=[2, 3, 5, 7, 11])
     parser.add_argument("--env_names", nargs="+", type=str, default=["SynGP"])
     parser.add_argument("--env_noise", type=float, default=0.0)
     parser.add_argument("--env_discretized", action="store_true")
@@ -422,20 +407,50 @@ if __name__ == "__main__":
         test_means = {}
         test_stds = {}
 
-        if os.path.exists(f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_train.csv") and os.path.exists(f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_test.csv"):
+        if os.path.exists(
+            f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_train.csv"
+        ) and os.path.exists(
+            f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_test.csv"
+        ):
             train_df = pd.read_csv(
-                f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_train.csv")
-            train_means = {p: [x, y] for p, x, y in zip(
-                train_df["n_points"].values, train_df["rmse_mean"].values, train_df["rsquare_mean"].values)}
-            train_stds = {p: [x, y] for p, x, y in zip(
-                train_df["n_points"].values, train_df["rmse_std"].values, train_df["rsquare_std"].values)}
+                f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_train.csv"
+            )
+            train_means = {
+                p: [x, y]
+                for p, x, y in zip(
+                    train_df["n_points"].values,
+                    train_df["rmse_mean"].values,
+                    train_df["rsquare_mean"].values,
+                )
+            }
+            train_stds = {
+                p: [x, y]
+                for p, x, y in zip(
+                    train_df["n_points"].values,
+                    train_df["rmse_std"].values,
+                    train_df["rsquare_std"].values,
+                )
+            }
 
             test_df = pd.read_csv(
-                f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_test.csv")
-            test_means = {p: [x, y] for p, x, y in zip(
-                test_df["n_points"].values, test_df["rmse_mean"].values, test_df["rsquare_mean"].values)}
-            test_stds = {p: [x, y] for p, x, y in zip(
-                test_df["n_points"].values, test_df["rmse_std"].values, test_df["rsquare_std"].values)}
+                f"gp_results/{env_name}_noise{args.env_noise}/{env_name}_test.csv"
+            )
+            test_means = {
+                p: [x, y]
+                for p, x, y in zip(
+                    test_df["n_points"].values,
+                    test_df["rmse_mean"].values,
+                    test_df["rsquare_mean"].values,
+                )
+            }
+            test_stds = {
+                p: [x, y]
+                for p, x, y in zip(
+                    test_df["n_points"].values,
+                    test_df["rmse_std"].values,
+                    test_df["rsquare_std"].values,
+                )
+            }
         else:
             for n_points in tqdm([1, 5, 10, 20, 50, 100, 200, 500, 1000, 2000]):
                 # for n_points in tqdm([100, 500]):
@@ -467,14 +482,16 @@ if __name__ == "__main__":
                 f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
                 for n_points in train_means.keys():
                     f.write(
-                        f"{n_points},{train_means[n_points][0]},{train_stds[n_points][0]},{train_means[n_points][1]},{train_stds[n_points][1]}\n")
+                        f"{n_points},{train_means[n_points][0]},{train_stds[n_points][0]},{train_means[n_points][1]},{train_stds[n_points][1]}\n"
+                    )
 
             save_path = f"{local_parms.save_dir}/{local_parms.env_name}_test.csv"
             with open(save_path, "w") as f:
                 f.write("n_points,rmse_mean,rmse_std,rsquare_mean,rsquare_std\n")
                 for n_points in test_means.keys():
                     f.write(
-                        f"{n_points},{test_means[n_points][0]},{test_stds[n_points][0]},{test_means[n_points][1]},{test_stds[n_points][1]}\n")
+                        f"{n_points},{test_means[n_points][0]},{test_stds[n_points][0]},{test_means[n_points][1]},{test_stds[n_points][1]}\n"
+                    )
 
             print(f"Saved to {save_path}")
 
@@ -492,6 +509,8 @@ if __name__ == "__main__":
 
     # Plot
     if len(args.env_names) > 1:
-        plot_path = f"gp_results/{'+'.join(args.env_names)}_noise{args.env_noise}_r2.pdf"
+        plot_path = (
+            f"gp_results/{'+'.join(args.env_names)}_noise{args.env_noise}_r2.pdf"
+        )
         plot_means_stds(eval_metrics, plot_path)
         print(f"Saved plot to {plot_path}")

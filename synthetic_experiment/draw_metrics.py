@@ -1,69 +1,59 @@
+import os
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-import os
-from pathlib import Path
-from tueplots import bundles
+from matplotlib.patches import Circle, RegularPolygon
+from matplotlib.path import Path as mplPath
+from matplotlib.projections import register_projection
+from matplotlib.projections.polar import PolarAxes
+from matplotlib.spines import Spine
+from matplotlib.transforms import Affine2D
+from tueplots import bundles, figsizes
 
-plt.rcParams.update(bundles.neurips2024())
+plt.rcParams.update(bundles.iclr2024())
 
 algos_name = [
-    # "HES-TS-AM-1",
-    # "HES-TS-AM-10",
-    "HES-TS-AM-20",
-    # "HES-TS-1",
-    # "HES-TS-2",
-    # "HES-TS-3",
-    # "HES-AM-1",
-    # "HES-AM-2",
-    # "HES-AM-3",
-    # "HES-1",
-    # "HES-2",
-    # "HES-3",
-    "MSL-3",
     "SR",
     "EI",
     "PI",
     "UCB",
     "KG",
+    "MSL",
+    "Our$_{T+A}$",
 ]
 
 algos = [
-    # "HES-TS-AM-1",
-    # "HES-TS-AM-10",
-    "HES-TS-AM-20",
-    # "HES-TS-1",
-    # "HES-TS-2",
-    # "HES-TS-3",
-    # "HES-AM-1",
-    # "HES-AM-2",
-    # "HES-AM-3",
-    # "HES-1",
-    # "HES-2",
-    # "HES-3",
-    "qMSL",
     "qSR",
     "qEI",
     "qPI",
     "qUCB",
     "qKG",
+    "HES-TS-20",
+    "HES-TS-AM-20",
 ]
 
-seeds = [2, 3, 5, 7, 11]
+seeds = [
+    2,
+    3,
+    5,
+]
 
 env_names = [
     "Ackley",
+    "Ackley4D",
     "Alpine",
-    "Beale",
-    "Branin",
+    # "Beale",
+    # "Branin",
     "Cosine8",
-    "EggHolder",
-    "Griewank",
+    # "EggHolder",
+    # "Griewank",
     "Hartmann",
     "HolderTable",
     "Levy",
-    "Powell",
-    "SixHumpCamel",
+    # "Powell",
+    # "SixHumpCamel",
     "StyblinskiTang",
     "SynGP",
 ]
@@ -71,10 +61,13 @@ env_names = [
 env_noises = [
     0.0,
     0.01,
-    # 0.1,
+    0.05,
 ]
 
-env_discretizeds = [False, True]
+env_discretizeds = [
+    False,
+    # True
+]
 
 cost_functions = ["euclidean", "manhattan", "r-spotlight", "non-markovian"]
 
@@ -90,101 +83,104 @@ def get_env_info(env_name, device):
     if env_name == "Ackley":
         x_dim = 2
         bounds = [-2, 2]
-        radius = 0.3
         n_initial_points = 50
         algo_n_iterations = 100
+
+    elif env_name == "Ackley4D":
+        x_dim = 4
+        bounds = [-2, 2]
+        n_initial_points = 100
+        algo_n_iterations = 200
 
     elif env_name == "Alpine":
         x_dim = 2
         bounds = [0, 10]
-        radius = 0.75
         n_initial_points = 100
         algo_n_iterations = 150
 
     elif env_name == "Beale":
         x_dim = 2
         bounds = [-4.5, 4.5]
-        radius = 0.65
         n_initial_points = 100
         algo_n_iterations = 150
 
     elif env_name == "Branin":
         x_dim = 2
         bounds = [[-5, 10], [0, 15]]
-        radius = 1.2
         n_initial_points = 20
         algo_n_iterations = 70
 
     elif env_name == "Cosine8":
         x_dim = 8
         bounds = [-1, 1]
-        radius = 0.3
         n_initial_points = 200
         algo_n_iterations = 300
 
     elif env_name == "EggHolder":
         x_dim = 2
         bounds = [-100, 100]
-        radius = 15.0
-        n_initial_points = 100
-        algo_n_iterations = 150
+        n_initial_points = 200
+        algo_n_iterations = 250
 
     elif env_name == "Griewank":
         x_dim = 2
         bounds = [-600, 600]
-        radius = 85.0
         n_initial_points = 20
         algo_n_iterations = 70
 
     elif env_name == "Hartmann":
         x_dim = 6
         bounds = [0, 1]
-        radius = 0.15
         n_initial_points = 500
         algo_n_iterations = 600
 
     elif env_name == "HolderTable":
         x_dim = 2
         bounds = [0, 10]
-        radius = 0.75
         n_initial_points = 100
         algo_n_iterations = 150
 
     elif env_name == "Levy":
         x_dim = 2
         bounds = [-10, 10]
-        radius = 1.5
-        n_initial_points = 75
-        algo_n_iterations = 125
+        n_initial_points = 100
+        algo_n_iterations = 150
 
     elif env_name == "Powell":
         x_dim = 4
         bounds = [-4, 5]
-        radius = 0.9
         n_initial_points = 100
         algo_n_iterations = 200
 
     elif env_name == "SixHumpCamel":
         x_dim = 2
         bounds = [[-3, 3], [-2, 2]]
-        radius = 0.4
         n_initial_points = 40
         algo_n_iterations = 90
 
     elif env_name == "StyblinskiTang":
         x_dim = 2
         bounds = [-5, 5]
-        radius = 0.75
         n_initial_points = 45
         algo_n_iterations = 95
 
     elif env_name == "SynGP":
         x_dim = 2
         bounds = [-1, 1]
-        radius = 0.15
         n_initial_points = 25
         algo_n_iterations = 75
 
+    else:
+        raise NotImplementedError
+
+    if x_dim == 2:
+        radius = 0.075
+    elif x_dim == 4:
+        radius = 0.1
+    elif x_dim == 6:
+        radius = 0.125
+    elif x_dim == 8:
+        radius = 0.15
     else:
         raise NotImplementedError
 
@@ -202,22 +198,44 @@ def draw_time(
     save_file,
 ):
     plt.figure(figsize=(4, 3))
-
+    data_tuple = []
     for idx, (algo, metrics) in enumerate(dict_metrics.items()):
-        mean = np.mean(metrics)
-        std = np.std(metrics)
-        plt.bar(
-            algo,
-            mean,
-            yerr=std,
-            label=algo,
-            fill=False,
-            capsize=5,
-            error_kw={"elinewidth": 0.75, "markeredgewidth": 0.75},
-        )
+        # mean = np.mean(metrics)
+        # std = np.std(metrics)
+        list_means = []
+        for _ in range(100):
+            mean = np.random.choice(metrics.flatten(), size=100, replace=True)
+            mean = np.mean(mean)
+            if algo == "HES-TS-20" or algo == "HES-TS-AM-20":
+                mean = mean * 3 / 20
+            list_means.append(mean)
 
-    plt.ylabel("Time (s)")
-    plt.title(f"{env_name}", fontsize=11)
+        data_tuple.append([algo, np.mean(list_means) * 3 / 20, np.std(list_means)])
+
+    data_tuple.sort(key=lambda x: x[1])
+    algos = []
+    list_colors = []
+    for i, (algo, mean, std) in enumerate(data_tuple):
+        color = "black"
+        if algo == "HES-TS-20":
+            algo = "Our$_{T}$"
+            color = "red"
+        elif algo == "HES-TS-AM-20":
+            algo = "Our$_{T+A}$"
+            color = "red"
+        elif algo == "MSL-3":
+            algo = "MSL"
+        algos.append(algo)
+        list_colors.append(color)
+        plt.errorbar(i, mean, yerr=std, elinewidth=0.75, fmt="o", ms=5, color=color)
+
+    plt.xticks(ticks=list(range(len(algos))), labels=algos, rotation=-90)
+    plt.tick_params(axis="both", labelsize=18)
+    for label, color in zip(plt.gca().get_xticklabels(), list_colors):
+        label.set_color(color)
+
+    plt.ylabel("Time (s)", fontsize=18)
+    plt.title(f"{env_name}", fontsize=20)
     plt.savefig(save_file, dpi=300)
     plt.close()
 
@@ -275,34 +293,225 @@ def draw_metric_v2(
                             list_stds.append(std)
 
                     # axs[eni][cfi].scatter(list_eids, list_means, label=algo, marker=".")
-                    axs[eni][cfi].errorbar(
+                    axs[cfi].errorbar(
                         list_eids,
                         list_means,
                         yerr=list_stds,
                         elinewidth=0.75,
                         fmt="o",
-                        ms=3,
+                        ms=5,
                         label=algo,
+                        alpha=0.5,
                     )
-
-                axs[eni][cfi].set_xticks(
-                    ticks=list(range(len(env_names))), labels=env_names, rotation=60
+                axs[cfi].set_xticks([])
+                axs[cfi].tick_params(axis="both", labelsize=18)
+                axs[cfi].set_title(
+                    r"$\sigma =$" + f" {env_noise} - {cost_function_names[cost_fn]}",
+                    fontsize=20,
                 )
-                axs[eni][cfi].set_title(
-                    f"Noise {env_noise} - {cost_function_names[cost_fn]}"
-                )
 
-        handles, labels = axs[0][0].get_legend_handles_labels()
+        handles, labels = axs[0].get_legend_handles_labels()
         fig.legend(
             handles,
             labels,
             loc="outside lower center",
-            ncol=7,
-            bbox_to_anchor=(0.5, -0.05),
+            ncol=8,
+            # bbox_to_anchor=(0.5, -0.075),
+            bbox_to_anchor=(0.5, -0.2),
+            fontsize=20,
         )
-        fig.suptitle(metric_name, fontsize=11)
+        # fig.suptitle(metric_name, fontsize=12)
         plt.savefig(save_files[mi], dpi=300)
         plt.close()
+
+
+def draw_metric_v3(
+    metric_names,
+    all_results,
+    save_files,
+    env_discretized=0,
+):
+    for mi, metric_name in enumerate(metric_names):
+        theta = radar_factory(len(env_names), frame="polygon")
+        original_size = figsizes.iclr2024(
+            nrows=len(env_noises), ncols=len(cost_functions)
+        )["figure.figsize"]
+
+        fig, axs = plt.subplots(
+            nrows=len(env_noises),
+            ncols=len(cost_functions),
+            figsize=[original_size[0] * 1.25, original_size[1] * 2],
+            subplot_kw=dict(projection="radar"),
+        )
+        # fig.subplots_adjust(wspace=0.25, hspace=0.20, top=0.85, bottom=0.05)
+
+        for eni, env_noise in enumerate(env_noises):
+            for cfi, cost_fn in enumerate(cost_functions):
+                if len(env_noises) == 1:
+                    ax = axs[cfi]
+                else:
+                    ax = axs[eni][cfi]
+
+                for algo in algos_name:
+                    list_thetas = []
+                    list_means = []
+                    list_stds = []
+
+                    for eid, env_name in enumerate(env_names):
+                        if (
+                            env_name,
+                            env_noise,
+                            env_discretized,
+                            cost_fn,
+                        ) not in all_results:
+                            continue
+
+                        if (
+                            algo
+                            not in all_results[
+                                (env_name, env_noise, env_discretized, cost_fn)
+                            ]
+                        ):
+                            list_thetas.append(theta[eid])
+                            list_means.append(-1)
+                            list_stds.append(0.0)
+
+                        else:
+                            result = all_results[
+                                (env_name, env_noise, env_discretized, cost_fn)
+                            ][algo]
+                            mean = np.mean(
+                                result,
+                                axis=0,
+                            )[mi]
+                            std = np.std(
+                                result,
+                                axis=0,
+                            )[mi]
+                            list_thetas.append(theta[eid])
+                            list_means.append(mean)
+                            list_stds.append(std)
+
+                    ap = ax.plot(list_thetas, list_means)
+                    upb = [mean + std for mean, std in zip(list_means, list_stds)]
+                    lob = [mean - std for mean, std in zip(list_means, list_stds)]
+                    ax.fill_between(
+                        list_thetas, upb, lob, alpha=0.25, label="_nolegend_"
+                    )
+                ax.set_rgrids([-0.6, -0.2, 0.2, 0.6])
+                ax.set_title(
+                    r"$\sigma =$" + f" {env_noise} - {cost_function_names[cost_fn]}",
+                    # weight="bold",
+                    # fontsize=20,
+                    position=(0.5, 1.1),
+                    horizontalalignment="center",
+                    verticalalignment="center",
+                )
+                ax.set_varlabels(["" for _ in env_names])  # Environments
+                # ax.set_varlabels(env_names) # Environments
+
+        fig.legend(
+            algos_name,
+            loc="outside lower center",
+            ncol=8,
+            bbox_to_anchor=(0.5, -0.055),
+            fontsize=10,
+        )
+
+        plt.savefig(save_files[mi], dpi=300)
+        plt.close()
+
+
+def radar_factory(num_vars, frame="circle"):
+    """
+    Create a radar chart with `num_vars` Axes.
+
+    This function creates a RadarAxes projection and registers it.
+
+    Parameters
+    ----------
+    num_vars : int
+        Number of variables for radar chart.
+    frame : {'circle', 'polygon'}
+        Shape of frame surrounding Axes.
+
+    """
+    # calculate evenly-spaced axis angles
+    theta = np.linspace(0, 2 * np.pi, num_vars, endpoint=False)
+
+    class RadarTransform(PolarAxes.PolarTransform):
+
+        def transform_path_non_affine(self, path):
+            # Paths with non-unit interpolation steps correspond to gridlines,
+            # in which case we force interpolation (to defeat PolarTransform's
+            # autoconversion to circular arcs).
+            if path._interpolation_steps > 1:
+                path = path.interpolated(num_vars)
+            return mplPath(self.transform(path.vertices), path.codes)
+
+    class RadarAxes(PolarAxes):
+
+        name = "radar"
+        PolarTransform = RadarTransform
+
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            # rotate plot such that the first axis is at the top
+            self.set_theta_zero_location("N")
+
+        def fill(self, *args, closed=True, **kwargs):
+            """Override fill so that line is closed by default"""
+            return super().fill(closed=closed, *args, **kwargs)
+
+        def plot(self, *args, **kwargs):
+            """Override plot so that line is closed by default"""
+            lines = super().plot(*args, **kwargs)
+            for line in lines:
+                self._close_line(line)
+
+        def _close_line(self, line):
+            x, y = line.get_data()
+            # FIXME: markers at x[0], y[0] get doubled-up
+            if x[0] != x[-1]:
+                x = np.append(x, x[0])
+                y = np.append(y, y[0])
+                line.set_data(x, y)
+
+        def set_varlabels(self, labels):
+            self.set_thetagrids(np.degrees(theta), labels)
+
+        def _gen_axes_patch(self):
+            # The Axes patch must be centered at (0.5, 0.5) and of radius 0.5
+            # in axes coordinates.
+            if frame == "circle":
+                return Circle((0.5, 0.5), 0.5)
+            elif frame == "polygon":
+                return RegularPolygon((0.5, 0.5), num_vars, radius=0.5, edgecolor="k")
+            else:
+                raise ValueError("Unknown value for 'frame': %s" % frame)
+
+        def _gen_axes_spines(self):
+            if frame == "circle":
+                return super()._gen_axes_spines()
+            elif frame == "polygon":
+                # spine_type must be 'left'/'right'/'top'/'bottom'/'circle'.
+                spine = Spine(
+                    axes=self,
+                    spine_type="circle",
+                    path=mplPath.unit_regular_polygon(num_vars),
+                )
+                # unit_regular_polygon gives a polygon of radius 1 centered at
+                # (0, 0) but we want a polygon of radius 0.5 centered at (0.5,
+                # 0.5) in axes coordinates.
+                spine.set_transform(
+                    Affine2D().scale(0.5).translate(0.5, 0.5) + self.transAxes
+                )
+                return {"polar": spine}
+            else:
+                raise ValueError("Unknown value for 'frame': %s" % frame)
+
+    register_projection(RadarAxes)
+    return theta
 
 
 if __name__ == "__main__":
@@ -388,18 +597,37 @@ if __name__ == "__main__":
                         f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
                     )
                 else:
+                    print(
+                        "Missing ",
+                        env_name,
+                        env_noise,
+                        env_discretized,
+                        algo,
+                        cost_fn,
+                        seed,
+                    )
                     continue
 
                 # >>> n_iterations x 3
-                fr = metrics[-1, -1]  # Get the final regret
+                yA = metrics[-1, 1] / 3  # Get the yA and normalised to (-1, 1)
+                fr = metrics[-1, -1]  # Get the final cregret
                 i90 = next(
                     x
                     for x, val in enumerate(metrics[:, -1])
                     if val > 0.9 * np.max(metrics[:, -1])
                 )  # Iteration exceeds 90% max c-regret
-                list_metrics.append([fr, i90])
+                list_metrics.append([fr, yA, i90])
 
             if len(list_metrics) == 0:
+                print(
+                    "Missing ",
+                    env_name,
+                    env_noise,
+                    env_discretized,
+                    algo,
+                    cost_fn,
+                    seed,
+                )
                 continue
             # >>> n_seeds x n_iterations x 3
 
@@ -410,8 +638,17 @@ if __name__ == "__main__":
 
     save_dir = Path("plots")
     save_dir.mkdir(parents=True, exist_ok=True)
-    draw_metric_v2(
-        ["Final Cummulative Regret", "Iteration @ 90\% Cummulative Regret"],
+    draw_metric_v3(
+        [
+            "Final Cummulative Regret",
+            "Final Observed Value",
+            "Iteration @ 90\% Cummulative Regret",
+        ],
         all_results,
-        ["plots/final_cregret.png", "plots/iteration_at_90perc_cregret.png"],
+        [
+            "plots/final_cregret.png",
+            "plots/final_yA.png",
+            "plots/iteration_at_90perc_cregret.png",
+        ],
+        env_discretized=0,
     )

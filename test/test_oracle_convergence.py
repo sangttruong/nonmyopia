@@ -1,12 +1,13 @@
+import argparse
 import os
 import pickle
 import random
-import argparse
-from datasets import load_dataset
-import numpy as np
-from sklearn.linear_model import LinearRegression, Ridge, BayesianRidge
-from sklearn.metrics import r2_score, root_mean_squared_error
+
 import matplotlib.pyplot as plt
+import numpy as np
+from datasets import load_dataset
+from sklearn.linear_model import BayesianRidge, LinearRegression, Ridge
+from sklearn.metrics import r2_score, root_mean_squared_error
 from tueplots import bundles
 
 bundles.neurips2024()
