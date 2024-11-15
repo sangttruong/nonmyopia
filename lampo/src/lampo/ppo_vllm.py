@@ -1,6 +1,3 @@
-# We credit Matthias Gerstgrasser for weight synchronization code
-# between Huggingface model and vLLM engine.
-
 """
 This code is used for PPO Training
 """
