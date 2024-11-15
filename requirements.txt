@@ -31,6 +31,8 @@ gradio>=4.21.0
 appdirs
 wandb
 Levenshtein
+imageio
 vllm==0.6.3.post1
-embed_text_package @ git+https://github.com/stair-lab/embedder.git
-synthetic_functions @ git+https://github.com/sangttruong/synthetic_functions.git
+embed_text_package
+synthetic_functions
+lampo

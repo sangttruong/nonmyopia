@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lampo"
+version = "0.0.1"
+authors = [
+]
+description = "Package for efficient PPO training"
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.8"
+license = {file = "LICENSE"}
+dependencies = [
+    "transformers>=4.41.2",
+    "huggingface_hub",
+    "datasets>=2.16.0",
+    "accelerate>=0.30.1",
+    "peft>=0.11.1",
+    "trl>=0.9.5",
+    "deepspeed>=0.13.5",
+    "openai",
+    "flash_attn>=2.5.0",
+    "torch>=2.3.0",
+    "tqdm",
+    "uvicorn",
+    "fastapi",
+    "pydantic"
+]
+
+
+[project.urls]
+Homepage = "https://github.com/gh_repo/lampo"
+
+[tool.hatch.build.targets.wheel]
+      packages = ["src/lampo"]

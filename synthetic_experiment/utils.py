@@ -27,8 +27,8 @@ from botorch.test_functions.synthetic import (
 )
 from synthetic_functions.alpine import AlpineN1
 from synthetic_functions.env_wrapper import EnvWrapper
-from synthetic_functions.syngp import SynGP
 from synthetic_functions.nightlight import NightLight
+from synthetic_functions.syngp import SynGP
 from tueplots import bundles
 
 plt.rcParams.update(bundles.iclr2024())

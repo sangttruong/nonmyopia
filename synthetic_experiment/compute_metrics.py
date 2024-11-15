@@ -130,7 +130,6 @@ if __name__ == "__main__":
         device=local_parms.device,
     )
 
-    # base_path = f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}"
     base_path = local_parms.save_dir
 
     print(f"Computing metrics for {algo}, {cost_fn}, seed{seed}")

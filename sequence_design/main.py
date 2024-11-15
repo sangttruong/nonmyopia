@@ -29,10 +29,10 @@ from utils import (
 
 
 def main():
-    wandb.init(project="nonmyopia-sequence")
+    wandb.init(project="nonmyopia-sequence-design")
 
     parser = ArgumentParser()
-    parser.add_argument("--config", type=str, default="configs/hes_ts_am.yaml")
+    parser.add_argument("--config", type=str, required=True)
     args = parser.parse_args()
 
     # Automatically create config class
@@ -54,15 +54,6 @@ def main():
         training_dataset = training_dataset.add_column(
             "inputs_embeds", inputs_embeds_training
         )
-
-    # testing_dataset = load_dataset(path=config.dataset, split="test")
-    # if "inputs_embeds" not in testing_dataset.column_names:
-    #     inputs_embeds_testing = get_embedding_from_server(
-    #         server_url=config.embedding_model, list_sequences=testing_dataset["text"]
-    #     )
-    #     testing_dataset = testing_dataset.add_column(
-    #         "inputs_embeds", inputs_embeds_testing
-    #     )
 
     # Initializing oracle model
     print("Creating Oracle...")
@@ -93,22 +84,6 @@ def main():
         .cast(initial_dataset.features)
     )
 
-    # Query Oracle for y
-    # testing_dataset_reward = observe_value(
-    #     oracle,
-    #     torch.Tensor(testing_dataset["inputs_embeds"]),
-    #     compute_ed(INIT_SEQ, testing_dataset["text"]),
-    #     config.fn_ver,
-    # )
-    # testing_dataset = (
-    #     testing_dataset.remove_columns("reward")
-    #     .add_column("reward", testing_dataset_reward)
-    #     .cast(testing_dataset.features)
-    # )
-    # Random choose sequences with reward < 2.0 as inital sequence
-    # initial_sequences = random_sampling(
-    #     testing_dataset, num_samples=config.n_sequences, constrained_reward=1.0
-    # )
     init_idx = find_idx_in_dataset(training_dataset, "text", INIT_SEQ)
     initial_sequences = training_dataset.select([init_idx])
     initial_rewards = observe_value(

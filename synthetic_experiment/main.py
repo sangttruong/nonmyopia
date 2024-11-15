@@ -179,7 +179,7 @@ class Parameters:
             self.bounds = [-1, 1]
             self.n_initial_points = 25
             self.algo_n_iterations = 75
-            
+
         elif self.env_name == "NightLight":
             self.x_dim = 2
             self.bounds = [-1, 1]

@@ -1,24 +1,34 @@
+import argparse
+import pickle
 import random
 
 import matplotlib.pyplot as plt
 import numpy as np
 from datasets import load_dataset
-from sklearn.linear_model import BayesianRidge, LinearRegression, Ridge
+from sklearn.linear_model import BayesianRidge
 from sklearn.metrics import r2_score, root_mean_squared_error
 from tqdm import tqdm
 from tueplots import bundles, figsizes
+from utils import ensure_dir
 
 plt.rcParams.update(bundles.iclr2024())
 
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--hf_org", type=str, required=True)
+args = parser.parse_args()
+
+ensure_dir(f"ckpts/oracle")
+ensure_dir(f"plots")
+
 hf_embedding_names = [
-    "stair-lab/proteinea_fluorescence-Llama-2-7b-hf-embedding",
-    "stair-lab/proteinea_fluorescence-Mistral-7B-v0.1-embedding",
-    "stair-lab/proteinea_fluorescence-Meta-Llama-3-8B-embedding",
-    "stair-lab/proteinea_fluorescence-gemma-7b-embedding",
-    "stair-lab/proteinea_fluorescence-esm2_t36_3B_UR50D-embedding",
-    "stair-lab/proteinea_fluorescence-esm2_t33_650M_UR50D-embedding",
-    "stair-lab/proteinea_fluorescence-llama-molinst-protein-7b-embedding",
+    f"{args.hf_org}/proteinea_fluorescence-Llama-2-7b-hf-embedding",
+    f"{args.hf_org}/proteinea_fluorescence-Mistral-7B-v0.1-embedding",
+    f"{args.hf_org}/proteinea_fluorescence-Meta-Llama-3-8B-embedding",
+    f"{args.hf_org}/proteinea_fluorescence-gemma-7b-embedding",
+    f"{args.hf_org}/proteinea_fluorescence-esm2_t36_3B_UR50D-embedding",
+    f"{args.hf_org}/proteinea_fluorescence-esm2_t33_650M_UR50D-embedding",
+    f"{args.hf_org}/proteinea_fluorescence-llama-molinst-protein-7b-embedding",
 ]
 r2s_emb = {}
 r2s_std_emb = {}
@@ -61,6 +71,10 @@ for i, hf_embedding_name in enumerate(hf_embedding_names):
             X_train_local = np.stack([x for i, x in enumerate(X_train) if i in idxs])
             y_train_local = np.stack([x for i, x in enumerate(y_train) if i in idxs])
             model = BayesianRidge().fit(X_train_local, y_train_local)
+
+            # Save model
+            with open(f"ckpts/oracle/{hf_embedding_name}_{perc}_{s}.pkl", "wb") as f:
+                pickle.dump(model, f)
 
             y_hat = model.predict(X_test)
             r2s_local.append(r2_score(y_true=y_test, y_pred=y_hat))

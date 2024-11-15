@@ -11,9 +11,6 @@ from typing import Tuple
 import torch
 import torch.nn as nn
 
-from torch.distributions import OneHotCategoricalStraightThrough
-from utils import generate_random_rotation_matrix
-
 
 class AmortizedNetwork(nn.Module):
     r"""Amortized network."""

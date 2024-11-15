@@ -17,6 +17,8 @@ from configs import TEMPLATED_RESPONSE
 from lampo.reward_model import RewardModelTemplate
 from utils import get_embedding_from_server, random_mutation, verify_seq
 
+SERVER_URL = "http://localhost:1337"
+
 
 class Acqf(RewardModelTemplate):
     def __init__(self, config):
@@ -33,9 +35,8 @@ class Acqf(RewardModelTemplate):
         sequences = [x[0] for x in messages]
         num_sequences = [x[1] for x in messages]
 
-        port = random.choice(["1337", "1338"])
         ds_emb = get_embedding_from_server(
-            server_url=f"http://hyperturing1:{port}", list_sequences=sequences
+            server_url=SERVER_URL, list_sequences=sequences
         )
         output = self.bo_acqf(torch.tensor(ds_emb).unsqueeze(-2))
         for i, ns in enumerate(num_sequences):

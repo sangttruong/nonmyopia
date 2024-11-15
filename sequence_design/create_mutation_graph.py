@@ -10,8 +10,9 @@ from tqdm import tqdm
 from utils import get_embedding_from_server
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--hf_org", type=str, required=True)
 parser.add_argument("--mutant_ver", type=str, default="v1")
-parser.add_argument("--server_url", type=str, default="http://hyperturing1:1339")
+parser.add_argument("--server_url", type=str, default="http://localhost:1337")
 parser.add_argument("--batch_size", type=int, default=4)
 args = parser.parse_args()
 
@@ -157,7 +158,7 @@ for nid in tqdm(G.nodes):
 ds = Dataset.from_dict(data_dict)
 ds = ds.train_test_split(test_size=0.1)
 ds.push_to_hub(
-    f"stair-lab/semi_synthetic_protein_2p{len(ALLOWED_POS)}_{args.mutant_ver}_gemma_7b"
+    f"{args.hf_org}/semi_synthetic_protein_2p{len(ALLOWED_POS)}_{args.mutant_ver}_gemma_7b"
 )
 
 # Set reward as node attribute

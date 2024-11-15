@@ -28,6 +28,7 @@ from utils import (
 
 MACHINE = os.getenv("MACHINE", "ampere")
 
+
 def collate_fn(data):
     zipped = zip(data)
     return list(zipped)

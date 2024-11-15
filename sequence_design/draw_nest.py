@@ -117,7 +117,8 @@ for hop in tqdm(range(0, K_steps + 1)):
 import pickle
 
 pickle.dump(
-    reward_by_node, open(f"updated_rewards_{args.mutant_ver}_{args.fn_ver}.pkl", "wb")
+    reward_by_node,
+    open(f"mutants/updated_rewards_{args.mutant_ver}_{args.fn_ver}.pkl", "wb"),
 )
 
 # Plot the mean and std of rewards of all nodes that are K steps away from the start node

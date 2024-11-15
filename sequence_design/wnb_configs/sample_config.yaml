@@ -1,0 +1,12 @@
+program: main.py
+project: nonmyopia-sequence-design
+method: grid
+metric:
+    goal: minimize
+    name: loss
+parameters:
+    config: 
+        values: [
+            "configs/ei-1seq-64rs-s42.yaml",
+            "configs/hes_ts_am-1seq-64rs-s42.yaml",
+        ]

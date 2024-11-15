@@ -40,11 +40,7 @@ To start more agents, simply rerun the above command for different terminals/ser
 ## Experiment 2: Optimization of Protein Sequence Property
 The oracle in this semi-synthetic experiment is a linear model of the embedding space of the protein sequence. It emulates the outcome measurement from a wet lab experiment. The surrogate model is a linear model trained on the currently available dataset. The policy is a large language model (LLM) that is optimized via PPO to generate sequences with high acquisition values. To select the most suited embedding model, we experiment with various well-known LLMs, such as `meta-llama/Llama-2-7b-hf`, `meta-llama/Meta-Llama-3-8B`, `mistralai/Mistral-7B-v0.1`, `google/gemma-7b`, `zjunlp/llama-molinst-protein-7b`. We first embedded our dataset with various models and then ran the script below. One can compare as many models as they like by specifying a list of `models`.
 ```bash
-python test/test_oracle_convergence.py \
-    --seed 2 \
-    --datasets ura-hcmut/proteinea_fluorescence-Llama-2-7b-hf-embedding ura-hcmut/proteinea_fluorescence-Mistral-7B-v0.1-embedding ura-hcmut/proteinea_fluorescence-Meta-Llama-3-8B-embedding \
-    --models LLaMa-2 Mistral LLaMa-3 \
-    --output_dir results
+python test_oracle_convergence.py --hf_org [your_org]
 ```
 Please note that this script does only accept embedded datasets that contain two columns, `inputs_embeds` and `rewards.`
 
@@ -52,7 +48,7 @@ Please note that this script does only accept embedded datasets that contain two
 To create a protein sequence dataset, one can use the script [sequence_design/create_mutation_graph.py](sequence_design/create_mutation_graph.py). This script will generate a graph of all possible mutations of a protein sequence. If you want to add more protein environments, you can add them in this file. The script will automatically create dataset with approriate format on Huggingface repository. To run the script, simply use the below command
 ```bash
 python emb_server.py --model google/gemma-7b --host 0.0.0.0 --port 1337 --batch_size=8
-python create_mutation_graph.py --mutant_ver v1
+python create_mutation_graph.py --hf_org [your_org] --mutant_ver v1
 ```
 
 ### Run the full pipeline
@@ -71,12 +67,12 @@ output_dir: Path to store model checkpoints when running PPO.
 ```
 Finally, you can run the code by using the below command
 ```bash
-export MUTANT_VER=v1 # v1, v2, v3, v4, v5
+export MUTANT_VER=v1 # v1, v2, v3
 python main.py --config <config_file>
 ```
 You can find some configuration files in [configs](configs) folder. You can use them as a reference to create your own configuration file.
 
-To start WandB sweep, please follow the same procedure as those in synthetic experiments. The WandB configuration file is at [sequence_design/wnb_configs/full.yaml](sequence_design/wnb_configs/full.yaml)
+To start WandB sweep, please follow the same procedure as those in synthetic experiments. The WandB configuration file is at [sequence_design/wnb_configs/sample_config.yaml](sequence_design/wnb_configs/sample_config.yaml)
 
 ### Draw the metrics
 To draw the metrics, you can use the below command

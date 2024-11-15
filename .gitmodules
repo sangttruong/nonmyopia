@@ -1,3 +1,0 @@
-[submodule "llm_sequence_design/LLaMA-Factory"]
-	path = llm_sequence_design/LLaMA-Factory
-	url = https://github.com/hiyouga/LLaMA-Factory

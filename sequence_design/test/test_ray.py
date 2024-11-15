@@ -1,5 +1,8 @@
-from pprint import pprint
 import time
+from pprint import pprint
+
+# Initialize Ray.
+import ray
 
 # Import placement group APIs.
 from ray.util.placement_group import (
@@ -8,9 +11,6 @@ from ray.util.placement_group import (
     remove_placement_group,
 )
 from ray.util.scheduling_strategies import PlacementGroupSchedulingStrategy
-
-# Initialize Ray.
-import ray
 
 # Create a single node Ray cluster with 2 CPUs and 2 GPUs.
 ray.init(num_cpus=2, num_gpus=2)

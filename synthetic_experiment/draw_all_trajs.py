@@ -28,56 +28,24 @@ plt.rcParams.update(bundles.neurips2024())
 
 
 algos_name = [
-    # "HES-TS-AM-1",
-    # "HES-TS-AM-10",
-    # "HES-TS-AM-20",
-    # "HES-TS-1",
-    # "HES-TS-2",
-    # "HES-TS-3",
-    # "HES-AM-1",
-    # "HES-AM-2",
-    # "HES-AM-3",
-    # "HES-1",
-    # "HES-2",
-    # "HES-3",
-    # "MSL-3",
-    # "SR",
-    # "EI",
-    # "PI",
-    # "UCB",
-    # "KG",
-    # "MSL",
+    "SR",
+    "EI",
+    "PI",
+    "UCB",
+    "KG",
+    "HES-TS-20",
     "Ours",
 ]
 
 algos = [
-    # "HES-TS-AM-1",
-    # "HES-TS-AM-10",
-    # "HES-TS-AM-20",
-    # "HES-TS-1",
-    # "HES-TS-2",
-    # "HES-TS-3",
-    # "HES-AM-1",
-    # "HES-AM-2",
-    # "HES-AM-3",
-    # "HES-1",
-    # "HES-2",
-    # "HES-3",
-    # "qMSL",
-    # "qSR",
-    # "qEI",
-    # "qPI",
-    # "qUCB",
-    # "qKG",
-    # "HES-TS-20",
+    "qSR",
+    "qEI",
+    "qPI",
+    "qUCB",
+    "qKG",
+    "qMSL",
     "HES-TS-AM-20",
 ]
-
-# seeds = [
-# 2,
-# 3,
-# 5, #7, 11
-# ]
 
 seeds = {
     "qSR": 2,
@@ -90,9 +58,9 @@ seeds = {
 }
 
 env_names = [
-    # "Ackley",
+    "Ackley",
     # "Ackley4D",
-    # "Alpine",
+    "Alpine",
     # "Beale",
     # "Branin",
     # "Cosine8",
@@ -109,8 +77,8 @@ env_names = [
 
 env_noises = [
     0.0,
-    # 0.01,
-    # 0.05,
+    0.01,
+    0.05,
 ]
 
 env_discretizeds = [

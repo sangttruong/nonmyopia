@@ -15,22 +15,22 @@ from tueplots import bundles, figsizes
 plt.rcParams.update(bundles.iclr2024())
 
 algos_name = [
-    # "SR",
-    # "EI",
-    # "PI",
-    # "UCB",
-    # "KG",
-    # "MSL",
+    "SR",
+    "EI",
+    "PI",
+    "UCB",
+    "KG",
+    "MSL",
     "Ours",
 ]
 
 algos = [
-    # "qSR",
-    # "qEI",
-    # "qPI",
-    # "qUCB",
-    # "qKG",
-    # "HES-TS-20",
+    "qSR",
+    "qEI",
+    "qPI",
+    "qUCB",
+    "qKG",
+    "HES-TS-20",
     "HES-TS-AM-20",
 ]
 
