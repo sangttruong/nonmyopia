@@ -19,7 +19,7 @@ from main import Parameters
 from tueplots import bundles
 from utils import eval_func, make_env, set_seed, str2bool
 
-plt.rcParams.update(bundles.neurips2024())
+plt.rcParams.update(bundles.iclr2024())
 
 if __name__ == "__main__":
     # Parse args

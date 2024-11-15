@@ -85,9 +85,13 @@ class qBOAcqf(MCAcquisitionFunction):
         elif self.name == "qSR":
             self.bo_acqf = qSimpleRegret(model=self.model, sampler=sampler)
 
-        elif self.name == "qUCB":
+        elif self.name.startswith("qUCB"):
+            if self.name == "qUCB":
+                beta = 0.1
+            else:
+                beta = float(self.name.split("-")[-1])
             self.bo_acqf = qUpperConfidenceBound(
-                model=self.model, beta=0.1, sampler=sampler
+                model=self.model, beta=beta, sampler=sampler
             )
 
         elif self.name == "qMSL":
@@ -194,7 +198,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         n_fantasy_at_action_pts: Optional[int] = 64,
         design_samplers: Optional[MCSampler] = None,
         action_sampler: Optional[MCSampler] = None,
-        enable_ts: Optinal[bool] = False,
+        enable_ts: Optional[bool] = False,
         **kwargs,
     ) -> None:
         """Batch multip-step H-Entropy Search using one-shot optimization.
@@ -254,12 +258,15 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         self.action_sampler = action_sampler
         self.n_fantasy_at_action_pts = n_fantasy_at_action_pts
 
-    def dump_model(self):
+    def dump_model(self, f: Optional[nn.Module] = None):
         """Dump model."""
         self._model = copy.deepcopy(self.model)
         if self.enable_ts:
-            # Draw new f ~ p(f|D)
-            self.f = draw_matheron_paths(self.model, torch.Size([1]))
+            if f is None:
+                # Draw new f ~ p(f|D)
+                self.f = draw_matheron_paths(self.model, torch.Size([1]))
+            else:
+                self.f = f
 
     def clean_dump_model(self):
         """Clean dump model."""

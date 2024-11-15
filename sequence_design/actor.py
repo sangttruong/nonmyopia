@@ -26,6 +26,7 @@ from utils import (
     start_process,
 )
 
+MACHINE = os.getenv("MACHINE", "ampere")
 
 def collate_fn(data):
     zipped = zip(data)
@@ -185,13 +186,7 @@ class Actor:
         dataset = Dataset.from_dict(data_dict)
         return dataset
 
-    def train_policy(
-        self,
-        iteration,
-        dataset,
-        mutant_ver,
-        fn_ver
-    ) -> None:
+    def train_policy(self, iteration, dataset, mutant_ver, fn_ver) -> None:
         timestamp = datetime.today().isoformat()
         algo = self.config.algo
         if "HES" in algo:
@@ -235,11 +230,16 @@ class Actor:
         check_health(loaded_configs["reward_model"] + "/health")
 
         # Start PPO training process
-        start_process(
-            f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch --main_process_port {self.config.main_process_port} "
-            "--config_file configs/single_config.yaml "
-            f"-m lampo.ppo_vllm --config {training_config_file}"
-        )
+        if MACHINE == "ampere":
+            start_process(
+                f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} accelerate launch --main_process_port {self.config.main_process_port} "
+                "--config_file configs/single_config.yaml "
+                f"-m lampo.ppo_vllm --config {training_config_file}"
+            )
+        else:
+            start_process(
+                f"CUDA_VISIBLE_DEVICES={self.config.ppo_gpu} python -m lampo.ppo_vllm --config {training_config_file}"
+            )
 
         # Stop reward server
         shutdown_server(server_process)

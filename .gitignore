@@ -7,8 +7,10 @@ __pycache__/
 *.pt
 .DS_Store
 results/
+results_*
 gp_results/
 plots/
 wandb/
+sequence_design/configs/*.yaml
 sequence_design/ckpts*
 sequence_design/data*

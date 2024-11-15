@@ -41,13 +41,13 @@ algos_name = [
     # "HES-2",
     # "HES-3",
     # "MSL-3",
-    "SR",
-    "EI",
-    "PI",
-    "UCB",
-    "KG",
-    "MSL",
-    "Our$_{T+A}$",
+    # "SR",
+    # "EI",
+    # "PI",
+    # "UCB",
+    # "KG",
+    # "MSL",
+    "Ours",
 ]
 
 algos = [
@@ -64,12 +64,12 @@ algos = [
     # "HES-2",
     # "HES-3",
     # "qMSL",
-    "qSR",
-    "qEI",
-    "qPI",
-    "qUCB",
-    "qKG",
-    "HES-TS-20",
+    # "qSR",
+    # "qEI",
+    # "qPI",
+    # "qUCB",
+    # "qKG",
+    # "HES-TS-20",
     "HES-TS-AM-20",
 ]
 
@@ -90,9 +90,9 @@ seeds = {
 }
 
 env_names = [
-    "Ackley",
+    # "Ackley",
     # "Ackley4D",
-    "Alpine",
+    # "Alpine",
     # "Beale",
     # "Branin",
     # "Cosine8",
@@ -145,9 +145,9 @@ def read_results(seed, en, cost_fn):
             x_dim, bounds, radius, n_initial_points, algo_n_iterations = get_env_info(
                 env_name, device
             )
-            surr_file = f"results/{env_name}_{en}/{algo}_{cost_fn}_seed{seed}/surr_model_{algo_n_iterations-1}.pt"
+            surr_file = f"results/{env_name}_{en}/{algo}_{cost_fn}_seed{seed}_init5/surr_model_{algo_n_iterations-1}.pt"
             buffer_file = (
-                f"results/{env_name}_{en}/{algo}_{cost_fn}_seed{seed}/buffer.pt"
+                f"results/{env_name}_{en}/{algo}_{cost_fn}_seed{seed}_init5/buffer.pt"
             )
 
             buffer = torch.load(buffer_file, map_location=device).to(

@@ -23,7 +23,7 @@ from main import Parameters
 from tueplots import bundles
 from utils import eval_func, make_env, set_seed, str2bool
 
-plt.rcParams.update(bundles.neurips2024())
+plt.rcParams.update(bundles.iclr2024())
 
 
 def eval_and_plot_2D_with_posterior(

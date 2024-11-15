@@ -3,10 +3,11 @@ import os
 import random
 from pathlib import Path
 
+import imageio
+
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-
 from acqfs import qBOAcqf
 from botorch.sampling.normal import SobolQMCNormalSampler
 from botorch.test_functions.synthetic import (
@@ -27,9 +28,18 @@ from botorch.test_functions.synthetic import (
 from synthetic_functions.alpine import AlpineN1
 from synthetic_functions.env_wrapper import EnvWrapper
 from synthetic_functions.syngp import SynGP
+from synthetic_functions.nightlight import NightLight
 from tueplots import bundles
 
-plt.rcParams.update(bundles.neurips2024())
+plt.rcParams.update(bundles.iclr2024())
+
+
+def create_gif(plot_files, gif_name, fps=10):
+    # Create a gif from the saved plots
+    with imageio.get_writer(gif_name, mode="I", duration=1 / fps) as writer:
+        for plot in plot_files:
+            image = imageio.imread(plot)
+            writer.append_data(image)
 
 
 def set_seed(seed):
@@ -76,6 +86,8 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
         f_ = StyblinskiTang(dim=x_dim, negate=True, noise_std=noise_std)
     elif name == "SynGP":
         f_ = SynGP(dim=x_dim, noise_std=noise_std)
+    elif name == "NightLight":
+        f_ = NightLight(noise_std=noise_std)
     else:
         raise NotImplementedError
 

@@ -18,39 +18,62 @@ from utils import (
 
 plt.rcParams.update(bundles.iclr2024())
 
+# M1F1
+# LIST_RESULTS = {
+#     "SR-s42": "ckpts_iclr2025/ready-SR-1seq-128rs-s42",
+#     "SR-s45": "ckpts_iclr2025/ready-SR-1seq-128rs-s45",
+#     "SR-s49": "ckpts_iclr2025/ready-SR-1seq-128rs-s49",
+#     "EI-s42": "ckpts_iclr2025/ready-EI-1seq-128rs-s42",
+#     "EI-s45": "ckpts_iclr2025/ready-EI-1seq-128rs-s45",
+#     "EI-s49": "ckpts_iclr2025/ready-EI-1seq-128rs-s49",
+#     "PI-s42": "ckpts_iclr2025/ready-PI-1seq-128rs-s42",
+#     "PI-s45": "ckpts_iclr2025/ready-PI-1seq-128rs-s45",
+#     "PI-s49": "ckpts_iclr2025/ready-PI-1seq-128rs-s49",
+#     "UCB-s42": "ckpts_iclr2025/ready-UCB-1seq-128rs-s42",
+#     "UCB-s45": "ckpts_iclr2025/ready-UCB-1seq-128rs-s45",
+#     "UCB-s49": "ckpts_iclr2025/ready-UCB-1seq-128rs-s49",
+#     "KG-s42": "ckpts_iclr2025/ready-KG-1seq-128rs-s42",
+#     "KG-s45": "ckpts_iclr2025/ready-KG-1seq-128rs-s45",
+#     "KG-s49": "ckpts_iclr2025/ready-KG-1seq-128rs-s49",
+#     "Ours-s42": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s42",
+#     "Ours-s45": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s45",
+#     "Ours-s49": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s49",
+# }
+
+# M1F2
 LIST_RESULTS = {
-    "SR-s42": "ckpts_iclr2025/ready-SR-1seq-128rs-s42",
-    "SR-s45": "ckpts_iclr2025/ready-SR-1seq-128rs-s45",
-    "SR-s49": "ckpts_iclr2025/ready-SR-1seq-128rs-s49",
-    "EI-s42": "ckpts_iclr2025/ready-EI-1seq-128rs-s42",
-    "EI-s45": "ckpts_iclr2025/ready-EI-1seq-128rs-s45",
-    "EI-s49": "ckpts_iclr2025/ready-EI-1seq-128rs-s49",
-    "PI-s42": "ckpts_iclr2025/ready-PI-1seq-128rs-s42",
-    "PI-s45": "ckpts_iclr2025/ready-PI-1seq-128rs-s45",
-    "PI-s49": "ckpts_iclr2025/ready-PI-1seq-128rs-s49",
-    "UCB-s42": "ckpts_iclr2025/ready-UCB-1seq-128rs-s42",
-    "UCB-s45": "ckpts_iclr2025/ready-UCB-1seq-128rs-s45",
-    "UCB-s49": "ckpts_iclr2025/ready-UCB-1seq-128rs-s49",
-    "KG-s42": "ckpts_iclr2025/ready-KG-1seq-128rs-s42",
-    "KG-s45": "ckpts_iclr2025/ready-KG-1seq-128rs-s45",
-    "KG-s49": "ckpts_iclr2025/ready-KG-1seq-128rs-s49",
-    "Ours-s42": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s42",
-    "Ours-s45": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s45",
-    "Ours-s49": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s49",
+    # "SR-s42": "ckpts/m1f2-SR-1seq-64rs-s42",
+    # "SR-s45": "ckpts/m1f2-SR-1seq-64rs-s45",
+    # "SR-s49": "ckpts/m1f2-SR-1seq-64rs-s49",
+    "EI-s42": "ckpts/m1f2-EI-1seq-64rs-s42",
+    "EI-s45": "ckpts/m1f2-EI-1seq-64rs-s45",
+    "EI-s49": "ckpts/m1f2-EI-1seq-64rs-s49",
+    # "PI-s42": "ckpts/m1f2-PI-1seq-64rs-s42",
+    # "PI-s45": "ckpts/m1f2-PI-1seq-64rs-s45",
+    # "PI-s49": "ckpts/m1f2-PI-1seq-64rs-s49",
+    # "UCB-s42": "ckpts/m1f2-UCB-1seq-64rs-s42",
+    # "UCB-s45": "ckpts/m1f2-UCB-1seq-64rs-s45",
+    # "UCB-s49": "ckpts/m1f2-UCB-1seq-64rs-s49",
+    # "KG-s42": "ckpts/m1f2-KG-1seq-64rs-s42",
+    # "KG-s45": "ckpts/m1f2-KG-1seq-64rs-s45",
+    # "KG-s49": "ckpts/m1f2-KG-1seq-64rs-s49",
+    "Ours-s42": "ckpts/m1f2-HES-11-1seq-64rs-s42",
+    "Ours-s45": "ckpts/m1f2-HES-11-1seq-64rs-s45",
+    "Ours-s49": "ckpts/m1f2-HES-11-1seq-64rs-s49",
 }
 
 LIST_ALGOS = [
-    "SR",
+    # "SR",
     "EI",
-    "PI",
-    "UCB",
-    "KG",
+    # "PI",
+    # "UCB",
+    # "KG",
     "Ours",
 ]
 
-SEEDS = [42, 45, 49]
+SEEDS = [42, 49]  # 45,
 
-oracle = joblib.load(f"ckpts_iclr2025/oracle/model.joblib")
+oracle = joblib.load(f"ckpts/oracle/model.joblib")
 MAX_RW = 3
 CUT_OFF = 16
 
@@ -136,7 +159,7 @@ if __name__ == "__main__":
                 )
                 # list_vals.append(rewards[best_idx[0]][0])
                 best_emb = get_embedding_from_server(
-                    server_url="http://hyperturing2:1338",
+                    server_url="http://hyperturing1:1338",
                     list_sequences=[X_returned[best_idx[0]][-1][0]],
                 )
                 best_y = observe_value(
