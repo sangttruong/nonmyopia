@@ -18,60 +18,79 @@ from utils import (
 
 plt.rcParams.update(bundles.iclr2024())
 
-# M1F1
-# LIST_RESULTS = {
-#     "SR-s42": "ckpts_iclr2025/ready-SR-1seq-128rs-s42",
-#     "SR-s45": "ckpts_iclr2025/ready-SR-1seq-128rs-s45",
-#     "SR-s49": "ckpts_iclr2025/ready-SR-1seq-128rs-s49",
-#     "EI-s42": "ckpts_iclr2025/ready-EI-1seq-128rs-s42",
-#     "EI-s45": "ckpts_iclr2025/ready-EI-1seq-128rs-s45",
-#     "EI-s49": "ckpts_iclr2025/ready-EI-1seq-128rs-s49",
-#     "PI-s42": "ckpts_iclr2025/ready-PI-1seq-128rs-s42",
-#     "PI-s45": "ckpts_iclr2025/ready-PI-1seq-128rs-s45",
-#     "PI-s49": "ckpts_iclr2025/ready-PI-1seq-128rs-s49",
-#     "UCB-s42": "ckpts_iclr2025/ready-UCB-1seq-128rs-s42",
-#     "UCB-s45": "ckpts_iclr2025/ready-UCB-1seq-128rs-s45",
-#     "UCB-s49": "ckpts_iclr2025/ready-UCB-1seq-128rs-s49",
-#     "KG-s42": "ckpts_iclr2025/ready-KG-1seq-128rs-s42",
-#     "KG-s45": "ckpts_iclr2025/ready-KG-1seq-128rs-s45",
-#     "KG-s49": "ckpts_iclr2025/ready-KG-1seq-128rs-s49",
-#     "Ours-s42": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s42",
-#     "Ours-s45": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s45",
-#     "Ours-s49": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s49",
-# }
-
-# M1F2
-LIST_RESULTS = {
-    # "SR-s42": "ckpts/m1f2-SR-1seq-64rs-s42",
-    # "SR-s45": "ckpts/m1f2-SR-1seq-64rs-s45",
-    # "SR-s49": "ckpts/m1f2-SR-1seq-64rs-s49",
-    "EI-s42": "ckpts/m1f2-EI-1seq-64rs-s42",
-    "EI-s45": "ckpts/m1f2-EI-1seq-64rs-s45",
-    "EI-s49": "ckpts/m1f2-EI-1seq-64rs-s49",
-    # "PI-s42": "ckpts/m1f2-PI-1seq-64rs-s42",
-    # "PI-s45": "ckpts/m1f2-PI-1seq-64rs-s45",
-    # "PI-s49": "ckpts/m1f2-PI-1seq-64rs-s49",
-    # "UCB-s42": "ckpts/m1f2-UCB-1seq-64rs-s42",
-    # "UCB-s45": "ckpts/m1f2-UCB-1seq-64rs-s45",
-    # "UCB-s49": "ckpts/m1f2-UCB-1seq-64rs-s49",
-    # "KG-s42": "ckpts/m1f2-KG-1seq-64rs-s42",
-    # "KG-s45": "ckpts/m1f2-KG-1seq-64rs-s45",
-    # "KG-s49": "ckpts/m1f2-KG-1seq-64rs-s49",
-    "Ours-s42": "ckpts/m1f2-HES-11-1seq-64rs-s42",
-    "Ours-s45": "ckpts/m1f2-HES-11-1seq-64rs-s45",
-    "Ours-s49": "ckpts/m1f2-HES-11-1seq-64rs-s49",
+FULL_LIST_RESULTS = {
+    "m1f1": {
+        "SR-s42": "ckpts_iclr2025/ready-SR-1seq-128rs-s42",
+        "SR-s45": "ckpts_iclr2025/ready-SR-1seq-128rs-s45",
+        "SR-s49": "ckpts_iclr2025/ready-SR-1seq-128rs-s49",
+        "EI-s42": "ckpts_iclr2025/ready-EI-1seq-128rs-s42",
+        "EI-s45": "ckpts_iclr2025/ready-EI-1seq-128rs-s45",
+        "EI-s49": "ckpts_iclr2025/ready-EI-1seq-128rs-s49",
+        "PI-s42": "ckpts_iclr2025/ready-PI-1seq-128rs-s42",
+        "PI-s45": "ckpts_iclr2025/ready-PI-1seq-128rs-s45",
+        "PI-s49": "ckpts_iclr2025/ready-PI-1seq-128rs-s49",
+        "UCB-s42": "ckpts_iclr2025/ready-UCB-1seq-128rs-s42",
+        "UCB-s45": "ckpts_iclr2025/ready-UCB-1seq-128rs-s45",
+        "UCB-s49": "ckpts_iclr2025/ready-UCB-1seq-128rs-s49",
+        "KG-s42": "ckpts_iclr2025/ready-KG-1seq-128rs-s42",
+        "KG-s45": "ckpts_iclr2025/ready-KG-1seq-128rs-s45",
+        "KG-s49": "ckpts_iclr2025/ready-KG-1seq-128rs-s49",
+        "Ours-s42": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s42",
+        "Ours-s45": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s45",
+        "Ours-s49": "ckpts_iclr2025/ready-HES-11-1seq-128rs-s49",
+    },
+    "m1f2": {
+        "SR-s42": "ckpts/m1f2-SR-1seq-64rs-s42",
+        "SR-s45": "ckpts/m1f2-SR-1seq-64rs-s45",
+        "SR-s49": "ckpts/m1f2-SR-1seq-64rs-s49",
+        "EI-s42": "ckpts/m1f2-EI-1seq-64rs-s42",
+        "EI-s45": "ckpts/m1f2-EI-1seq-64rs-s45",
+        "EI-s49": "ckpts/m1f2-EI-1seq-64rs-s49",
+        "PI-s42": "ckpts/m1f2-PI-1seq-64rs-s42",
+        "PI-s45": "ckpts/m1f2-PI-1seq-64rs-s45",
+        "PI-s49": "ckpts/m1f2-PI-1seq-64rs-s49",
+        "UCB-s42": "ckpts/m1f2-UCB-1seq-64rs-s42",
+        "UCB-s45": "ckpts/m1f2-UCB-1seq-64rs-s45",
+        "UCB-s49": "ckpts/m1f2-UCB-1seq-64rs-s49",
+        "KG-s42": "ckpts/m1f2-KG-1seq-64rs-s42",
+        "KG-s45": "ckpts/m1f2-KG-1seq-64rs-s45",
+        "KG-s49": "ckpts/m1f2-KG-1seq-64rs-s49",
+        "Ours-s42": "ckpts/m1f2-HES-11-1seq-64rs-s42",
+        "Ours-s45": "ckpts/m1f2-HES-11-1seq-64rs-s45",
+        "Ours-s49": "ckpts/m1f2-HES-11-1seq-64rs-s49",
+    },
+    "m2f1": {
+        "SR-s42": "ckpts/m2f1-SR-1seq-64rs-s42",
+        "SR-s45": "ckpts/m2f1-SR-1seq-64rs-s45",
+        "SR-s49": "ckpts/m2f1-SR-1seq-64rs-s49",
+        "EI-s42": "ckpts/m2f1-EI-1seq-64rs-s42",
+        "EI-s45": "ckpts/m2f1-EI-1seq-64rs-s45",
+        "EI-s49": "ckpts/m2f1-EI-1seq-64rs-s49",
+        "PI-s42": "ckpts/m2f1-PI-1seq-64rs-s42",
+        "PI-s45": "ckpts/m2f1-PI-1seq-64rs-s45",
+        "PI-s49": "ckpts/m2f1-PI-1seq-64rs-s49",
+        "UCB-s42": "ckpts/m2f1-UCB-1seq-64rs-s42",
+        "UCB-s45": "ckpts/m2f1-UCB-1seq-64rs-s45",
+        "UCB-s49": "ckpts/m2f1-UCB-1seq-64rs-s49",
+        "KG-s42": "ckpts/m2f1-KG-1seq-64rs-s42",
+        "KG-s45": "ckpts/m2f1-KG-1seq-64rs-s45",
+        "KG-s49": "ckpts/m2f1-KG-1seq-64rs-s49",
+        "Ours-s42": "ckpts/m2f1-HES-11-1seq-64rs-s42",
+        "Ours-s45": "ckpts/m2f1-HES-11-1seq-64rs-s45",
+        "Ours-s49": "ckpts/m2f1-HES-11-1seq-64rs-s49",
+    },
 }
 
 LIST_ALGOS = [
-    # "SR",
+    "SR",
     "EI",
-    # "PI",
-    # "UCB",
-    # "KG",
+    "PI",
+    "UCB",
+    "KG",
     "Ours",
 ]
 
-SEEDS = [42, 49]  # 45,
+SEEDS = [42, 45]
 
 oracle = joblib.load(f"ckpts/oracle/model.joblib")
 MAX_RW = 3
@@ -84,6 +103,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     _, INIT_SEQ, _, _, _ = import_protein_env(args.mutant_ver)
+    result_key = f"m{args.mutant_ver[1:]}f{args.fn_ver[1:]}"
+    LIST_RESULTS = FULL_LIST_RESULTS[result_key]
 
     print("Drawing actual scores...")
     fig, axs = plt.subplots(
@@ -97,9 +118,10 @@ if __name__ == "__main__":
         print(algo)
         for seed in SEEDS:
             folder = LIST_RESULTS[algo + "-s" + str(seed)]
-            if not os.path.exists(os.path.join(folder, "buffer.pkl")):
+            if not os.path.exists(os.path.join(folder, "lite_buffer.pkl")):
+                print(f"Missing {algo} seed {seed}")
                 continue
-            buffer = pickle.load(open(os.path.join(folder, "buffer.pkl"), "rb"))
+            buffer = pickle.load(open(os.path.join(folder, "lite_buffer.pkl"), "rb"))
             print("Initial:", buffer["x"][0])
             print("Final:", buffer["x"][-1])
 
@@ -109,6 +131,9 @@ if __name__ == "__main__":
             #     continue
 
             mean = np.mean(metrics, axis=1)
+            if mean.shape[0] != CUT_OFF + 1:
+                print(f"Missing {algo} seed {seed}")
+                continue
             algo_res.append(mean)
 
         # min_length = min([len(x) for x in algo_res])
@@ -144,13 +169,17 @@ if __name__ == "__main__":
         algo_res = []
         for seed in SEEDS:
             result = LIST_RESULTS[algo + "-s" + str(seed)]
-            if not os.path.exists(os.path.join(result, "buffer.pkl")):
+            if not os.path.exists(os.path.join(result, "lite_buffer.pkl")):
                 continue
 
             list_files = os.listdir(os.path.join(result))
             list_files = [x for x in list_files if x.startswith("trajectory")]
             list_files = sorted(list_files)[: CUT_OFF + 1]
-            buffer = pickle.load(open(os.path.join(result, "buffer.pkl"), "rb"))
+            buffer = pickle.load(open(os.path.join(result, "lite_buffer.pkl"), "rb"))
+            
+            if len(buffer["y"][: CUT_OFF + 2]) != CUT_OFF + 1:
+                print(f"Missing {algo} seed {seed}")
+                continue
 
             list_vals = [MAX_RW - buffer["y"][0][0]]
             for traj_file in list_files:
@@ -159,7 +188,7 @@ if __name__ == "__main__":
                 )
                 # list_vals.append(rewards[best_idx[0]][0])
                 best_emb = get_embedding_from_server(
-                    server_url="http://hyperturing1:1338",
+                    server_url="http://hyperturing2:1338",
                     list_sequences=[X_returned[best_idx[0]][-1][0]],
                 )
                 best_y = observe_value(
@@ -171,22 +200,11 @@ if __name__ == "__main__":
                 best_y = MAX_RW - best_y  # regret
                 list_vals.append(best_y)
 
-            # list_vals = np.cumsum(np.array(list_vals)) # cum regret
-            # if len(list_vals) != CUT_OFF+2:
-            #     continue
             algo_res.append(list_vals)
             print(algo, f"{seed}", list_vals)
 
-        # min_length = min([len(x) for x in algo_res])
-        # algo_res = [x[:min_length] for x in algo_res]
-        # steps = list(range(min_length))
-
         steps = list(range(CUT_OFF + 1))
         algo_res = np.stack(algo_res)
-
-        # for _ in range(10):
-        #     select_idxs = np.random.randint(0, len(SEEDS), SEEDS
-        #     mean = algo_res.mean(axis=0)
         mean = algo_res.mean(axis=0)
         std = algo_res.std(axis=0)
 

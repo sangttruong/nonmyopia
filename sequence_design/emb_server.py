@@ -66,7 +66,7 @@ app.add_middleware(
 )
 
 embedder = Embedder()
-embedder.load(args.model)
+embedder.load(args.model, special_tokens=True)
 
 
 class EmbResponse(BaseModel):
