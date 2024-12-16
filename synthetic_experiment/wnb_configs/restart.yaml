@@ -1,0 +1,31 @@
+program: main.py
+project: nonmyopia
+method: grid
+metric:
+    goal: minimize
+    name: loss
+parameters:
+    seed: 
+        values: [2, 3, 5]
+    task: 
+        values: [topk]
+    env_name: 
+        values: [Ackley, Alpine, SynGP]
+    env_noise:  
+        values: [0.05]
+    env_discretized: 
+        values: [False]
+    algo: 
+        values: [HES-TS-AM-20, HES-TS-20, qEI, qKG]
+    cost_fn: 
+        values: [r-spotlight]
+    n_restarts:
+        values: [1, 8, 16, 32]
+    hidden_dim:
+        values: [64]
+    plot:  
+        values: [False]
+    gpu_id:  
+        values: [0]
+    cont:
+        values: [False]

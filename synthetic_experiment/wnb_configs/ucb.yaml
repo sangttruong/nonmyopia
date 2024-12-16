@@ -1,0 +1,33 @@
+program: compute_metrics.py
+project: nonmyopia
+method: grid
+metric:
+    goal: minimize
+    name: loss
+parameters:
+    seed: 
+        values: [2, 3, 5]
+    task: 
+        values: [topk]
+    env_name: 
+        values: [Ackley, Ackley4D, Alpine, Cosine8, Hartmann, HolderTable, Levy, StyblinskiTang, SynGP]
+    env_noise:  
+        values: [0.05]
+    env_discretized: 
+        values: [False]
+    algo: 
+        values: [qUCB-0.1, qUCB-0.5, qUCB-1, qUCB-2, qUCB-5, qUCB-10, qUCB-20, qUCB-50, qUCB-100, qUCB-200, qUCB-500, qUCB-1000]
+    cost_fn: 
+        values: [r-spotlight, euclidean, manhattan, non-markovian]
+    kernel:
+        values: [RBF]
+    n_restarts:
+        values: [64]
+    hidden_dim:
+        values: [64]
+    plot:  
+        values: [False]
+    gpu_id:  
+        values: [0]
+    cont:
+        values: [False]
