@@ -51,6 +51,7 @@ def compute_acquisition_value(
         buffer["x"][:iteration],
         buffer["y"][:iteration],
         likelihood=likelihood,
+        covar_module=parms.kernel,
     ).to(device, dtype=parms.torch_dtype)
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
     fit_gpytorch_model(mll)
@@ -95,6 +96,7 @@ def eval_and_plot_2D_with_posterior(
     iteration,
     n_space=200,
     embedder=None,
+    disable_acquisition=False,
     *args,
     **kwargs,
 ):
@@ -125,7 +127,7 @@ def eval_and_plot_2D_with_posterior(
 
     ##### SAVE POSTERIOR PLOT #####
     fig, axes = plt.subplots(
-        ncols=3, nrows=1, figsize=(1.25 * gif_size[0], 2 * gif_size[1])
+        ncols=3 - int(disable_acquisition), nrows=1, figsize=(1.25 * gif_size[0], 2 * gif_size[1])
     )
     # Set label and bounds
     axes[1].set_xlabel("$x_1$")
@@ -134,11 +136,9 @@ def eval_and_plot_2D_with_posterior(
     axes[1].set_ylim(*bounds_plot_y)
 
     # Scattering all points in buffer except the initial points
-    axes[1].contourf(X, Y, Z_posterior, levels=30, cmap="bwr", alpha=0.7)
+    axes[1].contourf(X, Y, Z, levels=30, cmap="bwr", alpha=0.7)
     axes[1].set_aspect(aspect="equal")
-    axes[1].set_title("Posterior Sample")
-    # plt.savefig(f"{parms.save_dir}/posterior_sample_{iteration:03d}.png", dpi=300)
-    # plt.close()
+    axes[1].set_title("Ground Truth")
 
     ##### SAVE ACQUISITION #####
     # For spotlight cost only
@@ -146,58 +146,58 @@ def eval_and_plot_2D_with_posterior(
     # Create a meshgrid of 8 x 8 points centered around the last point with radius parms.radius
     # The meshgrid is then reshaped to 64 x 2
 
-    rX = torch.linspace(
-        max(buffer["x"][iteration - 1, 0] - parms.radius, 0),
-        min(buffer["x"][iteration - 1, 0] + parms.radius, 1),
-        8,
-    )
-    rY = torch.linspace(
-        max(buffer["x"][iteration - 1, 1] - parms.radius, 0),
-        min(buffer["x"][iteration - 1, 1] + parms.radius, 1),
-        8,
-    )
-    rX, rY = torch.meshgrid(rX, rY)
-    rXY = torch.stack([rX, rY], dim=-1).reshape(-1, 2)
+    if not disable_acquisition:
+        rX = torch.linspace(
+            max(buffer["x"][iteration - 1, 0] - parms.radius, 0),
+            min(buffer["x"][iteration - 1, 0] + parms.radius, 1),
+            8,
+        )
+        rY = torch.linspace(
+            max(buffer["x"][iteration - 1, 1] - parms.radius, 0),
+            min(buffer["x"][iteration - 1, 1] + parms.radius, 1),
+            8,
+        )
+        rX, rY = torch.meshgrid(rX, rY)
+        rXY = torch.stack([rX, rY], dim=-1).reshape(-1, 2)
 
-    parms.n_restarts *= 64
-    A = compute_acquisition_value(
-        parms=parms,
-        buffer=buffer,
-        actor=actor,
-        iteration=iteration,
-        surr_model_state_dict=surr_model_state_dict,
-        x1=rXY,
-        f_posterior=f_posterior,
-    )
-    parms.n_restarts = int(parms.n_restarts / 64)
-    A = A.reshape(rX.shape)
-    A = A.cpu().detach()
+        parms.n_restarts *= 64
+        A = compute_acquisition_value(
+            parms=parms,
+            buffer=buffer,
+            actor=actor,
+            iteration=iteration,
+            surr_model_state_dict=surr_model_state_dict,
+            x1=rXY,
+            f_posterior=f_posterior,
+        )
+        parms.n_restarts = int(parms.n_restarts / 64)
+        A = A.reshape(rX.shape)
+        A = A.cpu().detach()
 
-    # plt.figure(figsize=(2*gif_size[0]/3, 2*gif_size[1]))
-    # Set label and bounds
-    axes[2].set_xlabel("$x_1$")
-    axes[2].set_ylabel("$x_2$")
-    axes[2].set_xlim(*bounds_plot_x)
-    axes[2].set_ylim(*bounds_plot_y)
+        # Set label and bounds
+        axes[2].set_xlabel("$x_1$")
+        axes[2].set_ylabel("$x_2$")
+        axes[2].set_xlim(*bounds_plot_x)
+        axes[2].set_ylim(*bounds_plot_y)
 
-    # Scattering all points in buffer except the initial points
-    levels = np.linspace(Z_posterior.min(), Z_posterior.max(), 30)
-    axes[2].contourf(rX, rY, A, levels=levels, cmap="bwr", alpha=0.7)
-    axes[2].set_aspect(aspect="equal")
-    axes[2].set_title("Acquisition Value")
+        # Scattering all points in buffer except the initial points
+        levels = np.linspace(Z_posterior.min(), Z_posterior.max(), 30)
+        axes[2].contourf(rX, rY, A, levels=levels, cmap="bwr", alpha=0.7)
+        axes[2].set_aspect(aspect="equal")
+        axes[2].set_title("Acquisition Value")
 
-    splotlight = plt.Rectangle(
-        (
-            buffer["x"][iteration - 1, 0].cpu() - parms.radius,
-            buffer["x"][iteration - 1, 1].cpu() - parms.radius,
-        ),
-        2 * parms.radius,
-        2 * parms.radius,
-        color="black",
-        linestyle="dashed",
-        fill=False,
-    )
-    axes[2].add_patch(splotlight)
+        splotlight = plt.Rectangle(
+            (
+                buffer["x"][iteration - 1, 0].cpu() - parms.radius,
+                buffer["x"][iteration - 1, 1].cpu() - parms.radius,
+            ),
+            2 * parms.radius,
+            2 * parms.radius,
+            color="black",
+            linestyle="dashed",
+            fill=False,
+        )
+        axes[2].add_patch(splotlight)
 
     ##### SAVE TRAJECTORY PLOT #####
     if parms.algo_ts:
@@ -233,7 +233,7 @@ def eval_and_plot_2D_with_posterior(
         axes[0].set_ylim(*bounds_plot_y)
 
         # Scattering all points in buffer except the initial points
-        axes[0].contourf(X, Y, Z, levels=30, cmap="bwr", alpha=0.7)
+        axes[0].contourf(X, Y, Z_posterior, levels=30, cmap="bwr", alpha=0.7)
         axes[0].set_aspect(aspect="equal")
 
         for i in range(parms.n_initial_points - 1, iteration - 1):
@@ -352,12 +352,17 @@ if __name__ == "__main__":
     parser.add_argument("--algo", type=str, default="HES-TS-AM-20")
     parser.add_argument("--cost_fn", type=str, default="r-spotlight")
     parser.add_argument("--n_initial_points", type=int, default=-1)
+    parser.add_argument("--n_restarts", type=int, default=64)
+    parser.add_argument("--hidden_dim", type=int, default=64)
+    parser.add_argument("--kernel", type=str, default="RBF")
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
     parser.add_argument("--iter_start", type=int)
     parser.add_argument("--iter_end", type=int)
     parser.add_argument("--gif_only", type=str2bool, default=False)
+    parser.add_argument("--disable_acquisition", type=str2bool, default=False)
+    parser.add_argument("--result_dir", type=str, default="./results")
     parser.add_argument("--max_workers", type=int, default=8)
 
     args = parser.parse_args()
@@ -425,6 +430,7 @@ if __name__ == "__main__":
                 parms=parms,
                 buffer=buffer,
                 iteration=traj_iter,
+                disable_acquisition=args.disable_acquisition
             )
             list_saved_files.extend(saved_files)
 

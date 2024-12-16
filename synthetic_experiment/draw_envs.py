@@ -230,6 +230,7 @@ if __name__ == "__main__":
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
+    parser.add_argument("--result_dir", type=str, default="./results")
     parser.add_argument("--iter", type=int, required=True)
     args = parser.parse_args()
 
@@ -263,6 +264,7 @@ if __name__ == "__main__":
         buffer["x"][: parms.algo_n_iterations + 1],
         buffer["y"][: parms.algo_n_iterations + 1],
         likelihood=likelihood,
+        covar_module=parms.kernel,
     ).to(parms.device, dtype=parms.torch_dtype)
 
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)

@@ -1,9 +1,11 @@
 import os
 from pathlib import Path
+from argparse import ArgumentParser
 
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+import pandas as pd
 from matplotlib.patches import Circle, RegularPolygon
 from matplotlib.path import Path as mplPath
 from matplotlib.projections import register_projection
@@ -11,28 +13,20 @@ from matplotlib.projections.polar import PolarAxes
 from matplotlib.spines import Spine
 from matplotlib.transforms import Affine2D
 from tueplots import bundles, figsizes
+from utils import ensure_dir
 
 plt.rcParams.update(bundles.iclr2024())
 
-algos_name = [
-    # "SR",
-    # "EI",
-    # "PI",
-    # "UCB",
-    # "KG",
-    # "MSL",
-    "Ours",
-]
 
-algos = [
-    # "qSR",
-    # "qEI",
-    # "qPI",
-    # "qUCB",
-    # "qKG",
-    # "HES-TS-20",
-    "HES-TS-AM-20",
-]
+
+parser = ArgumentParser()
+parser.add_argument("--setting", type=str, default="default")
+parser.add_argument("--n_initial_points", type=int, default=-1)
+parser.add_argument("--n_restarts", type=int, default=64)
+parser.add_argument("--hidden_dim", type=int, default=64)
+parser.add_argument("--kernel", type=str, default="RBF")
+parser.add_argument("--result_dir", type=str, default="./results")
+args = parser.parse_args()
 
 line_styles = {
     "SR": (0, (1, 1)),
@@ -59,9 +53,21 @@ line_colors = {
     "EI": "black",
     "PI": "black",
     "UCB": "black",
+    "UCB ($\\beta = 0.1$)": "#d1e5f0",
+    "UCB ($\\beta = 0.5$)": "#95c5de",
+    "UCB ($\\beta = 1$)": "#4393c3",
+    "UCB ($\\beta = 2$)": "#2166ac",
     "KG": "#ee6677",
     "MSL": "#66ccee",
+    "MSL-5": "#66ccee",
+    "MSL-10": "#66ccee",
+    "MSL-15": "#66ccee",
+    "MSL-20": "#66ccee",
     "Ours": "#4477aa",
+    "Ours-5": "#4477aa",
+    "Ours-10": "#4477aa",
+    "Ours-15": "#4477aa",
+    "Ours-20": "#4477aa",
 }
 
 seeds = [
@@ -70,36 +76,76 @@ seeds = [
     5,
 ]
 
-env_names = [
-    "Ackley",
-    "Ackley4D",
-    "Alpine",
-    # "Beale",
-    # "Branin",
-    "Cosine8",
-    # "EggHolder",
-    # "Griewank",
-    "Hartmann",
-    "HolderTable",
-    "Levy",
-    # "Powell",
-    # "SixHumpCamel",
-    "StyblinskiTang",
-    "SynGP",
-]
+if args.setting == "default":
+    algos_name = [
+        "SR",
+        "EI",
+        "PI",
+        "UCB",
+        "KG",
+        "MSL",
+        "Ours",
+    ]
 
-env_noises = [
-    # 0.0,
-    # 0.01,
-    0.05,
-]
+    algos = [
+        "qSR",
+        "qEI",
+        "qPI",
+        "qUCB",
+        "qKG",
+        "HES-TS-20",
+        "HES-TS-AM-20",
+    ]
 
-env_discretizeds = [
-    False,
-    # True
-]
+    env_names = [
+        "Ackley",
+        "Ackley4D",
+        "Alpine",
+        # "Beale",
+        # "Branin",
+        "Cosine8",
+        # "EggHolder",
+        # "Griewank",
+        "Hartmann",
+        "HolderTable",
+        "Levy",
+        # "Powell",
+        # "SixHumpCamel",
+        "StyblinskiTang",
+        "SynGP",
+    ]
 
-cost_functions = ["euclidean", "manhattan", "r-spotlight", "non-markovian"]
+    env_noises = [
+        # 0.0,
+        # 0.01,
+        0.05,
+    ]
+
+    env_discretizeds = [
+        False,
+        # True
+    ]
+
+    cost_functions = ["euclidean", "manhattan", "r-spotlight", "non-markovian"]
+
+elif args.setting == "lookahead":
+    from ablation_configs.lookahead import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
+elif args.setting == "restart":
+    from ablation_configs.restart import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
+elif args.setting == "network":
+    from ablation_configs.network import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
+elif args.setting == "kernel":
+    from ablation_configs.kernel import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
+elif args.setting == "ucb":
+    from ablation_configs.ucb import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
+elif args.setting == "init_samples_ackley":
+    from ablation_configs.init_samples_ackley import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
+elif args.setting == "init_samples_alpine":
+    from ablation_configs.init_samples_alpine import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
+elif args.setting == "init_samples_syngp":
+    from ablation_configs.init_samples_syngp import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
+elif args.setting == "nightlight":
+    from ablation_configs.nightlight import algos_name, algos, env_names, env_noises, env_discretizeds, cost_functions
 
 cost_function_names = {
     "euclidean": "$L_2$ cost",
@@ -199,10 +245,20 @@ def get_env_info(env_name, device):
         bounds = [-1, 1]
         n_initial_points = 25
         algo_n_iterations = 75
+        
+    elif env_name == "NightLight":
+        x_dim = 2
+        bounds = [-1, 1]
+        n_initial_points = 200
+        algo_n_iterations = 250
 
     else:
         raise NotImplementedError
 
+    # if x_dim == 2 and env_name != "NightLight":
+    #     radius = 0.075
+    # elif x_dim == 2 and env_name == "NightLight":
+    #     radius = 0.1
     if x_dim == 2:
         radius = 0.075
     elif x_dim == 4:
@@ -378,7 +434,9 @@ def draw_metric_v3(
 
         for eni, env_noise in enumerate(env_noises):
             for cfi, cost_fn in enumerate(cost_functions):
-                if len(env_noises) == 1:
+                if len(env_noises) == 1 and len(cost_functions) == 1:
+                    ax = axs
+                elif len(env_noises) == 1:
                     ax = axs[cfi]
                 else:
                     ax = axs[eni][cfi]
@@ -423,7 +481,7 @@ def draw_metric_v3(
                             list_means.append(mean)
                             list_stds.append(std)
 
-                    if "Our" not in algo:
+                    if "Our" not in algo and args.setting != "ucb":
                         opacity = 0.4
                         # linewidth=2
                     else:
@@ -461,9 +519,9 @@ def draw_metric_v3(
         fig.legend(
             algos_name,
             loc="outside lower center",
-            ncol=5,
-            bbox_to_anchor=(0.5, -0.15),
-            fontsize=6,
+            ncol=7,
+            bbox_to_anchor=(0.5, -0.1),
+            fontsize=5,
         )
 
         plt.savefig(save_files[mi], dpi=300)
@@ -564,6 +622,8 @@ def radar_factory(num_vars, frame="circle"):
 
 if __name__ == "__main__":
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    plot_dir = f"plots/{args.setting}{'_' + args.kernel if args.kernel else ''}/init{args.n_initial_points}_hidden{args.hidden_dim}_rs{args.n_restarts}"
+    ensure_dir(plot_dir)
 
     print("Drawing runtime...")
     for env_discretized in env_discretizeds:
@@ -572,16 +632,29 @@ if __name__ == "__main__":
             x_dim, bounds, radius, n_initial_points, algo_n_iterations = get_env_info(
                 env_name, device
             )
+            
+            if args.n_initial_points > -1:
+                difference = args.n_initial_points - n_initial_points
+                n_initial_points = args.n_initial_points
+                algo_n_iterations += difference
+                
             for env_noise in env_noises:
                 for cost_fn in cost_functions:
                     for aid, algo in enumerate(algos):
                         list_metrics = []
                         for seed in seeds:
-                            buffer_file = f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/buffer.pt"
+                            save_dir = (
+                                f"./results_iclr2025/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}{'_' + args.kernel if args.kernel != 'RBF' else ''}/"
+                                f"{algo}_{cost_fn}_seed{seed}"#_init{n_initial_points}_hidden{args.hidden_dim}_rs{args.n_restarts}"
+                            )
+
+                            buffer_file = f"{save_dir}/buffer.pt"
+                            
                             if not os.path.exists(buffer_file) and not os.path.exists(
-                                f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
+                                f"{save_dir}/metrics.npy"
                             ):
                                 continue
+                                
                             try:
                                 buffer = torch.load(buffer_file, map_location=device)
                             except RuntimeWarning:
@@ -613,12 +686,10 @@ if __name__ == "__main__":
         if len(dict_metrics) == 0:
             continue
 
-        save_dir = Path("plots/runtime")
-        save_dir.mkdir(parents=True, exist_ok=True)
         draw_time(
             "",
             dict_metrics,
-            f"plots/runtime{'_discretized' if env_discretized else ''}.png",
+            f"{plot_dir}/runtime{'_discretized' if env_discretized else ''}.png",
         )
 
     # Create all triplet (env_name, env_noise, env_discretized)
@@ -633,27 +704,32 @@ if __name__ == "__main__":
     for dataset in datasets:
         print("Drawing for dataset", dataset)
         env_name, env_noise, env_discretized, cost_fn = dataset
+        x_dim, bounds, radius, n_initial_points, algo_n_iterations = get_env_info(
+            env_name, device
+        )
+        
+        if args.n_initial_points > -1:
+            difference = args.n_initial_points - n_initial_points
+            n_initial_points = args.n_initial_points
+            algo_n_iterations += difference
 
         dict_metrics = {}
         for aid, algo in enumerate(algos):
             list_metrics = []
             for seed in seeds:
+                save_dir = (
+                    f"./results_iclr2025/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}{'_' + args.kernel if args.kernel != 'RBF' else ''}/"
+                    f"{algo}_{cost_fn}_seed{seed}"#_init{n_initial_points}_hidden{args.hidden_dim}_rs{args.n_restarts}"
+                )
+                
                 if os.path.exists(
-                    f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
+                    f"{save_dir}/metrics.npy"
                 ):
                     metrics = np.load(
-                        f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"
+                        f"{save_dir}/metrics.npy"
                     )
                 else:
-                    print(
-                        "Missing ",
-                        env_name,
-                        env_noise,
-                        env_discretized,
-                        algo,
-                        cost_fn,
-                        seed,
-                    )
+                    print(f"Missing: {save_dir}/metrics.npy")
                     continue
 
                 # >>> n_iterations x 3
@@ -667,23 +743,41 @@ if __name__ == "__main__":
                 list_metrics.append([fr, yA, i90])
 
             if len(list_metrics) == 0:
-                print(
-                    "Missing ",
-                    env_name,
-                    env_noise,
-                    env_discretized,
-                    algo,
-                    cost_fn,
-                    seed,
-                )
                 continue
             # >>> n_seeds x n_iterations x 3
 
             dict_metrics[algos_name[aid]] = np.array(list_metrics)
 
         all_results[(env_name, env_noise, env_discretized, cost_fn)] = dict_metrics
+      
         # >>> algo x n_seeds x n_iterations x 1
 
+    # Compute mean and std of metris
+    result_means = {}
+    result_stds = {}
+    for key, dict_metrics in all_results.items():
+        result_means[key] = {}
+        result_stds[key] = {}
+        
+        for algo, metrics in dict_metrics.items():
+            result_means[key][algo] = np.mean(metrics, axis=0)[1]
+            result_stds[key][algo] = np.std(metrics, axis=0)[1]
+            
+            print(key, algo, "\t\t", result_means[key][algo], "+-", result_stds[key][algo])
+            
+    mean_df = pd.DataFrame(result_means)
+    mean_df = mean_df.round(2).astype(str)
+    mean_df.index.name = 'param'
+    std_df = pd.DataFrame(result_stds)
+    std_df = std_df.round(2).astype(str)
+    std_df.index.name = 'param'
+    
+    res_df = pd.concat([mean_df,std_df],axis=0).groupby('param').agg(lambda mu_std: '±'.join(mu_std))
+    res_df = res_df.transpose()
+    res_df.to_csv(f"./results.csv")
+    res_df.to_markdown(f"./results.md")
+    res_df.to_latex(f"./results.tex")
+    
     save_dir = Path("plots")
     save_dir.mkdir(parents=True, exist_ok=True)
     draw_metric_v3(
@@ -694,9 +788,9 @@ if __name__ == "__main__":
         ],
         all_results,
         [
-            "plots/final_cregret.png",
-            "plots/final_yA.png",
-            "plots/iteration_at_90perc_cregret.png",
+            f"{plot_dir}/final_cregret.png",
+            f"{plot_dir}/final_yA.png",
+            f"{plot_dir}/iteration_at_90perc_cregret.png",
         ],
         env_discretized=0,
     )

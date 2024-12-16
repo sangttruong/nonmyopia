@@ -71,9 +71,10 @@ class Parameters:
             if not self.algo_ts:
                 self.n_restarts = 16
         elif self.algo == "qMSL":
-            self.algo_ts = True
-            self.n_samples = 1
-            self.algo_lookahead_steps = 20  # Equivalent 3 in HES
+            self.algo_ts = False
+            self.n_samples = 32
+            self.algo_lookahead_steps = 4  # Equivalent 3 in HES
+            self.torch_dtype = torch.float32
         elif self.algo == "qKG":
             self.algo_lookahead_steps = 1
         else:
@@ -183,8 +184,8 @@ class Parameters:
         elif self.env_name == "NightLight":
             self.x_dim = 2
             self.bounds = [-1, 1]
-            self.n_initial_points = 100
-            self.algo_n_iterations = 150
+            self.n_initial_points = 200
+            self.algo_n_iterations = 250
 
         else:
             raise NotImplementedError
@@ -194,6 +195,10 @@ class Parameters:
             self.n_initial_points = args.n_initial_points
             self.algo_n_iterations += difference
 
+        # if self.x_dim == 2 and self.env_name != "NightLight":
+        #     self.radius = 0.075
+        # elif self.x_dim == 2 and self.env_name == "NightLight":
+        #     self.radius = 0.1
         if self.x_dim == 2:
             self.radius = 0.075
         elif self.x_dim == 4:
@@ -295,14 +300,18 @@ class Parameters:
         elif self.env_name == "SynGP":
             self.initial_points[-1] = [0.725, 0.75]
         elif self.env_name == "NightLight":
-            self.initial_points[-1] = [0.9, 0.8]
+            self.initial_points[-1] = [0.75, 0.65]
 
         self.env_noise = args.env_noise
         self.bounds = torch.tensor(
             self.bounds, dtype=self.torch_dtype, device=self.device
         )
+        if not args.result_dir:
+            result_dir = "./results"
+        else:
+            result_dir = args.result_dir
         self.save_dir = (
-            f"./results/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}{'_' + args.kernel if args.kernel != 'RBF' else ''}/"
+            f"{result_dir}/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}{'_' + args.kernel if args.kernel != 'RBF' else ''}/"
             f"{args.algo}_{args.cost_fn}_seed{self.seed}_init{self.n_initial_points}_hidden{self.hidden_dim}_rs{self.n_restarts}"
         )
 
@@ -471,6 +480,10 @@ def run_exp(parms, env) -> None:
         ).to(parms.device)
         mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
         fit_gpytorch_mll(mll)
+        # surr_model.covar_module.base_kernel.lengthscale = 0.25
+        # surr_model.covar_module.outputscale = 10.0
+        # surr_model.likelihood.noise = 1e-2
+        # surr_model.eval()
 
         # Adjust lookahead steps
         if actor.algo_lookahead_steps > 1 and (
@@ -481,7 +494,8 @@ def run_exp(parms, env) -> None:
         # Construct acqf
         actor.construct_acqf(surr_model=surr_model, buffer=buffer[:i])
 
-        if not parms.amortized or i == continue_iter:
+        # if not parms.amortized or i == continue_iter:
+        if True:
             actor.reset_parameters(
                 buffer=buffer[:i],
                 bo_iter=i - parms.n_initial_points,
@@ -544,6 +558,7 @@ if __name__ == "__main__":
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
+    parser.add_argument("--result_dir", type=str, default="./results")
     args = parser.parse_args()
 
     set_seed(args.seed)

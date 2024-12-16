@@ -90,7 +90,7 @@ class Actor:
 
         if self.parms.algo_ts:
             nf_design_pts = [1] * self.algo_lookahead_steps
-        else:
+        elif "MSL" not in self.parms.algo:
             if self.algo_lookahead_steps == 0:
                 nf_design_pts = []
             elif self.algo_lookahead_steps == 1:
@@ -102,6 +102,8 @@ class Actor:
             elif self.algo_lookahead_steps >= 4:
                 nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
                 nf_design_pts = nf_design_pts + [1] * (self.algo_lookahead_steps - 4)
+        else:
+            nf_design_pts = [32, 2, 1, 1][:self.algo_lookahead_steps]
 
         if self.parms.amortized:
             prev_hid_state = buffer["h"][-1:].clone().expand(self.parms.n_restarts, -1)
@@ -166,6 +168,8 @@ class Actor:
             self.hidden_noise = torch.randn(n_samples, self.parms.hidden_dim).to(X[-1])
             prev_hid_state = prev_hid_state + self.hidden_noise
 
+            early_stop_count = 0
+            best_loss = float("inf")
             for ep in range(300):
                 outputs = []
                 local_prev_hid_state = prev_hid_state
@@ -174,7 +178,7 @@ class Actor:
 
                 for j in range(self.algo_lookahead_steps):
                     output, hidden_state = self.maps(
-                        prev, y, local_prev_hid_state, return_actions=False
+                        prev, y, local_prev_hid_state, return_actions=False, enable_noise=False
                     )
                     outputs.append(output)
                     prev = output
@@ -186,18 +190,28 @@ class Actor:
                     local_prev_hid_state = hidden_state
 
                 output, hidden_state = self.maps(
-                    prev, y, local_prev_hid_state, return_actions=True
+                    prev, y, local_prev_hid_state, return_actions=True, enable_noise=False
                 )
                 outputs.append(output)
 
                 outputs = torch.stack(outputs, dim=0)
                 loss = torch.mean(abs(X - outputs))
+                
                 if ep % 10 == 0:
                     print("Loss:", loss.item())
+                    
+                if loss < best_loss:
+                    best_loss = loss
+                    early_stop_count = 0
+                else:
+                    early_stop_count +=1 
 
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
+                
+                if early_stop_count >= 50:
+                    break
 
         else:
             if bo_iter == 0 or not self.parms.algo_ts:
@@ -378,7 +392,7 @@ class Actor:
 
         if self.parms.algo_ts:
             nf_design_pts = [1] * self.algo_lookahead_steps
-        else:
+        elif "MSL" not in self.parms.algo:
             if self.algo_lookahead_steps == 0:
                 nf_design_pts = []
             elif self.algo_lookahead_steps == 1:
@@ -390,6 +404,8 @@ class Actor:
             elif self.algo_lookahead_steps >= 4:
                 nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
                 nf_design_pts = nf_design_pts + [1] * (self.algo_lookahead_steps - 4)
+        else:
+            nf_design_pts = [32, 2, 1, 1][:self.algo_lookahead_steps]
 
         if self.parms.algo != "HES":
             sampler = SobolQMCNormalSampler(
@@ -454,7 +470,8 @@ class Actor:
             # if iteration - self.parms.n_initial_points > 0:
             #     self.hidden_noise = torch.randn(self.parms.n_restarts, self.parms.hidden_dim).to(prev_X) * 1e-2
             #     self.hidden_noise[0] = 0.0
-            if iteration - self.parms.n_initial_points == 0:
+            # if iteration - self.parms.n_initial_points == 0:
+            if True:
                 prev_hid_state = prev_hid_state + self.hidden_noise
         prev_cost = (
             buffer["cost"][self.parms.n_initial_points : iteration].sum()
@@ -529,6 +546,7 @@ class Actor:
                 maps=local_maps,
                 embedder=embedder,
                 prev_cost=prev_cost,
+                enable_noise=False #(iteration > self.parms.n_initial_points),
             )
 
             acqf_loss = return_dict["acqf_loss"]

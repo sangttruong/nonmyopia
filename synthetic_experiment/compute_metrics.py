@@ -54,6 +54,7 @@ def compute_metrics(
             buffer["x"][: iteration + 1],
             buffer["y"][: iteration + 1],
             likelihood=likelihood,
+            covar_module=parms.kernel,
         ).to(device, dtype=parms.torch_dtype)
 
         if iteration == final_run - 1:

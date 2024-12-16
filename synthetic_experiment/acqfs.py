@@ -285,6 +285,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
         maps: List[nn.Module],
         embedder: nn.Module = None,
         prev_cost: float = 0.0,
+        enable_noise: bool = True,
     ) -> Dict[str, Tensor]:
         """
         Evaluate qMultiStepEHIG objective (q-MultistepHES).
@@ -324,6 +325,7 @@ class qMultiStepHEntropySearch(MCAcquisitionFunction):
                     y=previous_y,
                     prev_hid_state=prev_hid_state,
                     return_actions=False,
+                    enable_noise=enable_noise,
                 )
                 # >>> n_restart x x_dim x (num_categories)
             else:

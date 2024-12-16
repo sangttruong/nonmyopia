@@ -239,6 +239,7 @@ if __name__ == "__main__":
         buffer["x"][: parms.algo_n_iterations + 1],
         buffer["y"][: parms.algo_n_iterations + 1],
         likelihood=likelihood,
+        covar_module=parms.kernel,
     ).to(parms.device, dtype=parms.torch_dtype)
 
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
