@@ -97,7 +97,7 @@ class AmortizedNetwork(nn.Module):
             self.output_bounds[..., 0], self.output_bounds[..., 1]
         )
 
-    def forward(self, x, y, prev_hid_state, return_actions):
+    def forward(self, x, y, prev_hid_state, return_actions, enable_noise=True):
         r"""Forward pass.
 
         Args:
@@ -111,16 +111,19 @@ class AmortizedNetwork(nn.Module):
         postpro = self.postpro_A if return_actions else self.postpro_X
 
         if self.discrete:
-            x = self.embedding_x(x)
-            y = self.embedding_y(y)
+            emb_x = self.embedding_x(x)
+            emb_y = self.embedding_y(y)
 
-            x = x.sum(dim=-2)
+            emb_x = emb_x.sum(dim=-2)
             # >>> batch x hidden_dim
+        else:
+            emb_x = x
+            emb_y = y
 
-        x = torch.cat([x, y], dim=-1)
-        x = self.embedding(x)
+        emb_x = torch.cat([emb_x, emb_y], dim=-1)
+        emb_x = self.embedding(emb_x)
 
-        preprocess_x = self.prepro(x)
+        preprocess_x = self.prepro(emb_x)
         hidden_state = self.rnn(preprocess_x, prev_hid_state)
         preprocess_x = torch.cat([preprocess_x, hidden_state], dim=-1)
 
@@ -132,16 +135,14 @@ class AmortizedNetwork(nn.Module):
 
         output = self.project_output(output)
 
-        angle_degrees = torch.randn(output.shape[0]) * 1e-1
-        output = rotate_points(output, angle_degrees)
+        if enable_noise:
+            angle_rads = torch.rand(output.shape[0]) * 2 * torch.pi - torch.pi
+            output = rotate_points(output - x, angle_rads) + x
 
         return output, hidden_state
 
 
-def rotate_points(inputs, angle_degrees):
-    # Convert angle from degrees to radians
-    thetas = torch.deg2rad(angle_degrees)
-
+def rotate_points(inputs, thetas):
     # Define the rotation matrix
     Q = [
         torch.tensor(
@@ -164,7 +165,7 @@ def rotate_points(inputs, angle_degrees):
         M[i, dims[i, 1], dims[i, 0]] = Q[i, 1, 0]
         M[i, dims[i, 1], dims[i, 1]] = Q[i, 1, 1]
 
-    rotated_points = torch.einsum("bd,bdd->bd", inputs, M.transpose(-1, -2))
+    rotated_points = torch.einsum("bd,bdc->bc", inputs, M.transpose(-1, -2))
     return rotated_points
 
 
