@@ -130,6 +130,8 @@ class Actor:
                     max=0.99,
                     min=0.01,
                 )
+                .reshape(-1, self.parms.x_dim)
+            )
 
                 X.append(
                     x.to(
@@ -513,6 +515,26 @@ class Actor:
         saved_trajectory = []
         saved_loss = []
         saved_cost = []
+        ##############################
+
+        if self.parms.amortized:
+            original_sd = self.maps.state_dict()
+            original_maps = AmortizedNetwork(
+                input_dim=self.parms.x_dim + self.parms.y_dim,
+                output_dim=self.parms.x_dim,
+                hidden_dim=self.parms.hidden_dim,
+                n_actions=self.parms.n_actions,
+                output_bounds=self.parms.bounds,
+                discrete=self.parms.env_discretized,
+                num_categories=self.parms.num_categories,
+            ).to(dtype=self.parms.torch_dtype, device=self.parms.device)
+            original_maps.load_state_dict(original_sd)
+            cosine_loss_fn = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
+
+        ########## TESTING ###########
+        # saved_trajectory = []
+        # saved_loss = []
+        # saved_cost = []
         ##############################
 
         if self.parms.amortized:

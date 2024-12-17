@@ -1,10 +1,10 @@
 import pickle
-import random
 import re
 
 import joblib
 import numpy as np
 import torch
+import random
 import yaml
 from botorch.acquisition import (
     qExpectedImprovement,

@@ -31,7 +31,6 @@ from transformers.utils import (
 MUTANT_VER = os.getenv("MUTANT_VER", "")
 assert MUTANT_VER != "", f"Invalid MUTANT_VER: {MUTANT_VER}"
 
-
 def import_protein_env(mutant_ver):
     global ALLOWED_POS
     global ALLOWED_TOKENS

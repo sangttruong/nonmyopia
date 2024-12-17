@@ -270,6 +270,17 @@ def get_env_info(env_name, device):
     else:
         raise NotImplementedError
 
+    if x_dim == 2:
+        radius = 0.075
+    elif x_dim == 4:
+        radius = 0.1
+    elif x_dim == 6:
+        radius = 0.125
+    elif x_dim == 8:
+        radius = 0.15
+    else:
+        raise NotImplementedError
+
     bounds = np.array(bounds)
     if bounds.ndim < 2 or bounds.shape[0] < x_dim:
         bounds = np.tile(bounds, [x_dim, 1])
@@ -743,6 +754,15 @@ if __name__ == "__main__":
                 list_metrics.append([fr, yA, i90])
 
             if len(list_metrics) == 0:
+                print(
+                    "Missing ",
+                    env_name,
+                    env_noise,
+                    env_discretized,
+                    algo,
+                    cost_fn,
+                    seed,
+                )
                 continue
             # >>> n_seeds x n_iterations x 3
 
