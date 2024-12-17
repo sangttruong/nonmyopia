@@ -35,9 +35,4 @@ env_discretizeds = [
     False,
 ]
 
-cost_functions = [
-    "r-spotlight",
-    "euclidean",
-    "manhattan",
-    "non-markovian"
-]
+cost_functions = ["r-spotlight", "euclidean", "manhattan", "non-markovian"]

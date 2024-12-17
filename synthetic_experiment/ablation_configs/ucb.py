@@ -11,7 +11,7 @@ algos_name = [
     "UCB ($\\beta = 200$)",
     "UCB ($\\beta = 500$)",
     "UCB ($\\beta = 1000$)",
-    "Ours"
+    "Ours",
 ]
 
 algos = [
@@ -50,10 +50,10 @@ env_names = [
     "Ackley",
     # "Ackley4D",
     "Alpine",
-    # "Cosine8", 
-    # "Hartmann", 
-    "HolderTable", 
-    "Levy", 
+    # "Cosine8",
+    # "Hartmann",
+    "HolderTable",
+    "Levy",
     "StyblinskiTang",
     "SynGP",
 ]

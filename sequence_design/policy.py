@@ -1,14 +1,16 @@
 import os
 import random
 import re
-import torch
 from typing import List
+
+import torch
 
 from transformers import AutoTokenizer, GenerationConfig
 from utils import format_prompt, random_mutation, torch_gc, verify_seq
 from vllm import LLM, SamplingParams
 
 MACHINE = os.getenv("MACHINE", "ampere")
+
 
 class Policy:
     def __init__(self, config):
@@ -37,7 +39,7 @@ class Policy:
             dtype = "bfloat16"
         else:
             dtype = "float16"
-            
+
         # num_gpus = torch.cuda.device_count()
         self.model = LLM(
             ckpt_dir,

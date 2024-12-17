@@ -1,11 +1,10 @@
 import argparse
 import os
 import random
-import argparse
-import numpy as np
-from tueplots import bundles
-import matplotlib.pyplot as plt
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
 from botorch.test_functions.synthetic import (
     Ackley,  # XD Ackley function - Minimum
     Beale,  # 2D Beale function - Minimum
@@ -23,6 +22,7 @@ from botorch.test_functions.synthetic import (
 )
 from synthetic_functions.alpine import AlpineN1
 from synthetic_functions.env_wrapper import EnvWrapper
+from tueplots import bundles
 
 plt.rcParams.update(bundles.iclr2023())
 
@@ -36,8 +36,10 @@ def set_seed(seed):
     torch.cuda.manual_seed_all(seed)
     torch.cuda.manual_seed_all(seed)
 
+
 def ensure_dir(dir_path):
     os.makedirs(dir_path, exist_ok=True)
+
 
 def make_env(name, x_dim, bounds, noise_std=0.0):
     r"""Make environment."""
@@ -255,7 +257,7 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
                 param.grad = grad
             optimizer.step()
             optimizer.zero_grad()
-            
+
             if (i + 1) % 200 == 0:
                 print(f"Eval optim round: {i}, Loss: {loss.item():.2f}")
 
@@ -276,7 +278,7 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
     if torch.isnan(A_chosen).any():
         print("A_chosen contains nan")
         A_chosen = buffer["x"][iteration].clone().detach()
-    
+
     u_posterior = env(A_chosen).item()
 
     ######################################################################

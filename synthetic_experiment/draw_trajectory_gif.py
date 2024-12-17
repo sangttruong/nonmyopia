@@ -127,7 +127,9 @@ def eval_and_plot_2D_with_posterior(
 
     ##### SAVE POSTERIOR PLOT #####
     fig, axes = plt.subplots(
-        ncols=3 - int(disable_acquisition), nrows=1, figsize=(1.25 * gif_size[0], 2 * gif_size[1])
+        ncols=3 - int(disable_acquisition),
+        nrows=1,
+        figsize=(1.25 * gif_size[0], 2 * gif_size[1]),
     )
     # Set label and bounds
     axes[1].set_xlabel("$x_1$")
@@ -430,7 +432,7 @@ if __name__ == "__main__":
                 parms=parms,
                 buffer=buffer,
                 iteration=traj_iter,
-                disable_acquisition=args.disable_acquisition
+                disable_acquisition=args.disable_acquisition,
             )
             list_saved_files.extend(saved_files)
 

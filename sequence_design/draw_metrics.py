@@ -176,7 +176,7 @@ if __name__ == "__main__":
             list_files = [x for x in list_files if x.startswith("trajectory")]
             list_files = sorted(list_files)[: CUT_OFF + 1]
             buffer = pickle.load(open(os.path.join(result, "lite_buffer.pkl"), "rb"))
-            
+
             if len(buffer["y"][: CUT_OFF + 2]) != CUT_OFF + 1:
                 print(f"Missing {algo} seed {seed}")
                 continue

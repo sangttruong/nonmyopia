@@ -2,9 +2,8 @@ import argparse
 import os
 import pickle
 
-from utils import (
-    import_protein_env,
-)
+from utils import import_protein_env
+
 FULL_LIST_RESULTS = {
     "m1f1": {
         "SR-s42": "ckpts_iclr2025/ready-SR-1seq-128rs-s42",
@@ -148,7 +147,7 @@ if __name__ == "__main__":
     _, INIT_SEQ, _, _, _ = import_protein_env(args.mutant_ver)
     result_key = f"m{args.mutant_ver[1:]}f{args.fn_ver[1:]}"
     LIST_RESULTS = FULL_LIST_RESULTS[result_key]
-    
+
     for algo in LIST_ALGOS:
         for seed in SEEDS:
             folder = LIST_RESULTS[algo + "-s" + str(seed)]
@@ -159,11 +158,10 @@ if __name__ == "__main__":
                     "x": buffer["x"],
                     "y": buffer["y"],
                 }
-                
+
                 # Save the new buffer
                 with open(os.path.join(folder, "lite_buffer.pkl"), "wb") as f:
                     pickle.dump(new_buffer, f)
-                
+
             except:
                 pass
-            
