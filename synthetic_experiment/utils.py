@@ -5,10 +5,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import torch
-
-from acqfs import qBOAcqf
-from botorch.sampling.normal import SobolQMCNormalSampler
 from botorch.test_functions.synthetic import (
     Ackley,  # XD Ackley function - Minimum
     Beale,  # 2D Beale function - Minimum
@@ -26,10 +22,9 @@ from botorch.test_functions.synthetic import (
 )
 from synthetic_functions.alpine import AlpineN1
 from synthetic_functions.env_wrapper import EnvWrapper
-from synthetic_functions.syngp import SynGP
 from tueplots import bundles
 
-plt.rcParams.update(bundles.neurips2024())
+plt.rcParams.update(bundles.iclr2023())
 
 
 def set_seed(seed):
@@ -40,6 +35,10 @@ def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.cuda.manual_seed_all(seed)
+
+
+def ensure_dir(dir_path):
+    os.makedirs(dir_path, exist_ok=True)
 
 
 def make_env(name, x_dim, bounds, noise_std=0.0):
@@ -76,6 +75,8 @@ def make_env(name, x_dim, bounds, noise_std=0.0):
         f_ = StyblinskiTang(dim=x_dim, negate=True, noise_std=noise_std)
     elif name == "SynGP":
         f_ = SynGP(dim=x_dim, noise_std=noise_std)
+    elif name == "NightLight":
+        f_ = NightLight(noise_std=noise_std)
     else:
         raise NotImplementedError
 
@@ -250,7 +251,6 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
 
             losses = return_dict["acqf_loss"] + return_dict["acqf_cost"]
             # >>> n_fantasy_at_design_pts x batch_size
-
             loss = losses.mean()
             grads = torch.autograd.grad(loss, [A], allow_unused=True)
             for param, grad in zip([A], grads):
@@ -273,6 +273,12 @@ def eval_func(env, model, parms, buffer, iteration, embedder=None, *args, **kwar
         A_chosen = embedder.encode(A[aidx]).detach()
     else:
         A_chosen = A[aidx].detach()
+
+    # Check A_chosen contains nan
+    if torch.isnan(A_chosen).any():
+        print("A_chosen contains nan")
+        A_chosen = buffer["x"][iteration].clone().detach()
+
     u_posterior = env(A_chosen).item()
 
     ######################################################################

@@ -1,0 +1,35 @@
+program: main.py
+project: nonmyopia
+method: grid
+metric:
+    goal: minimize
+    name: loss
+parameters:
+    seed: 
+        values: [7, 11]
+    task: 
+        values: [topk]
+    env_name: 
+        values: [NightLight]
+    env_noise:  
+        values: [0.0]
+    env_discretized: 
+        values: [False]
+    algo: 
+        values: [HES-TS-AM-20, HES-TS-20, qEI, qKG]
+    cost_fn: 
+        values: [r-spotlight]
+    n_restarts:
+        values: [64]
+    hidden_dim:
+        values: [64]
+    n_initial_points:
+        values: [50]
+    plot:  
+        values: [False]
+    gpu_id:  
+        values: [0]
+    cont:
+        values: [False]
+    result_dir:
+        values: [./results_in]

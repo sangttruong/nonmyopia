@@ -28,7 +28,7 @@ from utils import (
 )
 
 
-def main(args: Optional[Dict[str, Any]] = None):
+def main():
     wandb.init(project="nonmyopia-sequence")
 
     parser = ArgumentParser()
@@ -231,7 +231,12 @@ def main(args: Optional[Dict[str, Any]] = None):
 
         # Train new policy with rolled out dataset
         query_start_time = time.time()
-        actor.train_policy(iteration=i, dataset=prompt_dataset, mutant_ver=config.mutant_ver, fn_ver=config.fn_ver)
+        actor.train_policy(
+            iteration=i,
+            dataset=prompt_dataset,
+            mutant_ver=config.mutant_ver,
+            fn_ver=config.fn_ver,
+        )
 
         # -------------------------------------------------------
 

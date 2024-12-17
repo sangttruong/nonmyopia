@@ -54,6 +54,7 @@ def compute_metrics(
             buffer["x"][: iteration + 1],
             buffer["y"][: iteration + 1],
             likelihood=likelihood,
+            covar_module=parms.kernel,
         ).to(device, dtype=parms.torch_dtype)
 
         if iteration == final_run - 1:
@@ -96,8 +97,12 @@ if __name__ == "__main__":
     parser.add_argument("--env_name", type=str, default="HolderTable")
     parser.add_argument("--env_noise", type=float, default=0.01)
     parser.add_argument("--env_discretized", type=str2bool, default=False)
-    parser.add_argument("--algo", type=str, default="qSR")
+    parser.add_argument("--algo", type=str, default="HES-TS-AM-20")
     parser.add_argument("--cost_fn", type=str, default="r-spotlight")
+    parser.add_argument("--n_initial_points", type=int, default=-1)
+    parser.add_argument("--n_restarts", type=int, default=64)
+    parser.add_argument("--hidden_dim", type=int, default=64)
+    parser.add_argument("--kernel", type=str, default="RBF")
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
@@ -126,7 +131,8 @@ if __name__ == "__main__":
         device=local_parms.device,
     )
 
-    base_path = f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}"
+    # base_path = f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}"
+    base_path = local_parms.save_dir
 
     print(f"Computing metrics for {algo}, {cost_fn}, seed{seed}")
     # os.path.exists(f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy"):
@@ -187,7 +193,7 @@ if __name__ == "__main__":
 
         # Save results
         with open(
-            f"results/{env_name}_{env_noise}{'_discretized' if env_discretized else ''}/{algo}_{cost_fn}_seed{seed}/metrics.npy",
+            os.path.join(local_parms.save_dir, "metrics.npy"),
             "wb",
         ) as f:
             np.save(f, metrics)

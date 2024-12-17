@@ -23,7 +23,7 @@ from main import Parameters
 from tueplots import bundles
 from utils import eval_func, make_env, set_seed, str2bool
 
-plt.rcParams.update(bundles.neurips2024())
+plt.rcParams.update(bundles.iclr2024())
 
 
 def eval_and_plot_2D_with_posterior(
@@ -239,6 +239,7 @@ if __name__ == "__main__":
         buffer["x"][: parms.algo_n_iterations + 1],
         buffer["y"][: parms.algo_n_iterations + 1],
         likelihood=likelihood,
+        covar_module=parms.kernel,
     ).to(parms.device, dtype=parms.torch_dtype)
 
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)

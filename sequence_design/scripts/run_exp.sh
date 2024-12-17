@@ -1,6 +1,6 @@
 # Start embedding server
 # 2 x 48GB
-python emb_server.py --model google/gemma-7b --host 0.0.0.0 --port 1337 --batch_size=8
+python emb_server.py --model google/gemma-7b --host 0.0.0.0 --port 1338 --batch_size=8
 
 # Experiment scripts
 python main.py --config configs/sr-1seq-64rs-s42.yaml

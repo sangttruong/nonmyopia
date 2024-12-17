@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 
 r"""Evaluate and plot."""
+import os
 from argparse import ArgumentParser
 
 import gpytorch
@@ -218,13 +219,18 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=2)
     parser.add_argument("--task", type=str, default="topk")
     parser.add_argument("--env_name", type=str, default="SynGP")
-    parser.add_argument("--env_noise", type=float, default=0.01)
+    parser.add_argument("--env_noise", type=float, default=0.0)
     parser.add_argument("--env_discretized", type=str2bool, default=False)
     parser.add_argument("--algo", type=str, default="HES-TS-AM-20")
     parser.add_argument("--cost_fn", type=str, default="r-spotlight")
+    parser.add_argument("--n_initial_points", type=int, default=-1)
+    parser.add_argument("--n_restarts", type=int, default=64)
+    parser.add_argument("--hidden_dim", type=int, default=64)
+    parser.add_argument("--kernel", type=str, default="RBF")
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
+    parser.add_argument("--result_dir", type=str, default="./results")
     parser.add_argument("--iter", type=int, required=True)
     args = parser.parse_args()
 
@@ -243,8 +249,10 @@ if __name__ == "__main__":
         dtype=parms.torch_dtype,
         device=parms.device,
     )
-    surr_file = f"results/{parms.env_name}_{parms.env_noise}{'_discretized' if parms.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{parms.seed}/surr_model_{parms.algo_n_iterations-1}.pt"
-    buffer_file = f"results/{parms.env_name}_{parms.env_noise}{'_discretized' if parms.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{parms.seed}/buffer.pt"
+    surr_file = os.path.join(
+        parms.save_dir, f"surr_model_{parms.algo_n_iterations-1}.pt"
+    )
+    buffer_file = os.path.join(parms.save_dir, f"buffer.pt")
 
     buffer = torch.load(buffer_file, map_location=parms.device).to(
         dtype=parms.torch_dtype
@@ -256,6 +264,7 @@ if __name__ == "__main__":
         buffer["x"][: parms.algo_n_iterations + 1],
         buffer["y"][: parms.algo_n_iterations + 1],
         likelihood=likelihood,
+        covar_module=parms.kernel,
     ).to(parms.device, dtype=parms.torch_dtype)
 
     mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)

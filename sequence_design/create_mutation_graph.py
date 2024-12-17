@@ -11,7 +11,7 @@ from utils import get_embedding_from_server
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--mutant_ver", type=str, default="v1")
-parser.add_argument("--server_url", type=str, default="http://hyperturing2:1339")
+parser.add_argument("--server_url", type=str, default="http://hyperturing1:1339")
 parser.add_argument("--batch_size", type=int, default=4)
 args = parser.parse_args()
 
@@ -60,24 +60,11 @@ elif args.mutant_ver == "v2":
         "G",
         "P",
     ]
-    
+
 elif args.mutant_ver == "v3":
     ENV_SEQ = "SKGEELFTGVVPILVELDGDVNGHKFSVSGEGEGDATYGKLTLKFICTTGKLPVPWPTLVTTLSYGVQCSSRYPDHMKQHDFFKSAMPEGYVQERTLFFKDDGNYKTRAEVKFEGDTLVNRIELKGIDFKEDGNILGHKLEYNYNSHNVYIMADKQKNGIKVNFKIRHNIEDGSVQLADHYQQNTPIGDGPVLLPDNHYLSTQSALSKDPNEKRDHMVLLEFVTAAGITHGMDELYK"
 
-    ALLOWED_POS = [
-        0,
-        26,
-        28,
-        41,
-        60,
-        61,
-        63,
-        84,
-        116,
-        201,
-        203,
-        223
-    ]
+    ALLOWED_POS = [0, 26, 28, 41, 60, 61, 63, 84, 116, 201, 203, 223]
 
     ALLOWED_AA = [
         "S",

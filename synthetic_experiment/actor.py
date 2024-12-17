@@ -7,11 +7,12 @@
 r"""Implement an actor."""
 import gc
 import math
+import os
 import pickle
 
 import torch
 from acqfs import qBOAcqf, qMultiStepHEntropySearch
-from amortized_network import AmortizedNetwork, Project2Range
+from amortized_network import AmortizedNetwork
 
 from botorch.sampling.normal import SobolQMCNormalSampler
 from tqdm import tqdm
@@ -83,16 +84,13 @@ class Actor:
             prev_y (Tensor): Previous observations
         """
         print("Resetting actor parameters...")
-        project2range = Project2Range(
-            self.parms.bounds[..., 0], self.parms.bounds[..., 1]
-        )
         # Inititalize required variables
         prev_X = buffer["x"][-1:].expand(self.parms.n_restarts, -1)
         prev_y = buffer["y"][-1:].expand(self.parms.n_restarts, -1)
 
         if self.parms.algo_ts:
             nf_design_pts = [1] * self.algo_lookahead_steps
-        else:
+        elif "MSL" not in self.parms.algo:
             if self.algo_lookahead_steps == 0:
                 nf_design_pts = []
             elif self.algo_lookahead_steps == 1:
@@ -104,6 +102,8 @@ class Actor:
             elif self.algo_lookahead_steps >= 4:
                 nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
                 nf_design_pts = nf_design_pts + [1] * (self.algo_lookahead_steps - 4)
+        else:
+            nf_design_pts = [32, 2, 1, 1][: self.algo_lookahead_steps]
 
         if self.parms.amortized:
             prev_hid_state = buffer["h"][-1:].clone().expand(self.parms.n_restarts, -1)
@@ -168,6 +168,8 @@ class Actor:
             self.hidden_noise = torch.randn(n_samples, self.parms.hidden_dim).to(X[-1])
             prev_hid_state = prev_hid_state + self.hidden_noise
 
+            early_stop_count = 0
+            best_loss = float("inf")
             for ep in range(300):
                 outputs = []
                 local_prev_hid_state = prev_hid_state
@@ -176,7 +178,11 @@ class Actor:
 
                 for j in range(self.algo_lookahead_steps):
                     output, hidden_state = self.maps(
-                        prev, y, local_prev_hid_state, return_actions=False
+                        prev,
+                        y,
+                        local_prev_hid_state,
+                        return_actions=False,
+                        enable_noise=False,
                     )
                     outputs.append(output)
                     prev = output
@@ -188,18 +194,32 @@ class Actor:
                     local_prev_hid_state = hidden_state
 
                 output, hidden_state = self.maps(
-                    prev, y, local_prev_hid_state, return_actions=True
+                    prev,
+                    y,
+                    local_prev_hid_state,
+                    return_actions=True,
+                    enable_noise=False,
                 )
                 outputs.append(output)
 
                 outputs = torch.stack(outputs, dim=0)
                 loss = torch.mean(abs(X - outputs))
+
                 if ep % 10 == 0:
                     print("Loss:", loss.item())
+
+                if loss < best_loss:
+                    best_loss = loss
+                    early_stop_count = 0
+                else:
+                    early_stop_count += 1
 
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad()
+
+                if early_stop_count >= 50:
+                    break
 
         else:
             if bo_iter == 0 or not self.parms.algo_ts:
@@ -380,7 +400,7 @@ class Actor:
 
         if self.parms.algo_ts:
             nf_design_pts = [1] * self.algo_lookahead_steps
-        else:
+        elif "MSL" not in self.parms.algo:
             if self.algo_lookahead_steps == 0:
                 nf_design_pts = []
             elif self.algo_lookahead_steps == 1:
@@ -392,6 +412,8 @@ class Actor:
             elif self.algo_lookahead_steps >= 4:
                 nf_design_pts = [64, 4, 2, 1]  # [16, 8, 8, 8]
                 nf_design_pts = nf_design_pts + [1] * (self.algo_lookahead_steps - 4)
+        else:
+            nf_design_pts = [32, 2, 1, 1][: self.algo_lookahead_steps]
 
         if self.parms.algo != "HES":
             sampler = SobolQMCNormalSampler(
@@ -416,7 +438,14 @@ class Actor:
             best_f=buffer["y"].max(),
         )
 
-    def query(self, buffer, iteration: int, embedder=None, initial=False):
+    def query(
+        self,
+        buffer,
+        iteration: int,
+        embedder=None,
+        f_posterior=None,
+        save_trajectory=True,
+    ):
         r"""Compute the next design point.
 
         Args:
@@ -449,7 +478,8 @@ class Actor:
             # if iteration - self.parms.n_initial_points > 0:
             #     self.hidden_noise = torch.randn(self.parms.n_restarts, self.parms.hidden_dim).to(prev_X) * 1e-2
             #     self.hidden_noise[0] = 0.0
-            if iteration - self.parms.n_initial_points == 0:
+            # if iteration - self.parms.n_initial_points == 0:
+            if True:
                 prev_hid_state = prev_hid_state + self.hidden_noise
         prev_cost = (
             buffer["cost"][self.parms.n_initial_points : iteration].sum()
@@ -458,7 +488,6 @@ class Actor:
         )
 
         # Optimize the acquisition function
-        # optimizer = torch.optim.LBFGS(self._parameters, lr=self.parms.acq_opt_lr)
         optimizer = torch.optim.AdamW(self._parameters, lr=self.parms.acq_opt_lr)
         # lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         #     optimizer, T_max=self.parms.acq_opt_iter
@@ -475,7 +504,38 @@ class Actor:
         costs = []
 
         if self.parms.algo.startswith("HES"):
-            self.acqf.dump_model()
+            self.acqf.dump_model(f=f_posterior)
+            if self.parms.algo_ts and f_posterior is None:
+                # Save self.acqf.f using pickle
+                pickle.dump(
+                    self.acqf.f,
+                    open(
+                        os.path.join(
+                            self.parms.save_dir, f"posterior_sample_{iteration}.pkl"
+                        ),
+                        "wb",
+                    ),
+                )
+
+        ########## TESTING ###########
+        saved_trajectory = []
+        saved_loss = []
+        saved_cost = []
+        ##############################
+
+        if self.parms.amortized:
+            original_sd = self.maps.state_dict()
+            original_maps = AmortizedNetwork(
+                input_dim=self.parms.x_dim + self.parms.y_dim,
+                output_dim=self.parms.x_dim,
+                hidden_dim=self.parms.hidden_dim,
+                n_actions=self.parms.n_actions,
+                output_bounds=self.parms.bounds,
+                discrete=self.parms.env_discretized,
+                num_categories=self.parms.num_categories,
+            ).to(dtype=self.parms.torch_dtype, device=self.parms.device)
+            original_maps.load_state_dict(original_sd)
+            cosine_loss_fn = torch.nn.CosineSimilarity(dim=-1, eps=1e-6)
 
         ########## TESTING ###########
         # saved_trajectory = []
@@ -500,7 +560,10 @@ class Actor:
         for ep in range(self.parms.acq_opt_iter):
             if not self.parms.amortized and not self.parms.env_discretized:
                 local_maps = [torch.sigmoid(x) for x in self.maps]
-                # saved_trajectory.append([x.cpu().detach().tolist() for x in local_maps])
+                if save_trajectory:
+                    saved_trajectory.append(
+                        [x.cpu().detach().tolist() for x in local_maps]
+                    )
             else:
                 local_maps = self.maps
 
@@ -511,12 +574,13 @@ class Actor:
                 maps=local_maps,
                 embedder=embedder,
                 prev_cost=prev_cost,
+                enable_noise=False,  # (iteration > self.parms.n_initial_points),
             )
 
             acqf_loss = return_dict["acqf_loss"]
             acqf_cost = return_dict["acqf_cost"]
-            # saved_loss.append(return_dict["acqf_loss"].tolist())
-            # saved_cost.append(return_dict["acqf_cost"].tolist())
+            saved_loss.append(return_dict["acqf_loss"].tolist())
+            saved_cost.append(return_dict["acqf_cost"].tolist())
             # >> n_restart
 
             if self.parms.amortized:
@@ -548,10 +612,10 @@ class Actor:
             else:
                 KL = 0
 
-            # if self.parms.amortized or self.parms.env_discretized:
-            #     saved_trajectory.append(
-            #         [x.cpu().detach().tolist() for x in return_dict["X"]]
-            #     )
+            if save_trajectory and (self.parms.amortized or self.parms.env_discretized):
+                saved_trajectory.append(
+                    [x.cpu().detach().tolist() for x in return_dict["X"]]
+                )
 
             losses.append(acqf_loss.mean().item())
             costs.append(acqf_cost.mean().item())
@@ -581,7 +645,6 @@ class Actor:
             for param, grad in zip(self._parameters, grads):
                 param.grad = grad
 
-            # optimizer.step(lambda: loss)
             optimizer.step()
             # lr_scheduler.step()
             optimizer.zero_grad()
@@ -601,14 +664,15 @@ class Actor:
         idx = torch.argmin(best_loss + best_cost + best_KL)
 
         ########## TESTING ###########
-        # pickle.dump(
-        #     (saved_trajectory, idx),
-        #     open(self.parms.save_dir + f"/trajectory_{iteration}.pkl", "wb"),
-        # )
-        # pickle.dump(
-        #     (saved_loss, saved_cost),
-        #     open(self.parms.save_dir + f"/lossncost_{iteration}.pkl", "wb"),
-        # )
+        if save_trajectory:
+            pickle.dump(
+                (saved_trajectory, idx),
+                open(self.parms.save_dir + f"/trajectory_{iteration}.pkl", "wb"),
+            )
+            pickle.dump(
+                (saved_loss, saved_cost),
+                open(self.parms.save_dir + f"/lossncost_{iteration}.pkl", "wb"),
+            )
         ##############################
 
         # Best acqf loss
@@ -661,6 +725,9 @@ class Actor:
             draw_loss_and_cost(self.parms.save_dir, losses, costs, iteration)
 
         return {
+            "all_losses": best_loss,
+            "all_costs": best_cost,
+            "loss": acqf_loss,
             "cost": acqf_cost,
             "next_X": next_X,
             "actions": actions,

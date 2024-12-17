@@ -58,24 +58,23 @@ class Parameters:
         self.y_dim = 1
         self.algo_n_iterations = None
 
-        self.n_samples = 64  # 1
+        self.n_samples = 64
         self.amortized = False
-        self.hidden_dim = 64
-        self.n_restarts = 64
+        self.hidden_dim = args.hidden_dim
+        self.n_restarts = args.n_restarts
 
         if self.algo.startswith("HES"):
-            self.n_restarts = 16
             self.algo = "HES"
             self.algo_lookahead_steps = int(args.algo.split("-")[-1])
             self.algo_ts = "TS" in args.algo
             self.amortized = "AM" in args.algo
-            if self.algo_ts:
-                self.n_restarts = 64
+            if not self.algo_ts:
+                self.n_restarts = 16
         elif self.algo == "qMSL":
-            self.n_restarts = 64
-            self.algo_ts = True
-            self.n_samples = 1
-            self.algo_lookahead_steps = 20  # Equivalent 3 in HES
+            self.algo_ts = False
+            self.n_samples = 32
+            self.algo_lookahead_steps = 4  # Equivalent 3 in HES
+            self.torch_dtype = torch.float32
         elif self.algo == "qKG":
             self.algo_lookahead_steps = 1
         else:
@@ -84,7 +83,14 @@ class Parameters:
         self.acq_opt_lr = 0.001 if self.amortized else 1e-2
         self.acq_opt_iter = 500 if self.amortized else 500
 
-        self.kernel = None
+        if args.kernel == "RBF":
+            self.kernel = None
+        elif args.kernel.startswith("Matern"):
+            nu = float(args.kernel.split("-")[-1])
+            self.kernel = gpytorch.kernels.MaternKernel(nu=nu)
+        elif args.kernel == "Linear":
+            self.kernel = gpytorch.kernels.LinearKernel()
+
         if self.env_name == "Ackley":
             self.x_dim = 2
             self.bounds = [-2, 2]
@@ -175,9 +181,24 @@ class Parameters:
             self.n_initial_points = 25
             self.algo_n_iterations = 75
 
+        elif self.env_name == "NightLight":
+            self.x_dim = 2
+            self.bounds = [-1, 1]
+            self.n_initial_points = 200
+            self.algo_n_iterations = 250
+
         else:
             raise NotImplementedError
 
+        if args.n_initial_points > -1:
+            difference = args.n_initial_points - self.n_initial_points
+            self.n_initial_points = args.n_initial_points
+            self.algo_n_iterations += difference
+
+        # if self.x_dim == 2 and self.env_name != "NightLight":
+        #     self.radius = 0.075
+        # elif self.x_dim == 2 and self.env_name == "NightLight":
+        #     self.radius = 0.1
         if self.x_dim == 2:
             self.radius = 0.075
         elif self.x_dim == 4:
@@ -278,12 +299,21 @@ class Parameters:
             self.initial_points[-1] = [0.6, 0.3]
         elif self.env_name == "SynGP":
             self.initial_points[-1] = [0.725, 0.75]
+        elif self.env_name == "NightLight":
+            self.initial_points[-1] = [0.75, 0.65]
 
         self.env_noise = args.env_noise
         self.bounds = torch.tensor(
             self.bounds, dtype=self.torch_dtype, device=self.device
         )
-        self.save_dir = f"./results/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}/{args.algo}_{args.cost_fn}_seed{self.seed}"
+        if not args.result_dir:
+            result_dir = "./results"
+        else:
+            result_dir = args.result_dir
+        self.save_dir = (
+            f"{result_dir}/{args.env_name}_{args.env_noise}{'_discretized' if args.env_discretized else ''}{'_' + args.kernel if args.kernel != 'RBF' else ''}/"
+            f"{args.algo}_{args.cost_fn}_seed{self.seed}_init{self.n_initial_points}_hidden{self.hidden_dim}_rs{self.n_restarts}"
+        )
 
         if args.env_discretized:
             self.env_discretized = True
@@ -350,6 +380,11 @@ def run_exp(parms, env) -> None:
             ),
             h=torch.full(
                 (parms.algo_n_iterations, parms.hidden_dim),
+                fill_value,
+                dtype=parms.torch_dtype,
+            ),
+            loss=torch.full(
+                (parms.algo_n_iterations,),
                 fill_value,
                 dtype=parms.torch_dtype,
             ),
@@ -445,6 +480,10 @@ def run_exp(parms, env) -> None:
         ).to(parms.device)
         mll = ExactMarginalLogLikelihood(surr_model.likelihood, surr_model)
         fit_gpytorch_mll(mll)
+        # surr_model.covar_module.base_kernel.lengthscale = 0.25
+        # surr_model.covar_module.outputscale = 10.0
+        # surr_model.likelihood.noise = 1e-2
+        # surr_model.eval()
 
         # Adjust lookahead steps
         if actor.algo_lookahead_steps > 1 and (
@@ -455,7 +494,8 @@ def run_exp(parms, env) -> None:
         # Construct acqf
         actor.construct_acqf(surr_model=surr_model, buffer=buffer[:i])
 
-        if not parms.amortized or i == continue_iter:
+        # if not parms.amortized or i == continue_iter:
+        if True:
             actor.reset_parameters(
                 buffer=buffer[:i],
                 bo_iter=i - parms.n_initial_points,
@@ -473,6 +513,7 @@ def run_exp(parms, env) -> None:
         buffer["y"][i] = env(output["next_X"])
         if parms.amortized:
             buffer["h"][i] = output["hidden_state"]
+        buffer["loss"][i] = output["loss"]
         buffer["cost"][i] = output["cost"]
         buffer["chosen_idx"][i] = output["chosen_idx"]
         buffer["runtime"][i] = query_end_time - query_start_time
@@ -489,6 +530,7 @@ def run_exp(parms, env) -> None:
         logging_data = {
             "x": buffer["x"][i].tolist(),
             "y": buffer["y"][i].tolist(),
+            "loss": buffer["loss"][i].item(),
             "cost": buffer["cost"][i].item(),
             "runtime": buffer["runtime"][i].item(),
         }
@@ -509,9 +551,14 @@ if __name__ == "__main__":
     parser.add_argument("--env_discretized", type=str2bool, default=False)
     parser.add_argument("--algo", type=str, default="HES-TS-AM-20")
     parser.add_argument("--cost_fn", type=str, default="r-spotlight")
+    parser.add_argument("--n_initial_points", type=int, default=-1)
+    parser.add_argument("--n_restarts", type=int, default=64)
+    parser.add_argument("--hidden_dim", type=int, default=64)
+    parser.add_argument("--kernel", type=str, default="RBF")
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
+    parser.add_argument("--result_dir", type=str, default="./results")
     args = parser.parse_args()
 
     set_seed(args.seed)
