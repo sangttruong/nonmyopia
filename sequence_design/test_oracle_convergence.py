@@ -79,18 +79,19 @@ for i, hf_embedding_name in enumerate(hf_embedding_names):
         r2s_std_emb[emb[i]].append(r2s_local_std)
         rmse_emb[emb[i]].append(rmse_local_mean)
         rmse_std_emb[emb[i]].append(rmse_local_std)
-
 import pickle
 
 with open("oracle_results.pkl", "wb") as f:
     results = (r2s_emb, r2s_std_emb, rmse_emb, rmse_std_emb)
     pickle.dump(results, f)
 
+# total_X = 21446
 # with open("oracle_results.pkl", "rb") as f:
 #     r2s_emb, r2s_std_emb, rmse_emb, rmse_std_emb = pickle.load(f)
 
 # Draw plots
-plt.figure(figsize=figsizes.iclr2024(nrows=1, ncols=1)["figure.figsize"])
+figsize = figsizes.iclr2024(nrows=1, ncols=1)["figure.figsize"]
+plt.figure(figsize=[figsize[0] * 0.8, figsize[1] * 0.5])
 sizes = [total_X * p for p in np.arange(0.1, 1.1, 0.1)]
 for emb_name in emb:
     plt.plot(sizes, r2s_emb[emb_name], label=emb_name)
@@ -100,14 +101,15 @@ for emb_name in emb:
         np.array(r2s_emb[emb_name]) + np.array(r2s_std_emb[emb_name]),
         alpha=0.1,
     )
-plt.ylim(top=1)
+# plt.ylim(top=1)
 plt.ylabel(r"$R^2$")
+plt.xlim(left=2048)
 plt.xlabel("Number of training data")
-plt.legend()
+plt.legend(loc="lower center", ncol=4, bbox_to_anchor=(0.5, -0.66))
 plt.savefig("plots/R2_convergence.png", dpi=300)
 plt.close()
 
-plt.figure(figsize=figsizes.iclr2024(nrows=1, ncols=1)["figure.figsize"])
+plt.figure(figsize=[figsize[0] * 0.8, figsize[1] * 0.5])
 for emb_name in emb:
     plt.plot(sizes, rmse_emb[emb_name], label=emb_name)
     plt.fill_between(
@@ -116,9 +118,10 @@ for emb_name in emb:
         np.array(rmse_emb[emb_name]) + np.array(rmse_std_emb[emb_name]),
         alpha=0.1,
     )
-plt.ylim(bottom=0)
+# plt.ylim(bottom=0)
 plt.ylabel(r"$RMSE$")
+plt.xlim(left=2048)
 plt.xlabel("Number of training data")
-plt.legend()
+plt.legend(loc="lower center", ncol=4, bbox_to_anchor=(0.5, -0.66))
 plt.savefig("plots/RMSE_convergence.png", dpi=300)
 plt.close()
