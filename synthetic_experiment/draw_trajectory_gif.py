@@ -360,8 +360,6 @@ if __name__ == "__main__":
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
-    parser.add_argument("--iter_start", type=int)
-    parser.add_argument("--iter_end", type=int)
     parser.add_argument("--gif_only", type=str2bool, default=False)
     parser.add_argument("--disable_acquisition", type=str2bool, default=False)
     parser.add_argument("--result_dir", type=str, default="./results")
