@@ -8,8 +8,6 @@ import imageio
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from acqfs import qBOAcqf
-from botorch.sampling.normal import SobolQMCNormalSampler
 from botorch.test_functions.synthetic import (
     Ackley,  # XD Ackley function - Minimum
     Beale,  # 2D Beale function - Minimum
@@ -40,7 +38,6 @@ def create_gif(plot_files, gif_name, fps=10):
         for plot in plot_files:
             image = imageio.imread(plot)
             writer.append_data(image)
-
 
 def set_seed(seed):
     random.seed(seed)
