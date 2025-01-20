@@ -3,8 +3,11 @@ import os
 import random
 from pathlib import Path
 
+import imageio
+
 import matplotlib.pyplot as plt
 import numpy as np
+import torch
 from botorch.test_functions.synthetic import (
     Ackley,  # XD Ackley function - Minimum
     Beale,  # 2D Beale function - Minimum
@@ -22,10 +25,19 @@ from botorch.test_functions.synthetic import (
 )
 from synthetic_functions.alpine import AlpineN1
 from synthetic_functions.env_wrapper import EnvWrapper
+from synthetic_functions.nightlight import NightLight
+from synthetic_functions.syngp import SynGP
 from tueplots import bundles
 
 plt.rcParams.update(bundles.iclr2023())
 
+
+def create_gif(plot_files, gif_name, fps=10):
+    # Create a gif from the saved plots
+    with imageio.get_writer(gif_name, mode="I", duration=1 / fps) as writer:
+        for plot in plot_files:
+            image = imageio.imread(plot)
+            writer.append_data(image)
 
 def set_seed(seed):
     random.seed(seed)

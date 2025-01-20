@@ -6,7 +6,6 @@
 
 r"""Implement an actor."""
 import gc
-import math
 import os
 import pickle
 
@@ -15,7 +14,6 @@ from acqfs import qBOAcqf, qMultiStepHEntropySearch
 from amortized_network import AmortizedNetwork
 
 from botorch.sampling.normal import SobolQMCNormalSampler
-from tqdm import tqdm
 from utils import (
     draw_loss_and_cost,
     generate_random_points_batch,
@@ -619,7 +617,7 @@ class Actor:
 
             losses.append(acqf_loss.mean().item())
             costs.append(acqf_cost.mean().item())
-            loss = acqf_loss + acqf_cost + KL
+            loss = acqf_loss + abs(self.parms.budget - acqf_cost) + KL
 
             chosen_idx = torch.argmin(loss)
             if ep == 0 or loss[chosen_idx] < (best_loss + best_cost + best_KL).min():

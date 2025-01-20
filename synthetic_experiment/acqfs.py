@@ -24,15 +24,12 @@ from botorch.acquisition import (
     qUpperConfidenceBound,
 )
 from botorch.acquisition.monte_carlo import MCAcquisitionFunction
-from botorch.exceptions import UnsupportedError
 from botorch.models.utils.assorted import fantasize as fantasize_flag
 from botorch.posteriors import Posterior
 from botorch.sampling.base import MCSampler
 from botorch.sampling.normal import NormalMCSampler, SobolQMCNormalSampler
 from botorch.sampling.pathwise.posterior_samplers import draw_matheron_paths
-from botorch.utils.sampling import draw_sobol_normal_samples
 from torch import Tensor
-from torch.quasirandom import SobolEngine
 
 
 class qBOAcqf(MCAcquisitionFunction):

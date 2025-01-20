@@ -106,6 +106,7 @@ if __name__ == "__main__":
     parser.add_argument("--plot", type=str2bool, default=False)
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--cont", type=str2bool, default=False)
+    parser.add_argument("--result_dir", type=str, default="./results")
     args = parser.parse_args()
 
     set_seed(args.seed)

@@ -219,18 +219,22 @@ class Parameters:
         if args.cost_fn == "euclidean":
             self.cost_spotlight_k = 1
             self.cost_p_norm = 2
+            self.budget = 2 * (self.x_dim**0.5)
         elif args.cost_fn == "manhattan":
             self.cost_spotlight_k = 1
             self.cost_p_norm = 1
+            self.budget = 2 * self.x_dim
         elif args.cost_fn == "r-spotlight":
             self.cost_spotlight_k = 1e3
             self.cost_p_norm = 2
             self.cost_max_noise = 0
+            self.budget = 2 * (self.x_dim**0.5)
         elif args.cost_fn == "non-markovian":
             self.cost_spotlight_k = 1
             self.cost_p_norm = 2
             self.cost_discount = 0.1
             self.cost_discount_threshold = 5 * self.radius
+            self.budget = 2 * (self.x_dim**0.5)
         else:
             raise NotImplementedError
 
